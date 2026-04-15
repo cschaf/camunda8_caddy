@@ -37,14 +37,18 @@ param(
 $ErrorActionPreference = "Stop"
 
 # ---------------------------------------------------------------------------
-# Host and port configuration — change $LocalHost to use a different hostname
+# Host and port configuration — change these to adapt for a different environment
 # ---------------------------------------------------------------------------
 
-# $LocalHost is used for direct localhost access URLs.
+# $LocalHost is used for direct access URLs.
 # Change this if you need a different host (e.g. "camunda.local" or "host.docker.internal").
 $LocalHost = "localhost"
 
-# Per-service port mapping: "client-id" = port
+# $ProxyDomain is the domain suffix used for proxy URLs.
+# Change this if you need a different domain (e.g. "camunda.local" → "identity.camunda.local").
+$ProxyDomain = "localhost"
+
+# Per-service port mapping: "client-id" = port for direct localhost access
 $localPorts = @{
     "camunda-identity" = 8084
     "console"         = 8087
@@ -53,13 +57,13 @@ $localPorts = @{
     "web-modeler"     = 8070
 }
 
-# Proxy hostnames per service (used in https://*.localhost URLs)
-$proxyHosts = @{
-    "camunda-identity" = "identity.localhost"
-    "console"         = "console.localhost"
-    "orchestration"   = "orchestration.localhost"
-    "optimize"        = "optimize.localhost"
-    "web-modeler"     = "webmodeler.localhost"
+# Per-service subdomain prefix for proxy URLs (appended to $ProxyDomain)
+$proxySubdomains = @{
+    "camunda-identity" = "identity"
+    "console"         = "console"
+    "orchestration"   = "orchestration"
+    "optimize"        = "optimize"
+    "web-modeler"     = "webmodeler"
 }
 
 # Per-service callback path after the base URL
@@ -142,11 +146,11 @@ foreach ($clientId in $allClients) {
     Write-Host "Updating client: $clientId..."
 
     $port = $localPorts[$clientId]
-    $proxyHost = $proxyHosts[$clientId]
+    $subdomain = $proxySubdomains[$clientId]
     $callbackPath = $callbackPaths[$clientId]
 
     $localhostUri = "http://${LocalHost}:${port}${callbackPath}"
-    $proxyUri = "https://${proxyHost}${callbackPath}"
+    $proxyUri = "https://${subdomain}.${ProxyDomain}${callbackPath}"
     $newUris = @($localhostUri, $proxyUri)
 
     Update-ClientRedirectUris -ClientId $clientId -NewUris $newUris -Headers $headers
