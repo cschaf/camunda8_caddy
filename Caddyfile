@@ -8,6 +8,30 @@ keycloak.localhost {
 
 # Identity
 identity.localhost {
+    @options {
+        method OPTIONS
+    }
+    handle @options {
+        respond "OK" 200
+        header Access-Control-Allow-Origin "*"
+        header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+        header Access-Control-Allow-Headers "Content-Type, Authorization, X-Requested-With, Accept, Origin"
+        header Access-Control-Max-Age "3600"
+    }
+
+    # Fonts are fetched with sec-fetch-mode: cors by the browser (CSS @font-face),
+    # but Identity's Spring Security rejects them because it doesn't recognise
+    # https://identity.localhost as an allowed CORS origin. Strip the Origin header
+    # so Spring Security serves them as plain static files.
+    @static {
+        path /static/*
+    }
+    handle @static {
+        reverse_proxy identity:8084 {
+            header_up -Origin
+        }
+    }
+
     reverse_proxy identity:8084
 }
 
