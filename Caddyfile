@@ -1,7 +1,32 @@
 # Caddyfile for Camunda Compose NVL - Reverse Proxy
 # Development only - not for production
 
-# Keycloak on standard HTTPS port
+# Keycloak
 keycloak.localhost {
     reverse_proxy keycloak:18080
+}
+
+# Identity
+identity.localhost {
+    reverse_proxy identity:8084
+}
+
+# Console
+console.localhost {
+    reverse_proxy console:8080
+}
+
+# Optimize
+optimize.localhost {
+    reverse_proxy optimize:8090
+}
+
+# Orchestration (Operate/Tasklist)
+orchestration.localhost {
+    reverse_proxy orchestration:8080
+}
+
+# Web Modeler
+webmodeler.localhost {
+    reverse_proxy web-modeler-webapp:8070
 }
