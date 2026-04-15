@@ -26,6 +26,13 @@ This script reads `HOST` from `.env` and updates:
 - `Caddyfile` — replaces all `*.localhost` domain names with `*.{HOST}`
 - hosts file — adds `127.0.0.1` entries for all services (keycloak, identity, console, optimize, orchestration, webmodeler)
 
+**Custom TLS certificates (optional):** If you have your own certificates, add to `.env`:
+```env
+FULLCHAIN_PEM=/path/to/fullchain.pem
+PRIVATEKEY_PEM=/path/to/privkey.pem
+```
+The script will inject the `tls` directive into every site block in the Caddyfile. If not set, Caddy generates self-signed certs automatically.
+
 The Caddyfile change takes effect when the cluster starts (step 3).
 
 ### 3. Start the cluster
