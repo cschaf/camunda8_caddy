@@ -172,9 +172,10 @@ keycloak:
         id: "camunda-identity"
         type: CONFIDENTIAL
         secret: ${CAMUNDA_IDENTITY_CLIENT_SECRET:demo-identity-secret}
-        root-url: "http://localhost:8084"
+        root-url: "https://identity.localhost"
         redirect-uris:
           - "/auth/login-callback"
+          - "https://identity.localhost/auth/login-callback"
   users:
     - username: "demo"
       password: "demo"
