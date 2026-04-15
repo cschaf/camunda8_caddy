@@ -164,6 +164,28 @@ authProvider:
   backend-url: "http://keycloak:18080/auth/realms/camunda-platform"  # Internal
 ```
 
+**Caddyfile template for Spring Boot services** — handles fonts (sec-fetch-mode: cors 403) and CORS preflight:
+```caddy
+service.localhost {
+    @options { method OPTIONS }
+    handle @options {
+        respond "OK" 200
+        header Access-Control-Allow-Origin "*"
+        header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+        header Access-Control-Allow-Headers "Content-Type, Authorization, X-Requested-With, Accept, Origin"
+        header Access-Control-Max-Age "3600"
+    }
+    @static { path /static/* }
+    handle @static {
+        reverse_proxy container-name:port {
+            header_up -Origin
+        }
+    }
+    reverse_proxy container-name:port
+}
+```
+Also add `SERVER_FORWARD_HEADERS_STRATEGY: framework` to the service's environment in `docker-compose.yaml`.
+
 **2. Keycloak client redirect URIs** — Use the fix script:
 ```bash
 pwsh -File scripts/fix-keycloak-clients.ps1
@@ -179,6 +201,10 @@ pwsh -File scripts/fix-keycloak-clients.ps1
 | optimize | `https://optimize.localhost/api/authentication/callback` |
 | web-modeler | `https://webmodeler.localhost/login-callback` |
 
+## Git Conventions
+
+- **Never add `Co-Authored-By` lines to commit messages.**
+
 ### Common Gotchas
 
 1. **KEYCLOAK_HOST must be `keycloak` (container name), not `localhost`** — otherwise services inside containers cannot reach Keycloak (they resolve to themselves)
@@ -190,3 +216,9 @@ pwsh -File scripts/fix-keycloak-clients.ps1
 4. **Console uses two Keycloak URLs:** `KEYCLOAK_BASE_URL` (browser) and `KEYCLOAK_INTERNAL_BASE_URL` (service-to-service)
 
 5. **Keycloak client redirect URIs are cached** — If a service works then suddenly fails with "Invalid redirect_uri", run `scripts/fix-keycloak-clients.ps1` to reset the URIs
+
+6. **Spring Boot font/static asset 403 via proxy** — CSS `@font-face` triggers `sec-fetch-mode: cors`, causing Spring Security to reject `/static/media/*.woff*` because `Origin: https://service.localhost` doesn't match the backend's own URL. Fix: strip the Origin header for static paths using `header_up -Origin` inside the `reverse_proxy` block (see Caddyfile template above).
+
+7. **Spring Boot POST 403 via proxy (CSRF Origin check)** — Spring Security validates that the `Origin` header on POST/PUT/DELETE matches the server's own URL. Behind Caddy this fails unless you add `SERVER_FORWARD_HEADERS_STRATEGY: framework` to the service's environment in `docker-compose.yaml`. **Apply this to every Spring Boot service added to the proxy.**
+
+8. **`header_up` is a `reverse_proxy` subdirective** — It cannot be used as a standalone directive inside a Caddy `handle` block. Always nest it: `reverse_proxy upstream { header_up -Origin }`.
