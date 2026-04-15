@@ -420,7 +420,7 @@ services:
       - "9100:9100"
     environment:
       NODE_ENV: production
-      KEYCLOAK_BASE_URL: http://${HOST}:18080/auth
+      KEYCLOAK_BASE_URL: https://keycloak.localhost/auth
       KEYCLOAK_INTERNAL_BASE_URL: http://${KEYCLOAK_HOST}:18080/auth
       KEYCLOAK_REALM: camunda-platform
       CAMUNDA_IDENTITY_CLIENT_ID: console
