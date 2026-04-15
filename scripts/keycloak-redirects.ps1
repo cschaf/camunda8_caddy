@@ -36,17 +36,15 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-# ---------------------------------------------------------------------------
-# Host and port configuration — change these to adapt for a different environment
-# ---------------------------------------------------------------------------
-
-# $LocalHost is used for direct access URLs.
-# Change this if you need a different host (e.g. "camunda.local" or "host.docker.internal").
-$LocalHost = "localhost"
-
-# $ProxyDomain is the domain suffix used for proxy URLs.
-# Change this if you need a different domain (e.g. "camunda.local" → "identity.camunda.local").
-$ProxyDomain = "localhost"
+# Read HOST from .env (relative to script location)
+$envFile = Join-Path $PSScriptRoot "..\.env"
+if (Test-Path $envFile) {
+    $envContent = Get-Content $envFile | Where-Object { $_ -notmatch '^\s*#' }
+    foreach ($line in $envContent) {
+        if ($line -match '^HOST=(.*)') { $ProxyDomain = $matches[1].Trim() }
+    }
+}
+$LocalHost = $ProxyDomain  # direct-access URL uses same host value
 
 # Per-service port mapping: "client-id" = port for direct localhost access
 $localPorts = @{

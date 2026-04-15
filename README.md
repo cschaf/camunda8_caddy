@@ -2,32 +2,31 @@
 
 ## Usage
 
-For end user usage, please check the offical documentation of [Camunda 8 Self-Managed Docker Compose](https://docs.camunda.io/docs/next/self-managed/quickstart/developer-quickstart/docker-compose/).
+For end user usage, please check the official documentation of [Camunda 8 Self-Managed Docker Compose](https://docs.camunda.io/docs/next/self-managed/quickstart/developer-quickstart/docker-compose/).
 
 ## First Start Setup
 
-Complete these steps once after a fresh clone:
+Complete these steps in order after a fresh clone.
 
-### 1. Add hosts file entries
-
-Add the following to your hosts file (`C:\Windows\System32\drivers\etc\hosts` on Windows, `/etc/hosts` on macOS/Linux):
-
-```
-127.0.0.1 keycloak.localhost
-127.0.0.1 identity.localhost
-127.0.0.1 console.localhost
-127.0.0.1 optimize.localhost
-127.0.0.1 orchestration.localhost
-127.0.0.1 webmodeler.localhost
-```
-
-### 2. Create the environment file
+### 1. Create the environment file
 
 ```bash
 cp .env.example .env
 ```
 
-Edit `.env` if you need to customize any values (image versions, credentials, etc.).
+Open `.env` and set `HOST` to your desired domain. All services will be available at `{subdomain}.{HOST}` (e.g. `https://orchestration.localhost` if HOST is `localhost`).
+
+### 2. Configure hostname, Caddyfile, and hosts
+
+```powershell
+pwsh -File scripts/setup-host.ps1
+```
+
+This script reads `HOST` from `.env` and updates:
+- `Caddyfile` — replaces all `*.localhost` domain names with `*.{HOST}`
+- hosts file — adds `127.0.0.1` entries for all services (keycloak, identity, console, optimize, orchestration, webmodeler)
+
+The Caddyfile change takes effect when the cluster starts (step 3).
 
 ### 3. Start the cluster
 
@@ -49,20 +48,31 @@ After the cluster is up, run:
 pwsh -File scripts/keycloak-redirects.ps1
 ```
 
-This adds the proxy HTTPS URLs to Keycloak so that login works through the reverse proxy. Safe to re-run.
+This script reads `HOST` from `.env` and adds the correct HTTPS proxy redirect URIs to Keycloak for all clients. Safe to re-run.
 
 ### 5. Access the services
 
 | Service | URL |
 |---------|-----|
-| Operate / Tasklist | https://orchestration.localhost |
-| Identity | https://identity.localhost |
-| Console | https://console.localhost |
-| Optimize | https://optimize.localhost |
-| Web Modeler | https://webmodeler.localhost |
-| Keycloak Admin | https://keycloak.localhost/auth/ (admin / admin) |
+| Operate / Tasklist | https://orchestration.{HOST} |
+| Identity | https://identity.{HOST} |
+| Console | https://console.{HOST} |
+| Optimize | https://optimize.{HOST} |
+| Web Modeler | https://webmodeler.{HOST} |
+| Keycloak Admin | https://keycloak.{HOST}/auth/ (admin / admin) |
 
 > **Note:** Caddy uses a self-signed TLS certificate. Your browser will show a security warning — click "Advanced" and proceed. This is expected for local development.
+
+---
+
+## Changing the hostname
+
+All configuration is driven by the `HOST` variable in `.env`. To switch domain:
+
+1. Edit `.env` and set `HOST=your-new-domain` (e.g. `camunda.local`)
+2. Run `pwsh -File scripts/setup-host.ps1` to update Caddyfile and hosts file
+3. Start/restart the cluster: `docker compose up -d` (or `docker compose restart` if already running)
+4. Re-run `pwsh -File scripts/keycloak-redirects.ps1` to update Keycloak redirect URIs
 
 ---
 
@@ -70,31 +80,10 @@ This adds the proxy HTTPS URLs to Keycloak so that login works through the rever
 
 Keycloak strictly validates redirect URIs — the browser will only be redirected to URLs explicitly allowlisted for each client. If a redirect URI is missing or wrong, you will see "Invalid redirect_uri" errors after login.
 
-A single script manages all redirect URIs:
-
-```powershell
-pwsh -File scripts/keycloak-redirects.ps1
-```
-
-The script adds both direct `localhost` URLs and proxy HTTPS URLs. Safe to re-run.
-
-### Changing the hostname
-
-To use a different hostname instead of `localhost`, edit these variables at the top of the script:
-
-```powershell
-$LocalHost = "localhost"    # direct access URLs
-$ProxyDomain = "localhost"  # proxy URLs
-```
-
-For example, to use `camunda.local`:
-```powershell
-$LocalHost = "camunda.local"
-$ProxyDomain = "camunda.local"
-```
+The redirect URI script (`keycloak-redirects.ps1`) adds both direct `localhost` URLs and proxy HTTPS URLs. It reads `HOST` from `.env` automatically.
 
 ### Prerequisites
 
-- Keycloak must be accessible at `keycloak.localhost` (or use `-KeycloakHost` to point elsewhere)
+- Keycloak must be accessible at `keycloak.{HOST}` (the script's default `-KeycloakHost` is `keycloak.localhost` — override with `-KeycloakHost` if your HOST is different)
 - Default admin credentials: `admin` / `admin` (configure with `-AdminUser` / `-AdminPassword`)
 - Requires PowerShell Core (`pwsh`)
