@@ -128,22 +128,56 @@ The cluster configuration (`CAMUNDA_MODELER_CLUSTERS_0_URL_WEBAPP: http://localh
 
 ### Reverse Proxy
 
-A Caddy reverse proxy simplifies service access via subdomain routing on standard HTTPS port 443.
+A Caddy reverse proxy provides subdomain routing on standard HTTPS port 443.
 
 **Service:** `reverse-proxy` (caddy:latest)
 
-**Access URL:** `https://keycloak.localhost/auth/`
+**Working services:**
+- `https://keycloak.localhost/auth/` — Keycloak admin and OIDC
+- `https://identity.localhost/` — Identity UI
 
-**Key configuration:**
+**Hosts file entries required:**
+```
+127.0.0.1 keycloak.localhost
+127.0.0.1 identity.localhost
+127.0.0.1 console.localhost
+127.0.0.1 optimize.localhost
+127.0.0.1 orchestration.localhost
+127.0.0.1 webmodeler.localhost
+```
+
+**Key configuration files:**
 - `Caddyfile` — subdomain route definitions
 - `KEYCLOAK_PROXY_HEADERS: xforwarded` — tells Keycloak v26+ to trust proxy headers
 
-**Hosts file entry required:**
-```
-127.0.0.1 keycloak.localhost
+**Note:** Caddy auto-generates a self-signed TLS certificate. Browser will show a security warning - click "Advanced" to proceed. This is expected for local development.
+
+### Adding Services to Reverse Proxy
+
+For a service to work behind the reverse proxy, two things must be configured:
+
+**1. Service configuration** — Update the service's `application.yaml` to use external URLs:
+```yaml
+# Example for service with OIDC
+authProvider:
+  issuer-url: "https://keycloak.localhost/auth/realms/camunda-platform"
+  backend-url: "http://keycloak:18080/auth/realms/camunda-platform"  # Internal
 ```
 
-**Note:** Caddy auto-generates a self-signed TLS certificate. Browser will show a security warning - click "Advanced" to proceed. This is expected for local development.
+**2. Keycloak client redirect URIs** — Use the fix script:
+```bash
+pwsh -File scripts/fix-keycloak-clients.ps1
+```
+
+**Currently configured redirect URIs:**
+
+| Service | Callback URL |
+|---------|-------------|
+| camunda-identity | `https://identity.localhost/auth/login-callback` |
+| orchestration | `https://orchestration.localhost/sso-callback` |
+| console | `https://console.localhost/` |
+| optimize | `https://optimize.localhost/api/authentication/callback` |
+| web-modeler | `https://webmodeler.localhost/login-callback` |
 
 ### Common Gotchas
 
@@ -154,3 +188,5 @@ A Caddy reverse proxy simplifies service access via subdomain routing on standar
 3. **web-modeler-restapi has no host port** — accessed via webapp at port 8070
 
 4. **Console uses two Keycloak URLs:** `KEYCLOAK_BASE_URL` (browser) and `KEYCLOAK_INTERNAL_BASE_URL` (service-to-service)
+
+5. **Keycloak client redirect URIs are cached** — If a service works then suddenly fails with "Invalid redirect_uri", run `scripts/fix-keycloak-clients.ps1` to reset the URIs
