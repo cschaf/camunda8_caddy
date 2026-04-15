@@ -3,6 +3,17 @@
 
 # Keycloak
 keycloak.localhost {
+    # Intercept the OIDC check_session_iframe endpoint and return a mock that always
+    # reports "unchanged". Chrome 120+ blocks cross-origin JavaScript cookie access
+    # in iframes, so the real iframe fails to read KEYCLOAK_SESSION, returns "error",
+    # triggers prompt=none, and Keycloak returns login_required — clearing the token.
+    @check-session-iframe {
+        path /auth/realms/camunda-platform/protocol/openid-connect/login-status-iframe.html
+    }
+    handle @check-session-iframe {
+        header Content-Type "text/html; charset=utf-8"
+        respond `<!DOCTYPE html><html><body><script>window.addEventListener("message",function(e){if(!e.data||e.data==="init")return;e.source.postMessage("unchanged",e.origin);});</script></body></html>` 200
+    }
     reverse_proxy keycloak:18080
 }
 
@@ -72,5 +83,9 @@ orchestration.localhost {
 
 # Web Modeler
 webmodeler.localhost {
+    # Pusher WebSocket connections (real-time collaboration)
+    handle /app/* {
+        reverse_proxy web-modeler-websockets:8060
+    }
     reverse_proxy web-modeler-webapp:8070
 }

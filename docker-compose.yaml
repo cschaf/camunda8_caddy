@@ -325,9 +325,9 @@ services:
       RESTAPI_PUSHER_APP_ID: ${WEBMODELER_PUSHER_APP_ID}
       RESTAPI_PUSHER_KEY: ${WEBMODELER_PUSHER_KEY}
       RESTAPI_PUSHER_SECRET: ${WEBMODELER_PUSHER_SECRET}
-      RESTAPI_OAUTH2_TOKEN_ISSUER: http://${HOST}:18080/auth/realms/camunda-platform
+      RESTAPI_OAUTH2_TOKEN_ISSUER: https://keycloak.localhost/auth/realms/camunda-platform
       RESTAPI_OAUTH2_TOKEN_ISSUER_BACKEND_URL: http://${KEYCLOAK_HOST}:18080/auth/realms/camunda-platform
-      RESTAPI_SERVER_URL: http://localhost:8070
+      RESTAPI_SERVER_URL: https://webmodeler.localhost
       RESTAPI_MAIL_HOST: mailpit
       RESTAPI_MAIL_PORT: 1025
       RESTAPI_MAIL_ENABLE_TLS: "false"
@@ -367,20 +367,20 @@ services:
     environment:
       RESTAPI_HOST: web-modeler-restapi
       SERVER_HTTPS_ONLY: "false"
-      SERVER_URL: http://localhost:8070
+      SERVER_URL: https://webmodeler.localhost
       PUSHER_APP_ID: ${WEBMODELER_PUSHER_APP_ID}
       PUSHER_KEY: ${WEBMODELER_PUSHER_KEY}
       PUSHER_SECRET: ${WEBMODELER_PUSHER_SECRET}
       PUSHER_HOST: web-modeler-websockets
       PUSHER_PORT: "8060"
-      CLIENT_PUSHER_HOST: localhost
-      CLIENT_PUSHER_PORT: "8060"
-      CLIENT_PUSHER_FORCE_TLS: "false"
+      CLIENT_PUSHER_HOST: webmodeler.localhost
+      CLIENT_PUSHER_PORT: "443"
+      CLIENT_PUSHER_FORCE_TLS: "true"
       CLIENT_PUSHER_KEY: ${WEBMODELER_PUSHER_KEY}
       OAUTH2_CLIENT_ID: web-modeler
       OAUTH2_JWKS_URL: http://${KEYCLOAK_HOST}:18080/auth/realms/camunda-platform/protocol/openid-connect/certs
       OAUTH2_TOKEN_AUDIENCE: web-modeler-api
-      OAUTH2_TOKEN_ISSUER: http://${HOST}:18080/auth/realms/camunda-platform
+      OAUTH2_TOKEN_ISSUER: https://keycloak.localhost/auth/realms/camunda-platform
       IDENTITY_BASE_URL: http://identity:8084/
       PLAY_ENABLED: "true"
     networks:
@@ -455,6 +455,7 @@ services:
     networks:
       - camunda-platform
       - identity-network
+      - web-modeler
     depends_on:
       keycloak:
         condition: service_healthy
