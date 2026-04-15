@@ -135,6 +135,7 @@ A Caddy reverse proxy provides subdomain routing on standard HTTPS port 443.
 **Working services:**
 - `https://keycloak.localhost/auth/` — Keycloak admin and OIDC
 - `https://identity.localhost/` — Identity UI
+- `https://console.localhost/` — Console UI
 
 **Hosts file entries required:**
 ```
@@ -150,19 +151,30 @@ A Caddy reverse proxy provides subdomain routing on standard HTTPS port 443.
 - `Caddyfile` — subdomain route definitions
 - `KEYCLOAK_PROXY_HEADERS: xforwarded` — tells Keycloak v26+ to trust proxy headers
 
+**Keycloak redirect URI scripts:**
+- `scripts/fix-keycloak-clients.ps1` — **replaces** all redirect URIs with a clean known-good set (use to reset after corruption)
+- `scripts/update-keycloak-redirects.ps1` — **merges** proxy URIs into existing URIs for all clients (safe to re-run; use when adding a service)
+
 **Note:** Caddy auto-generates a self-signed TLS certificate. Browser will show a security warning - click "Advanced" to proceed. This is expected for local development.
 
 ### Adding Services to Reverse Proxy
 
 For a service to work behind the reverse proxy, two things must be configured:
 
-**1. Service configuration** — Update the service's `application.yaml` to use external URLs:
+**1. Service configuration** — Update the service's `application.yaml` (Spring Boot) or `docker-compose.yaml` env vars (Node.js) to use external URLs:
 ```yaml
-# Example for service with OIDC
+# Spring Boot (application.yaml)
 authProvider:
   issuer-url: "https://keycloak.localhost/auth/realms/camunda-platform"
   backend-url: "http://keycloak:18080/auth/realms/camunda-platform"  # Internal
 ```
+```yaml
+# Node.js (docker-compose.yaml environment)
+KEYCLOAK_BASE_URL: https://keycloak.localhost/auth       # browser-facing — MUST be HTTPS when served via proxy
+KEYCLOAK_INTERNAL_BASE_URL: http://keycloak:18080/auth  # container-to-container
+```
+
+> **Mixed content rule:** If the service is served over HTTPS via the proxy, `KEYCLOAK_BASE_URL` (or equivalent browser-facing Keycloak URL) must also use `https://keycloak.localhost`. Browsers block HTTP resources loaded from HTTPS pages.
 
 **Caddyfile template for Spring Boot services** — handles fonts (sec-fetch-mode: cors 403) and CORS preflight:
 ```caddy
@@ -197,7 +209,7 @@ pwsh -File scripts/fix-keycloak-clients.ps1
 |---------|-------------|
 | camunda-identity | `https://identity.localhost/auth/login-callback` |
 | orchestration | `https://orchestration.localhost/sso-callback` |
-| console | `https://console.localhost/` |
+| console | `https://console.localhost/` (root path — no sub-path) |
 | optimize | `https://optimize.localhost/api/authentication/callback` |
 | web-modeler | `https://webmodeler.localhost/login-callback` |
 
@@ -222,3 +234,7 @@ pwsh -File scripts/fix-keycloak-clients.ps1
 7. **Spring Boot POST 403 via proxy (CSRF Origin check)** — Spring Security validates that the `Origin` header on POST/PUT/DELETE matches the server's own URL. Behind Caddy this fails unless you add `SERVER_FORWARD_HEADERS_STRATEGY: framework` to the service's environment in `docker-compose.yaml`. **Apply this to every Spring Boot service added to the proxy.**
 
 8. **`header_up` is a `reverse_proxy` subdirective** — It cannot be used as a standalone directive inside a Caddy `handle` block. Always nest it: `reverse_proxy upstream { header_up -Origin }`.
+
+9. **HTTPS proxy → browser-facing Keycloak URL must also be HTTPS** — Services accessed via the reverse proxy are served over HTTPS. If `KEYCLOAK_BASE_URL` (or equivalent) still points to `http://localhost:18080`, the browser will refuse the OIDC discovery request (mixed content). Set it to `https://keycloak.localhost/auth` instead.
+
+10. **Console is Node.js, not Spring Boot** — OIDC config is in `docker-compose.yaml` env vars (`KEYCLOAK_BASE_URL`, `KEYCLOAK_INTERNAL_BASE_URL`), not in `.console/application.yaml`. Spring Boot gotchas (font 403, CSRF POST, `SERVER_FORWARD_HEADERS_STRATEGY`) do not apply to Console.
