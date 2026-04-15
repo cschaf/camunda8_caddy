@@ -100,12 +100,14 @@ services:
       OPTIMIZE_ELASTICSEARCH_HTTP_PORT: "9200"
       SPRING_PROFILES_ACTIVE: ccsm
       # Identity integration - URLs and credentials
-      CAMUNDA_OPTIMIZE_IDENTITY_ISSUER_URL: http://${HOST}:18080/auth/realms/camunda-platform
+      CAMUNDA_OPTIMIZE_IDENTITY_ISSUER_URL: https://keycloak.localhost/auth/realms/camunda-platform
       CAMUNDA_OPTIMIZE_IDENTITY_ISSUER_BACKEND_URL: http://${KEYCLOAK_HOST}:18080/auth/realms/camunda-platform
       CAMUNDA_OPTIMIZE_IDENTITY_CLIENTID: optimize
       CAMUNDA_OPTIMIZE_IDENTITY_CLIENTSECRET: ${OPTIMIZE_CLIENT_SECRET}
       CAMUNDA_OPTIMIZE_IDENTITY_AUDIENCE: optimize-api
       CAMUNDA_OPTIMIZE_IDENTITY_BASE_URL: http://identity:8084
+      # Trust X-Forwarded headers from reverse proxy (required for correct URL construction behind HTTPS proxy)
+      SERVER_FORWARD_HEADERS_STRATEGY: framework
       # Management endpoints
       management.endpoints.web.exposure.include: health,configprops
       MANAGEMENT_ENDPOINT_CONFIGPROPS_SHOW_VALUES: ALWAYS

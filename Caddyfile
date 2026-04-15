@@ -53,7 +53,10 @@ console.localhost {
 
 # Optimize
 optimize.localhost {
-    reverse_proxy optimize:8090
+    reverse_proxy optimize:8090 {
+        header_up X-Forwarded-Proto https
+        header_up X-Forwarded-Host optimize.localhost
+    }
 }
 
 # Orchestration (Operate/Tasklist)
