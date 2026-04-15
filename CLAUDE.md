@@ -87,7 +87,7 @@ Container names serve as DNS hostnames within networks. E.g., `keycloak:18080`, 
 |---------|-------------|----------|
 | Orchestration | `http://localhost:8088` | `/sso-callback` |
 | Optimize | `http://localhost:8083` | `/api/authentication/callback` |
-| Web Modeler | `http://localhost:8070` | `/login-callback` |
+| Web Modeler | `https://webmodeler.localhost` | `/login-callback` |
 | Console | `http://localhost:8087` | handled internally |
 
 ### Exposed Ports
@@ -113,7 +113,7 @@ Three components with dual network membership:
 - **web-modeler-webapp** (port 8070) — browser-facing UI, reaches restapi and websockets
 - **web-modeler-websockets** (port 8060) — push notifications for webapp
 
-The cluster configuration (`CAMUNDA_MODELER_CLUSTERS_0_URL_WEBAPP: http://localhost:8088`) points to the local Orchestration UI, not Web Modeler itself, because Web Modeler connects to the Zeebe broker running in orchestration.
+The cluster configuration (`CAMUNDA_MODELER_CLUSTERS_0_URL_WEBAPP`) points to the local Orchestration UI (e.g. `https://orchestration.localhost` when using the proxy, or `http://localhost:8088` for direct access), not Web Modeler itself, because Web Modeler connects to the Zeebe broker running in orchestration.
 
 ### Configuration Files
 
@@ -137,6 +137,7 @@ A Caddy reverse proxy provides subdomain routing on standard HTTPS port 443.
 - `https://identity.localhost/` — Identity UI
 - `https://console.localhost/` — Console UI
 - `https://orchestration.localhost/` — Operate and Tasklist UIs
+- `https://webmodeler.localhost/` — Web Modeler UI (with WebSocket/Pusher support)
 
 **Hosts file entries required:**
 ```
@@ -242,6 +243,10 @@ pwsh -File scripts/fix-keycloak-clients.ps1
 
 11. **Spring Boot `redirectRootUrl` must use proxy URL** — Camunda Spring Boot services configure post-login redirect roots in `application.yaml` (e.g. `camunda.operate.identity.redirectRootUrl`, `camunda.tasklist.identity.redirectRootUrl`). When behind the proxy these must point to the proxy URL (e.g. `https://orchestration.localhost/operate`), not `http://localhost:8088`. Otherwise the browser is sent to the non-proxy URL after SSO completes.
 
-12. **Web Modeler WebSocket (Pusher) via proxy** — When `webmodeler.localhost` is served over HTTPS, the browser's Pusher client must connect to the proxy host with TLS. Set `CLIENT_PUSHER_HOST: webmodeler.localhost`, `CLIENT_PUSHER_PORT: "443"`, `CLIENT_PUSHER_FORCE_TLS: "true"`. Add an `/app/*` route in the Caddyfile that proxies to `web-modeler-websockets:8060`. The reverse-proxy container must also be on the `web-modeler` Docker network to reach that container. Also set `SERVER_URL: https://webmodeler.localhost` and `OAUTH2_TOKEN_ISSUER: https://keycloak.localhost/auth/realms/camunda-platform`.
+12. **Web Modeler WebSocket (Pusher) via proxy** — When `webmodeler.localhost` is served over HTTPS, the browser's Pusher client must connect to the proxy host with TLS. Required changes in `docker-compose.yaml`:
+    - `web-modeler-webapp`: `CLIENT_PUSHER_HOST: webmodeler.localhost`, `CLIENT_PUSHER_PORT: "443"`, `CLIENT_PUSHER_FORCE_TLS: "true"`, `SERVER_URL: https://webmodeler.localhost`, `OAUTH2_TOKEN_ISSUER: https://keycloak.localhost/auth/realms/camunda-platform`
+    - `web-modeler-restapi`: `RESTAPI_SERVER_URL: https://webmodeler.localhost`, `RESTAPI_OAUTH2_TOKEN_ISSUER: https://keycloak.localhost/auth/realms/camunda-platform` (must match the `iss` claim in tokens issued via the proxy — otherwise restapi rejects every token with 401 and webapp loops back to `/login`)
+    - `reverse-proxy`: add `web-modeler` to its networks so Caddy can reach `web-modeler-websockets:8060`
+    - `Caddyfile`: add `handle /app/* { reverse_proxy web-modeler-websockets:8060 }` inside the `webmodeler.localhost` block
 
 13. **Web Modeler "login has expired" immediately after login** — Chrome 120+ blocks cross-origin JavaScript cookie access in iframes. The OIDC `check_session_iframe` (`login-status-iframe.html`) uses `document.cookie` to read `KEYCLOAK_SESSION` from inside a `webmodeler.localhost` page context; Chrome blocks this, the iframe returns "error", oidc-client-ts fires a `prompt=none` silent check, and Keycloak returns `login_required` — clearing the token. Fix: intercept `login-status-iframe.html` in the `keycloak.localhost` Caddyfile block and return a mock that always responds "unchanged" to postMessages. The real session check never fires; token expiry still works via JWT `exp` claim.
