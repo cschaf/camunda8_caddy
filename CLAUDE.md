@@ -21,6 +21,8 @@ docker compose down
 docker compose logs -f [service-name]
 ```
 
+> **First start:** After `docker compose up -d`, run `pwsh -File scripts/keycloak-redirects.ps1 -Mode Merge` once to configure proxy redirect URIs in Keycloak. On subsequent starts (where Keycloak data persists), this is not needed again unless you are adding a new service or troubleshooting redirect URI issues.
+
 ### Running Tests
 
 E2e tests are in `tests/` using Playwright.
@@ -153,9 +155,8 @@ A Caddy reverse proxy provides subdomain routing on standard HTTPS port 443.
 - `Caddyfile` — subdomain route definitions
 - `KEYCLOAK_PROXY_HEADERS: xforwarded` — tells Keycloak v26+ to trust proxy headers
 
-**Keycloak redirect URI scripts:**
-- `scripts/fix-keycloak-clients.ps1` — **replaces** all redirect URIs with a clean known-good set (use to reset after corruption)
-- `scripts/update-keycloak-redirects.ps1` — **merges** proxy URIs into existing URIs for all clients (safe to re-run; use when adding a service)
+**Keycloak redirect URI script:**
+- `scripts/keycloak-redirects.ps1` — manages all redirect URIs. Use `-Mode Merge` (default) to add proxy URLs to existing URIs when adding a service, or `-Mode Fix` to reset to a known-good set when troubleshooting "Invalid redirect_uri" errors.
 
 **Note:** Caddy auto-generates a self-signed TLS certificate. Browser will show a security warning - click "Advanced" to proceed. This is expected for local development.
 
@@ -200,9 +201,9 @@ service.localhost {
 ```
 Also add `SERVER_FORWARD_HEADERS_STRATEGY: framework` to the service's environment in `docker-compose.yaml`.
 
-**2. Keycloak client redirect URIs** — Use the fix script:
+**2. Keycloak client redirect URIs** — Run the merge script to add the new proxy URLs:
 ```bash
-pwsh -File scripts/fix-keycloak-clients.ps1
+pwsh -File scripts/keycloak-redirects.ps1 -Mode Merge
 ```
 
 **Currently configured redirect URIs:**
@@ -229,7 +230,7 @@ pwsh -File scripts/fix-keycloak-clients.ps1
 
 4. **Console uses two Keycloak URLs:** `KEYCLOAK_BASE_URL` (browser) and `KEYCLOAK_INTERNAL_BASE_URL` (service-to-service)
 
-5. **Keycloak client redirect URIs are cached** — If a service works then suddenly fails with "Invalid redirect_uri", run `scripts/fix-keycloak-clients.ps1` to reset the URIs
+5. **Keycloak client redirect URIs are cached** — If a service suddenly fails with "Invalid redirect_uri", run `pwsh -File scripts/keycloak-redirects.ps1 -Mode Fix` to reset all URIs to the known-good set. For routine additions of new proxy URLs, use `-Mode Merge` (default, safe to re-run).
 
 6. **Spring Boot font/static asset 403 via proxy** — CSS `@font-face` triggers `sec-fetch-mode: cors`, causing Spring Security to reject `/static/media/*.woff*` because `Origin: https://service.localhost` doesn't match the backend's own URL. Fix: strip the Origin header for static paths using `header_up -Origin` inside the `reverse_proxy` block (see Caddyfile template above).
 
