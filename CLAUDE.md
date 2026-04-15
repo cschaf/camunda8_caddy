@@ -136,6 +136,7 @@ A Caddy reverse proxy provides subdomain routing on standard HTTPS port 443.
 - `https://keycloak.localhost/auth/` — Keycloak admin and OIDC
 - `https://identity.localhost/` — Identity UI
 - `https://console.localhost/` — Console UI
+- `https://orchestration.localhost/` — Operate and Tasklist UIs
 
 **Hosts file entries required:**
 ```
@@ -238,3 +239,5 @@ pwsh -File scripts/fix-keycloak-clients.ps1
 9. **HTTPS proxy → browser-facing Keycloak URL must also be HTTPS** — Services accessed via the reverse proxy are served over HTTPS. If `KEYCLOAK_BASE_URL` (or equivalent) still points to `http://localhost:18080`, the browser will refuse the OIDC discovery request (mixed content). Set it to `https://keycloak.localhost/auth` instead.
 
 10. **Console is Node.js, not Spring Boot** — OIDC config is in `docker-compose.yaml` env vars (`KEYCLOAK_BASE_URL`, `KEYCLOAK_INTERNAL_BASE_URL`), not in `.console/application.yaml`. Spring Boot gotchas (font 403, CSRF POST, `SERVER_FORWARD_HEADERS_STRATEGY`) do not apply to Console.
+
+11. **Spring Boot `redirectRootUrl` must use proxy URL** — Camunda Spring Boot services configure post-login redirect roots in `application.yaml` (e.g. `camunda.operate.identity.redirectRootUrl`, `camunda.tasklist.identity.redirectRootUrl`). When behind the proxy these must point to the proxy URL (e.g. `https://orchestration.localhost/operate`), not `http://localhost:8088`. Otherwise the browser is sent to the non-proxy URL after SSO completes.

@@ -47,6 +47,26 @@ optimize.localhost {
 
 # Orchestration (Operate/Tasklist)
 orchestration.localhost {
+    @options {
+        method OPTIONS
+    }
+    handle @options {
+        respond "OK" 200
+        header Access-Control-Allow-Origin "*"
+        header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+        header Access-Control-Allow-Headers "Content-Type, Authorization, X-Requested-With, Accept, Origin"
+        header Access-Control-Max-Age "3600"
+    }
+
+    @static {
+        path /static/*
+    }
+    handle @static {
+        reverse_proxy orchestration:8080 {
+            header_up -Origin
+        }
+    }
+
     reverse_proxy orchestration:8080
 }
 
