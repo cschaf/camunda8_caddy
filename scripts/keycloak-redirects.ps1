@@ -37,15 +37,30 @@ param(
 $ErrorActionPreference = "Stop"
 
 # ---------------------------------------------------------------------------
-# Redirect URI sets — Caddy proxy URLs only
+# Redirect URI sets — proxy URLs + localhost fallbacks
 # ---------------------------------------------------------------------------
 
 $proxyUris = @{
-    "camunda-identity" = @("https://identity.localhost/auth/login-callback")
-    "console"          = @("https://console.localhost/")
-    "orchestration"    = @("https://orchestration.localhost/sso-callback")
-    "optimize"         = @("https://optimize.localhost/api/authentication/callback")
-    "web-modeler"      = @("https://webmodeler.localhost/login-callback")
+    "camunda-identity" = @(
+        "http://localhost:8084/auth/login-callback",
+        "https://identity.localhost/auth/login-callback"
+    )
+    "console"          = @(
+        "http://localhost:8087/",
+        "https://console.localhost/"
+    )
+    "orchestration"    = @(
+        "http://localhost:8088/sso-callback",
+        "https://orchestration.localhost/sso-callback"
+    )
+    "optimize"         = @(
+        "http://localhost:8083/api/authentication/callback",
+        "https://optimize.localhost/api/authentication/callback"
+    )
+    "web-modeler"      = @(
+        "http://localhost:8070/login-callback",
+        "https://webmodeler.localhost/login-callback"
+    )
 }
 
 $allClients = @("camunda-identity", "orchestration", "console", "optimize", "web-modeler")
