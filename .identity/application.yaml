@@ -22,7 +22,7 @@ identity:
         - name: "Console"
           id: console
           type: public
-          root-url: "http://localhost:8087"
+          root-url: "https://console.localhost"
           redirect-uris:
             - "/"
       apis:
