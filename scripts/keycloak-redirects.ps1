@@ -37,33 +37,41 @@ param(
 $ErrorActionPreference = "Stop"
 
 # ---------------------------------------------------------------------------
-# Redirect URI sets — proxy URLs + localhost fallbacks
+# Host and port configuration — change $LocalHost to use a different hostname
 # ---------------------------------------------------------------------------
 
-$proxyUris = @{
-    "camunda-identity" = @(
-        "http://localhost:8084/auth/login-callback",
-        "https://identity.localhost/auth/login-callback"
-    )
-    "console"          = @(
-        "http://localhost:8087/",
-        "https://console.localhost/"
-    )
-    "orchestration"    = @(
-        "http://localhost:8088/sso-callback",
-        "https://orchestration.localhost/sso-callback"
-    )
-    "optimize"         = @(
-        "http://localhost:8083/api/authentication/callback",
-        "https://optimize.localhost/api/authentication/callback"
-    )
-    "web-modeler"      = @(
-        "http://localhost:8070/login-callback",
-        "https://webmodeler.localhost/login-callback"
-    )
+# $LocalHost is used for direct localhost access URLs.
+# Change this if you need a different host (e.g. "camunda.local" or "host.docker.internal").
+$LocalHost = "localhost"
+
+# Per-service port mapping: "client-id" = port
+$localPorts = @{
+    "camunda-identity" = 8084
+    "console"         = 8087
+    "orchestration"   = 8088
+    "optimize"        = 8083
+    "web-modeler"     = 8070
 }
 
-$allClients = @("camunda-identity", "orchestration", "console", "optimize", "web-modeler")
+# Proxy hostnames per service (used in https://*.localhost URLs)
+$proxyHosts = @{
+    "camunda-identity" = "identity.localhost"
+    "console"         = "console.localhost"
+    "orchestration"   = "orchestration.localhost"
+    "optimize"        = "optimize.localhost"
+    "web-modeler"     = "webmodeler.localhost"
+}
+
+# Per-service callback path after the base URL
+$callbackPaths = @{
+    "camunda-identity" = "/auth/login-callback"
+    "console"         = "/"
+    "orchestration"   = "/sso-callback"
+    "optimize"        = "/api/authentication/callback"
+    "web-modeler"     = "/login-callback"
+}
+
+$allClients = $localPorts.Keys
 
 # ---------------------------------------------------------------------------
 # Helper functions
@@ -132,7 +140,16 @@ Write-Host "Configuring Caddy proxy redirect URIs for Keycloak clients`n"
 
 foreach ($clientId in $allClients) {
     Write-Host "Updating client: $clientId..."
-    Update-ClientRedirectUris -ClientId $clientId -NewUris $proxyUris[$clientId] -Headers $headers
+
+    $port = $localPorts[$clientId]
+    $proxyHost = $proxyHosts[$clientId]
+    $callbackPath = $callbackPaths[$clientId]
+
+    $localhostUri = "http://${LocalHost}:${port}${callbackPath}"
+    $proxyUri = "https://${proxyHost}${callbackPath}"
+    $newUris = @($localhostUri, $proxyUri)
+
+    Update-ClientRedirectUris -ClientId $clientId -NewUris $newUris -Headers $headers
 }
 
 Write-Host "`nDone!"
