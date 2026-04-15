@@ -1,1 +1,30 @@
+# Environment and secrets (never commit real credentials)
 .env
+.env.local
+.env.*.local
+connector-secrets.txt
+
+# Claude Code
+.claude/
+
+# IDE / editor
+.vscode/
+.idea/
+*.iml
+
+# HAR logs (browser traffic recordings)
+*.har
+
+# Test artifacts and reports
+tests/
+playwright-report/
+test-results/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local development notes
+AGENT.md
+README.md
