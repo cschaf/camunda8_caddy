@@ -128,14 +128,14 @@ The cluster configuration (`CAMUNDA_MODELER_CLUSTERS_0_URL_WEBAPP: http://localh
 
 ### Reverse Proxy
 
-A Caddy reverse proxy is available to simplify service access via subdomain routing.
+A Caddy reverse proxy simplifies service access via subdomain routing on standard HTTPS port 443.
 
-**Service:** `reverse-proxy` (caddy:3)
+**Service:** `reverse-proxy` (caddy:latest)
 
-**Purpose:** Proxies `keycloak.localhost:18080` → `keycloak:18080` with proper X-Forwarded headers.
+**Access URL:** `https://keycloak.localhost/auth/`
 
 **Key configuration:**
-- `Caddyfile` — route definitions
+- `Caddyfile` — subdomain route definitions
 - `KEYCLOAK_PROXY_HEADERS: xforwarded` — tells Keycloak v26+ to trust proxy headers
 
 **Hosts file entry required:**
@@ -143,7 +143,7 @@ A Caddy reverse proxy is available to simplify service access via subdomain rout
 127.0.0.1 keycloak.localhost
 ```
 
-**Note:** When accessing Keycloak through the proxy, use `keycloak.localhost:18080`. The `KEYCLOAK_HOST` variable remains `keycloak` for internal container-to-container communication.
+**Note:** Caddy auto-generates a self-signed TLS certificate. Browser will show a security warning - click "Advanced" to proceed. This is expected for local development.
 
 ### Common Gotchas
 

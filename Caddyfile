@@ -1,13 +1,7 @@
 # Caddyfile for Camunda Compose NVL - Reverse Proxy
 # Development only - not for production
 
-# Disable automatic HTTPS for localhost
-{
-    admin off
-    auto_https off
-}
-
-# Keycloak
-http://keycloak.localhost:18080 {
+# Keycloak on standard HTTPS port
+keycloak.localhost {
     reverse_proxy keycloak:18080
 }

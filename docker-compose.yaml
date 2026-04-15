@@ -448,7 +448,7 @@ services:
     image: caddy:latest
     container_name: reverse-proxy
     ports:
-      - "18080:18080"
+      - "443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
     networks:
