@@ -46,10 +46,10 @@ docker compose ps
 After the cluster is up, run:
 
 ```powershell
-pwsh -File scripts/keycloak-redirects.ps1 -Mode Merge
+pwsh -File scripts/keycloak-redirects.ps1
 ```
 
-This adds the proxy HTTPS URLs to Keycloak so that login works through the reverse proxy.
+This adds the proxy HTTPS URLs to Keycloak so that login works through the reverse proxy. Safe to re-run.
 
 ### 5. Access the services
 
@@ -73,27 +73,24 @@ Keycloak strictly validates redirect URIs — the browser will only be redirecte
 A single script manages all redirect URIs:
 
 ```powershell
-pwsh -File scripts/keycloak-redirects.ps1 [-Mode {Merge|Fix}]
+pwsh -File scripts/keycloak-redirects.ps1
 ```
 
-### Modes
+The script adds both direct `localhost` URLs and proxy HTTPS URLs. Safe to re-run.
 
-| Mode | When to use | What it does |
-|------|-------------|--------------|
-| `Merge` (default) | Adding the reverse proxy for the first time, or adding a new service to an existing proxy setup | Adds proxy URLs to whatever URIs already exist. Safe to re-run — never removes existing URIs. |
-| `Fix` | Redirect URIs are corrupted (duplicates, stale staging URLs, broken experiments) or you are getting "Invalid redirect_uri" errors that Merge doesn't resolve | Replaces all redirect URIs with a clean known-good set: both direct `localhost` URLs and proxy HTTPS URLs. |
+### Changing the hostname
 
-### Examples
+To use a different hostname instead of `localhost`, edit these variables at the top of the script:
 
 ```powershell
-# Add proxy URLs to existing redirect URIs (additive, safe)
-pwsh -File scripts/keycloak-redirects.ps1
+$LocalHost = "localhost"    # direct access URLs
+$ProxyDomain = "localhost"  # proxy URLs
+```
 
-# Same as above, explicit
-pwsh -File scripts/keycloak-redirects.ps1 -Mode Merge
-
-# Reset all redirect URIs to known-good baseline
-pwsh -File scripts/keycloak-redirects.ps1 -Mode Fix
+For example, to use `camunda.local`:
+```powershell
+$LocalHost = "camunda.local"
+$ProxyDomain = "camunda.local"
 ```
 
 ### Prerequisites
