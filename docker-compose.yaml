@@ -454,6 +454,11 @@ services:
       - "443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./dashboard:/srv/dashboard:ro
+    environment:
+      - HOST=${HOST}
+      - CAMUNDA_VERSION=${CAMUNDA_VERSION}
+      - STAGE=${STAGE}
     networks:
       - camunda-platform
       - identity-network

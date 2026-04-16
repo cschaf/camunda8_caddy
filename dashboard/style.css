@@ -1,0 +1,311 @@
+:root {
+    --camunda-orange: #fc5d0d;
+    --camunda-orange-light: #fff0e8;
+    --camunda-dark: #0b1f35;
+    --camunda-gray: #4b5563;
+    --camunda-light-gray: #f3f4f6;
+    --camunda-border: #e5e7eb;
+    --camunda-text: #111827;
+    --camunda-muted: #6b7280;
+    --bg: #ffffff;
+    --card-bg: #ffffff;
+    --shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+    --shadow-hover: 0 12px 28px rgba(0, 0, 0, 0.12);
+    --radius: 10px;
+}
+
+body.dark {
+    --camunda-orange-light: #3d230f;
+    --camunda-dark: #f1f5f9;
+    --camunda-gray: #94a3b8;
+    --camunda-light-gray: #1f2937;
+    --camunda-border: #374151;
+    --camunda-text: #f9fafb;
+    --camunda-muted: #9ca3af;
+    --bg: #0f172a;
+    --card-bg: #1e293b;
+    --shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+    --shadow-hover: 0 12px 28px rgba(0, 0, 0, 0.4);
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--camunda-text);
+    min-height: 100vh;
+    transition: background 0.2s ease, color 0.2s ease;
+}
+
+.page {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.top-bar {
+    height: 4px;
+    background: var(--camunda-orange);
+    width: 100%;
+}
+
+.container {
+    max-width: 1100px;
+    width: 100%;
+    margin: 0 auto;
+    padding: 48px 24px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+header {
+    margin-bottom: 56px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 24px;
+    flex-wrap: wrap;
+}
+
+.brand {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.logo {
+    width: 48px;
+    height: 48px;
+    flex-shrink: 0;
+}
+
+.logo svg,
+.logo img {
+    width: 100%;
+    height: 100%;
+}
+
+.brand-text h1 {
+    font-size: 1.75rem;
+    font-weight: 700;
+    line-height: 1.1;
+    color: var(--camunda-dark);
+    letter-spacing: -0.02em;
+    transition: color 0.2s ease;
+}
+
+.brand-text .subtitle {
+    font-size: 0.95rem;
+    font-weight: 500;
+    color: var(--camunda-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    transition: color 0.2s ease;
+}
+
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.meta {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.badge {
+    display: inline-flex;
+    align-items: center;
+    background: var(--camunda-light-gray);
+    color: var(--camunda-gray);
+    font-size: 0.8rem;
+    font-weight: 600;
+    padding: 5px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--camunda-border);
+    transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+.badge.stage {
+    background: var(--camunda-orange);
+    color: #ffffff;
+    border-color: var(--camunda-orange);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.theme-toggle {
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
+    border: 1px solid var(--camunda-border);
+    background: var(--camunda-light-gray);
+    color: var(--camunda-gray);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+.theme-toggle:hover {
+    border-color: var(--camunda-orange);
+    color: var(--camunda-orange);
+}
+
+.theme-toggle svg {
+    width: 20px;
+    height: 20px;
+}
+
+.theme-toggle .icon-sun {
+    display: none;
+}
+
+body.dark .theme-toggle .icon-moon {
+    display: none;
+}
+
+body.dark .theme-toggle .icon-sun {
+    display: block;
+}
+
+.grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 20px;
+    margin-bottom: 64px;
+}
+
+.card {
+    position: relative;
+    background: var(--card-bg);
+    border-radius: var(--radius);
+    padding: 28px;
+    text-decoration: none;
+    color: inherit;
+    box-shadow: var(--shadow);
+    transition: all 0.2s ease;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    border: 1px solid var(--camunda-border);
+    overflow: hidden;
+}
+
+.card:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--shadow-hover);
+    border-color: var(--camunda-orange);
+}
+
+.card-accent {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: var(--camunda-orange);
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.card:hover .card-accent {
+    opacity: 1;
+}
+
+.card .icon {
+    width: 44px;
+    height: 44px;
+    background: var(--camunda-orange-light);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 16px;
+    color: var(--camunda-orange);
+    transition: background 0.2s ease;
+}
+
+.card .icon svg {
+    width: 22px;
+    height: 22px;
+}
+
+.card h2 {
+    font-size: 1.15rem;
+    font-weight: 600;
+    margin-bottom: 4px;
+    color: var(--camunda-dark);
+    transition: color 0.2s ease;
+}
+
+.card p {
+    font-size: 0.9rem;
+    color: var(--camunda-muted);
+    margin-bottom: 16px;
+    transition: color 0.2s ease;
+}
+
+.card .url {
+    font-size: 0.8rem;
+    color: var(--camunda-orange);
+    font-weight: 500;
+    margin-top: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.card .url::after {
+    content: "→";
+    transition: transform 0.2s ease;
+}
+
+.card:hover .url::after {
+    transform: translateX(3px);
+}
+
+footer {
+    text-align: center;
+    font-size: 0.8rem;
+    color: var(--camunda-muted);
+    margin-top: auto;
+    padding-top: 24px;
+    transition: color 0.2s ease;
+}
+
+@media (max-width: 640px) {
+    header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .header-actions {
+        width: 100%;
+        justify-content: space-between;
+    }
+}
+
+@media (max-width: 480px) {
+    .container {
+        padding: 32px 16px;
+    }
+
+    .brand-text h1 {
+        font-size: 1.5rem;
+    }
+
+    .grid {
+        grid-template-columns: 1fr;
+    }
+}

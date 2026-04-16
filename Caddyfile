@@ -1,6 +1,13 @@
 # Caddyfile for Camunda Compose NVL - Reverse Proxy
 # Development only - not for production
 
+# Dashboard (landing page for localhost root)
+localhost {
+    root * /srv/dashboard
+    file_server
+    templates
+}
+
 # Keycloak
 keycloak.localhost {
     # Intercept the OIDC check_session_iframe endpoint and return a mock that always
