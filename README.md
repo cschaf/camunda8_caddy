@@ -18,11 +18,17 @@ Open `.env` and set `HOST` to your desired domain. All services will be availabl
 
 ### 2. Configure hostname, Caddyfile, and hosts
 
+**Linux / macOS:**
+```bash
+bash scripts/setup-host.sh
+```
+
+**Windows (PowerShell):**
 ```powershell
 pwsh -File scripts/setup-host.ps1
 ```
 
-This script reads `HOST` from `.env` and updates:
+Both scripts read `HOST` from `.env` and update:
 - `Caddyfile` — replaces all `*.localhost` domain names with `*.{HOST}`
 - hosts file — adds `127.0.0.1` entries for all services (keycloak, identity, console, optimize, orchestration, webmodeler)
 
@@ -51,11 +57,17 @@ docker compose ps
 
 After the cluster is up, run:
 
+**Linux / macOS:**
+```bash
+bash scripts/keycloak-redirects.sh
+```
+
+**Windows (PowerShell):**
 ```powershell
 pwsh -File scripts/keycloak-redirects.ps1
 ```
 
-This script reads `HOST` from `.env` and adds the correct HTTPS proxy redirect URIs to Keycloak for all clients. Safe to re-run.
+Both scripts read `HOST` from `.env` and add the correct HTTPS proxy redirect URIs to Keycloak for all clients. Safe to re-run.
 
 ### 5. Access the services
 
@@ -77,9 +89,9 @@ This script reads `HOST` from `.env` and adds the correct HTTPS proxy redirect U
 All configuration is driven by the `HOST` variable in `.env`. To switch domain:
 
 1. Edit `.env` and set `HOST=your-new-domain` (e.g. `camunda.local`)
-2. Run `pwsh -File scripts/setup-host.ps1` to update Caddyfile and hosts file
+2. Run `scripts/setup-host.sh` (Linux/macOS) or `pwsh -File scripts/setup-host.ps1` (Windows) to update Caddyfile and hosts file
 3. Start/restart the cluster: `docker compose up -d` (or `docker compose restart` if already running)
-4. Re-run `pwsh -File scripts/keycloak-redirects.ps1` to update Keycloak redirect URIs
+4. Re-run `scripts/keycloak-redirects.sh` (Linux/macOS) or `pwsh -File scripts/keycloak-redirects.ps1` (Windows) to update Keycloak redirect URIs
 
 ---
 
@@ -87,10 +99,9 @@ All configuration is driven by the `HOST` variable in `.env`. To switch domain:
 
 Keycloak strictly validates redirect URIs — the browser will only be redirected to URLs explicitly allowlisted for each client. If a redirect URI is missing or wrong, you will see "Invalid redirect_uri" errors after login.
 
-The redirect URI script (`keycloak-redirects.ps1`) adds both direct `localhost` URLs and proxy HTTPS URLs. It reads `HOST` from `.env` automatically.
+The redirect URI scripts (`keycloak-redirects.sh` / `keycloak-redirects.ps1`) add both direct `localhost` URLs and proxy HTTPS URLs. They read `HOST` from `.env` automatically.
 
 ### Prerequisites
 
-- Keycloak must be accessible at `keycloak.{HOST}` (the script's default `-KeycloakHost` is `keycloak.localhost` — override with `-KeycloakHost` if your HOST is different)
-- Default admin credentials: `admin` / `admin` (configure with `-AdminUser` / `-AdminPassword`)
-- Requires PowerShell Core (`pwsh`)
+- Keycloak must be accessible at `keycloak.{HOST}` (override with `--keycloak-host` or `KEYCLOAK_HOST` env var)
+- Default admin credentials: `admin` / `admin` (configure with `--admin-user` / `--admin-password` or `ADMIN_USER` / `ADMIN_PASSWORD` env vars)
