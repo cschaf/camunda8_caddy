@@ -9,7 +9,7 @@
 #     with the correct HTTPS proxy URLs so that all services work when accessed via
 #     https://*.localhost behind Caddy.
 #
-#     Keycloak caches redirect URIs strictly — if a browser gets redirected to a URI
+#     Keycloak caches redirect URIs strictly  -  if a browser gets redirected to a URI
 #     that is not in the client's allowed list, you get "Invalid redirect_uri" and the
 #     login fails.
 #
@@ -205,7 +205,7 @@ update_client_redirect_uris() {
     for uri in "${new_uris[@]}"; do
         # Check if URI already exists in current list
         if ! echo "$current_uris" | grep -q "\"$uri\""; then
-            all_uris="${all_uris%,]},"\"$uri\"]"
+            all_uris="${all_uris%,]},\"${uri}\"]"
         fi
     done
 
@@ -214,7 +214,7 @@ update_client_redirect_uris() {
         echo "    $uri"
     done
 
-    # Update client — remove rootUrl to avoid "Resource does not allow updating" errors
+    # Update client - remove rootUrl to avoid "Resource does not allow updating" errors
     local updated_client
     updated_client=$(echo "$current_client" | sed 's/"rootUrl"[[:space:]]*:[[:space:]]*"[^"]*",[[:space:]]*//')
     updated_client=$(echo "$updated_client" | sed 's/"redirectUris"[[:space:]]*:[[:space:]]*\[[^]]*\]/"redirectUris":'"$all_uris"'/')
