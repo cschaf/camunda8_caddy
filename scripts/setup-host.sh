@@ -104,7 +104,8 @@ echo "Updated Caddyfile (replaced *.localhost -> *.$HOST)"
 if [[ $USE_CUSTOM_TLS -eq 1 ]]; then
     # Insert "tls <cert> <key>" after the opening brace of each site block
     # Pattern: domain.com {  ->  domain.com {\n    tls ...
-    sed -i "s/^\(\s*[a-zA-Z0-9.-]\+\s*{\)\s*$/\1\n    tls $FULLCHAIN_PEM $PRIVATEKEY_PEM/" "$CADDYFILE"
+    # Use | as delimiter to avoid conflicts with / in file paths
+    sed -i "s|^\([[:space:]]*[a-zA-Z0-9.-]\+[[:space:]]*{[[:space:]]*\)$|\\1\n    tls $FULLCHAIN_PEM $PRIVATEKEY_PEM|" "$CADDYFILE"
     echo "Added tls directive to Caddyfile"
 fi
 
