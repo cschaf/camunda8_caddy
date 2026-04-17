@@ -41,9 +41,15 @@ $CaddyfilePath = Join-Path $PSScriptRoot "..\Caddyfile"
 $CaddyfileContent = Get-Content $CaddyfilePath -Raw
 $updated = $CaddyfileContent -replace '\b(\w+)\.localhost\b', "`$1.$EnvHost"
 $updated = $updated -replace '(?m)^localhost\b', $EnvHost
-# Also replace any existing $EnvHost value (so re-runs with different HOST work)
-if ($EnvHost) {
-    $updated = $updated -replace 'localhost', $EnvHost
+
+# Also replace any existing non-localhost hostname (e.g., camunda.dev.local -> camunda.prd.local)
+# Extract the hostname from the first non-comment, non-blank site block line
+$currentHost = ($CaddyfileContent -split "`n" | Where-Object { $_ -notmatch '^\s*#' -and $_ -notmatch '^\s*$' } | Select-Object -First 1) -replace '\s*\{.*', ''
+if ($currentHost -and $currentHost -ne $EnvHost) {
+    $escaped = [regex]::Escape($currentHost)
+    # Replace subdomains (keycloak.oldhost -> keycloak.newhost) and bare hostname (oldhost -> newhost)
+    $updated = $updated -replace "\b(\w+)\.$escaped", "`$1.$EnvHost"
+    $updated = $updated -replace "\b$escaped\b", $EnvHost
 }
 
 # Add tls directive to each site block if custom certs are provided
