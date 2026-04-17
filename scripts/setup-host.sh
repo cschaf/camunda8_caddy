@@ -100,9 +100,14 @@ fi
 sed -i "s/\b\([a-z]\+\)\.localhost\b/\1.$HOST/g" "$CADDYFILE"
 sed -i "s/^localhost\b/$HOST/" "$CADDYFILE"
 
-# Also replace any existing $HOST value (so re-runs with different HOST work)
-if [[ -n "$HOST" ]]; then
-    sed -i "s/\b[a-zA-Z0-9*][a-zA-Z0-9.*-]*\.${HOST}\b/$HOST/g" "$CADDYFILE"
+# Also replace any existing non-localhost hostname (e.g., camunda.dev.local -> camunda.prd.local)
+# Extract whatever hostname appears after the first non-comment, non-blank line with a site block
+current_host=$(grep -v '^\s*#' "$CADDYFILE" | grep -v '^\s*$' | head -1 | sed 's/\s*{.*//')
+if [[ -n "$current_host" && "$current_host" != "$HOST" ]]; then
+    old_escaped="${current_host//./\\.}"
+    # Replace subdomains (keycloak.oldhost -> keycloak.newhost) and bare hostname (oldhost -> newhost)
+    sed -i "s/\b\([a-z]\+\)\.${old_escaped}/\1.$HOST/g" "$CADDYFILE"
+    sed -i "s/\b${old_escaped}/$HOST/g" "$CADDYFILE"
 fi
 echo "Updated Caddyfile (replaced *.localhost -> *.$HOST)"
 
