@@ -2,7 +2,7 @@
 # Development only - not for production
 
 # Dashboard (landing page)
-BBC-100030.bbc.local {
+bbc-100030.bbc.local {
     tls /certs/_wildcard.BBC-100030.bbc.local+1.pem /certs/_wildcard.BBC-100030.bbc.local+1-key.pem
     root * /srv/dashboard
     file_server
@@ -10,7 +10,7 @@ BBC-100030.bbc.local {
 }
 
 # Keycloak
-keycloak.BBC-100030.bbc.local {
+keycloak.bbc-100030.bbc.local {
     tls /certs/_wildcard.BBC-100030.bbc.local+1.pem /certs/_wildcard.BBC-100030.bbc.local+1-key.pem
     # Intercept the OIDC check_session_iframe endpoint and return a mock that always
     # reports "unchanged". Chrome 120+ blocks cross-origin JavaScript cookie access
@@ -27,7 +27,7 @@ keycloak.BBC-100030.bbc.local {
 }
 
 # Identity
-identity.BBC-100030.bbc.local {
+identity.bbc-100030.bbc.local {
     tls /certs/_wildcard.BBC-100030.bbc.local+1.pem /certs/_wildcard.BBC-100030.bbc.local+1-key.pem
     @options {
         method OPTIONS
@@ -42,7 +42,7 @@ identity.BBC-100030.bbc.local {
 
     # Fonts are fetched with sec-fetch-mode: cors by the browser (CSS @font-face),
     # but Identity's Spring Security rejects them because it doesn't recognise
-    # https://identity.BBC-100030.bbc.local as an allowed CORS origin. Strip the Origin header
+    # https://identity.bbc-100030.bbc.local as an allowed CORS origin. Strip the Origin header
     # so Spring Security serves them as plain static files.
     @static {
         path /static/*
@@ -57,22 +57,22 @@ identity.BBC-100030.bbc.local {
 }
 
 # Console
-console.BBC-100030.bbc.local {
+console.bbc-100030.bbc.local {
     tls /certs/_wildcard.BBC-100030.bbc.local+1.pem /certs/_wildcard.BBC-100030.bbc.local+1-key.pem
     reverse_proxy console:8080
 }
 
 # Optimize
-optimize.BBC-100030.bbc.local {
+optimize.bbc-100030.bbc.local {
     tls /certs/_wildcard.BBC-100030.bbc.local+1.pem /certs/_wildcard.BBC-100030.bbc.local+1-key.pem
     reverse_proxy optimize:8090 {
         header_up X-Forwarded-Proto https
-        header_up X-Forwarded-Host optimize.BBC-100030.bbc.local
+        header_up X-Forwarded-Host optimize.bbc-100030.bbc.local
     }
 }
 
 # Orchestration (Operate/Tasklist)
-orchestration.BBC-100030.bbc.local {
+orchestration.bbc-100030.bbc.local {
     tls /certs/_wildcard.BBC-100030.bbc.local+1.pem /certs/_wildcard.BBC-100030.bbc.local+1-key.pem
     @options {
         method OPTIONS
@@ -98,7 +98,7 @@ orchestration.BBC-100030.bbc.local {
 }
 
 # Web Modeler
-webmodeler.BBC-100030.bbc.local {
+webmodeler.bbc-100030.bbc.local {
     tls /certs/_wildcard.BBC-100030.bbc.local+1.pem /certs/_wildcard.BBC-100030.bbc.local+1-key.pem
     # Pusher WebSocket connections (real-time collaboration)
     handle /app/* {

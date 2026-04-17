@@ -16,6 +16,10 @@ cp .env.example .env
 
 Open `.env` and set `HOST` to your desired domain. All services will be available at `{subdomain}.{HOST}` (e.g. `https://orchestration.localhost` if `HOST=localhost`).
 
+> **Use lowercase for `HOST`:** Browsers normalize domain names to lowercase in HTTP Host headers, and Keycloak validates redirect URIs with case-sensitive string matching. If `HOST` contains uppercase letters (e.g. `BBC-100030.bbc.local`), services that derive their `redirect_uri` from the incoming Host header will produce a lowercase URI that does not match the uppercase URI registered in Keycloak, causing "Invalid parameter: redirect_uri" errors. Always set `HOST` to lowercase (e.g. `bbc-100030.bbc.local`).
+>
+> **Certificate file paths are independent of HOST:** `FULLCHAIN_PEM` and `PRIVATEKEY_PEM` in `.env` are literal file paths to the actual certificate files on disk. If your certificate files have uppercase characters in their names (e.g. `_wildcard.BBC-100030.bbc.local+1.pem`), keep those paths as-is — only the `HOST` value itself needs to be lowercase.
+
 ### 2. Configure hostname, Caddyfile, and hosts
 
 **Linux / macOS:**
