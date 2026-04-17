@@ -132,26 +132,31 @@ declare -A CALLBACK_PATHS=(
 ALL_CLIENTS="${!LOCAL_PORTS[@]}"
 
 # ---------------------------------------------------------------------------
-# Helper functions
+# Helper functions (Python for reliable JSON handling)
 # ---------------------------------------------------------------------------
+
+python_escape_uri() {
+    python3 -c "import json,sys; print(json.dumps(sys.argv[1]))" "$1"
+}
 
 get_admin_token() {
     local token_url="https://${KEYCLOAK_HOST}/auth/realms/master/protocol/openid-connect/token"
     local token_body="grant_type=password&username=${ADMIN_USER}&password=${ADMIN_PASSWORD}&client_id=admin-cli"
 
-    echo "Getting admin token from Keycloak..."
-
-    local response
-    response=$(curl -s -k -X POST "$token_url" \
-        -H "Content-Type: application/x-www-form-urlencoded" \
-        -d "$token_body")
-
     local access_token
-    access_token=$(echo "$response" | grep -o '"access_token"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"access_token"[[:space:]]*:[[:space:]]*"\([^"]*\)"/\1/')
+    access_token=$(curl -s -k -X POST "$token_url" \
+        -H "Content-Type: application/x-www-form-urlencoded" \
+        -d "$token_body" | python3 -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    print(data.get('access_token', ''))
+except:
+    print('')
+")
 
     if [[ -z "$access_token" ]]; then
-        echo "ERROR: Failed to get admin token. Check KEYCLOAK_HOST and admin credentials."
-        echo "Response: $response"
+        echo "ERROR: Failed to get admin token. Check KEYCLOAK_HOST and admin credentials." >&2
         exit 1
     fi
 
@@ -163,78 +168,79 @@ update_client_redirect_uris() {
     local localhost_uri="$2"
     local proxy_uri="$3"
     local bearer_token="$4"
-    local new_uris=("$localhost_uri" "$proxy_uri")
 
-    local clients_url="https://${KEYCLOAK_HOST}/auth/admin/realms/${REALM}/clients?clientId=${client_id}"
+    # Use Python to fetch client, extract data, and update via Keycloak API
+    python3 << EOF
+import json
+import sys
+import subprocess
+import urllib.request
+import urllib.parse
 
-    local clients_response
-    clients_response=$(curl -s -k -X GET "$clients_url" \
-        -H "Authorization: Bearer ${bearer_token}" \
-        -H "Accept: application/json")
+KEYCLOAK_HOST = "$KEYCLOAK_HOST"
+REALM = "$REALM"
+CLIENT_ID = "$client_id"
+LOCALHOST_URI = "$localhost_uri"
+PROXY_URI = "$proxy_uri"
+BEARER_TOKEN = "$bearer_token"
 
-    # Check if client was found
-    if [[ "$clients_response" == "[]" ]] || [[ -z "$clients_response" ]]; then
-        echo "  Client '$client_id' not found, skipping..."
-        return
-    fi
+def api_get(path):
+    url = f"https://{KEYCLOAK_HOST}/auth/admin/realms/{REALM}/{path}"
+    req = urllib.request.Request(url)
+    req.add_header("Authorization", f"Bearer {BEARER_TOKEN}")
+    req.add_header("Accept", "application/json")
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        return json.loads(resp.read())
 
-    # Extract client ID (first match)
-    local client_uuid
-    client_uuid=$(echo "$clients_response" | grep -o '"id"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"\([^"]*\)"/\1/')
+def api_put(path, data):
+    url = f"https://{KEYCLOAK_HOST}/auth/admin/realms/{REALM}/{path}"
+    req = urllib.request.Request(url, data=json.dumps(data).encode(), method="PUT")
+    req.add_header("Authorization", f"Bearer {BEARER_TOKEN}")
+    req.add_header("Content-Type", "application/json")
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            if resp.status in (200, 204):
+                return {}
+            return json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        err_body = e.read().decode() if e.fp else ""
+        raise Exception(f"HTTP {e.code}: {err_body}")
 
-    if [[ -z "$client_uuid" ]]; then
-        echo "  Client '$client_id' not found, skipping..."
-        return
-    fi
+# Find client
+clients = api_get(f"clients?clientId={CLIENT_ID}")
+if not clients:
+    print(f"  Client '{CLIENT_ID}' not found, skipping...")
+    sys.exit(0)
 
-    echo "  Found client with id: $client_uuid"
+client = clients[0]
+client_uuid = client["id"]
+print(f"  Found client with id: {client_uuid}")
 
-    local client_url="https://${KEYCLOAK_HOST}/auth/admin/realms/${REALM}/clients/${client_uuid}"
-    local current_client
-    current_client=$(curl -s -k -X GET "$client_url" \
-        -H "Authorization: Bearer ${bearer_token}" \
-        -H "Accept: application/json")
+# Get current client details
+current = api_get(f"clients/{client_uuid}")
 
-    # Extract current redirect URIs
-    local current_uris
-    current_uris=$(echo "$current_client" | grep -o '"redirectUris"[[:space:]]*:[[:space:]]*\[[^]]*\]' | sed 's/"redirectUris"[[:space:]]*:[[:space:]]*//')
+# Current URIs
+current_uris = current.get("redirectUris", [])
+print("  Current redirect URIs:")
+for u in current_uris:
+    print(f"    {u}")
 
-    echo "  Current redirect URIs:"
-    echo "$current_uris" | grep -o '"[^"]*"' | while read -r uri; do
-        echo "    $uri"
-    done
+# Build new URIs (deduplicated)
+all_uris = list(set(current_uris + [LOCALHOST_URI, PROXY_URI]))
+print("  New redirect URIs:")
+for u in all_uris:
+    print(f"    {u}")
 
-    # Build new URIs list (current + new, deduplicated)
-    local all_uris="$current_uris"
-    for uri in "${new_uris[@]}"; do
-        # Check if URI already exists in current list
-        if ! echo "$current_uris" | grep -q "\"$uri\""; then
-            all_uris="${all_uris%,]},\"${uri}\"]"
-        fi
-    done
+# Update client - remove rootUrl to avoid "Resource does not allow updating" errors
+updated = {k: v for k, v in current.items() if k != "rootUrl"}
+updated["redirectUris"] = all_uris
 
-    echo "  New redirect URIs:"
-    echo "$all_uris" | grep -o '"[^"]*"' | while read -r uri; do
-        echo "    $uri"
-    done
-
-    # Update client - remove rootUrl to avoid "Resource does not allow updating" errors
-    local updated_client
-    updated_client=$(echo "$current_client" | sed 's/"rootUrl"[[:space:]]*:[[:space:]]*"[^"]*",[[:space:]]*//')
-    updated_client=$(echo "$updated_client" | sed 's/"redirectUris"[[:space:]]*:[[:space:]]*\[[^]]*\]/"redirectUris":'"$all_uris"'/')
-
-    local update_response
-    update_response=$(curl -s -k -X PUT "$client_url" \
-        -H "Authorization: Bearer ${bearer_token}" \
-        -H "Content-Type: application/json" \
-        -d "$updated_client")
-
-    # Check for errors in response
-    if echo "$update_response" | grep -qi '"error"'; then
-        echo "  ERROR updating client: $update_response"
-    else
-        echo "  Updated!"
-    fi
+try:
+    api_put(f"clients/{client_uuid}", updated)
+    print("  Updated!")
+except Exception as e:
+    print(f"  ERROR updating client: {e}")
+EOF
 }
 
 # ---------------------------------------------------------------------------
