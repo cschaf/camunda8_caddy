@@ -193,11 +193,11 @@ function Add-UserRoleMappings {
 }
 
 # ---------------------------------------------------------------------------
-# Role mappings
+# Role mappings — specify exact role names from Keycloak
 # ---------------------------------------------------------------------------
 $roleMap = @{
-    NormalUser = @("Orchestration", "Optimize", "Web Modeler", "Console")
-    Admin      = @("ManagementIdentity", "Orchestration", "Optimize", "Web Modeler", "Web Modeler Admin", "Console")
+    NormalUser = @("Account")  # Normal users: no Keycloak/Identity access
+    Admin      = @("admin", "Account", "uma_authorization", "camel-realm-management")
 }
 
 # ---------------------------------------------------------------------------
@@ -227,19 +227,14 @@ Start-Sleep -Milliseconds 500
 $userId = Get-UserId -BaseUrl $KeycloakHost -Headers $headers -Realm $Realm -Username $Username
 Write-Host "User created with ID: $userId"
 
-# Assign roles one at a time
+# Assign roles one at a time using role name only
 $roleNames = $roleMap[$Role]
 foreach ($roleName in $roleNames) {
-    $role = Get-RealmRole -BaseUrl $KeycloakHost -Headers $headers -Realm $Realm -RoleName $roleName
     try {
         $url = "https://${KeycloakHost}/auth/admin/realms/${Realm}/users/${userId}/role-mappings/realm"
         $body = @(@{
-            id          = $role.id
-            name        = $role.name
-            description = $role.description
-            composite   = $role.composite
-            clientRole  = $role.clientRole
-            containerId = $role.containerId
+            name       = $roleName
+            containerId = $Realm
         }) | ConvertTo-Json -Depth 10
         Invoke-RestMethod -Uri $url -Method Post -Headers $headers -ContentType "application/json" -Body $body -SkipCertificateCheck -ErrorAction Stop
         Write-Host "  Assigned role: $roleName"
