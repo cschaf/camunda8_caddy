@@ -196,7 +196,7 @@ function Add-UserRoleMappings {
 # Role mappings — specify exact role names from Keycloak
 # ---------------------------------------------------------------------------
 $roleMap = @{
-    NormalUser = @("Default user role", "Orchestration", "Optimize", "Web Modeler", "Console")
+    NormalUser = @("Default user role", "Orchestration", "Optimize", "Web Modeler")
     Admin      = @("Web Modeler", "ManagementIdentity", "Default user role", "Orchestration", "Optimize", "Web Modeler Admin", "Console")
 }
 
