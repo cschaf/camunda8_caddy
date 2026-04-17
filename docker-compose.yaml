@@ -25,10 +25,10 @@ services:
       CAMUNDA_SECURITY_AUTHENTICATION_OIDC_AUDIENCES_0: orchestration
       CAMUNDA_SECURITY_AUTHENTICATION_OIDC_AUDIENCES_1: orchestration-api
       CAMUNDA_SECURITY_AUTHENTICATION_OIDC_AUDIENCES_2: web-modeler-api
-      CAMUNDA_SECURITY_AUTHENTICATION_OIDC_AUTHORIZATIONURI: https://keycloak.localhost/auth/realms/camunda-platform/protocol/openid-connect/auth
+      CAMUNDA_SECURITY_AUTHENTICATION_OIDC_AUTHORIZATIONURI: https://keycloak.${HOST}/auth/realms/camunda-platform/protocol/openid-connect/auth
       CAMUNDA_SECURITY_AUTHENTICATION_OIDC_TOKENURI: http://${KEYCLOAK_HOST}:18080/auth/realms/camunda-platform/protocol/openid-connect/token
       CAMUNDA_SECURITY_AUTHENTICATION_OIDC_JWKSETURI: http://${KEYCLOAK_HOST}:18080/auth/realms/camunda-platform/protocol/openid-connect/certs
-      CAMUNDA_SECURITY_AUTHENTICATION_OIDC_REDIRECTURI: https://orchestration.localhost/sso-callback
+      CAMUNDA_SECURITY_AUTHENTICATION_OIDC_REDIRECTURI: https://orchestration.${HOST}/sso-callback
       CAMUNDA_SECURITY_AUTHENTICATION_OIDC_USERNAMECLAIM: preferred_username
       CAMUNDA_SECURITY_AUTHENTICATION_OIDC_CLIENTIDCLAIM: client_id
       ZEEBE_BROKER_GATEWAY_SECURITY_AUTHENTICATION_IDENTITY_ISSUERBACKENDURL: http://${KEYCLOAK_HOST}:18080/auth/realms/camunda-platform
@@ -100,7 +100,7 @@ services:
       OPTIMIZE_ELASTICSEARCH_HTTP_PORT: "9200"
       SPRING_PROFILES_ACTIVE: ccsm
       # Identity integration - URLs and credentials
-      CAMUNDA_OPTIMIZE_IDENTITY_ISSUER_URL: https://keycloak.localhost/auth/realms/camunda-platform
+      CAMUNDA_OPTIMIZE_IDENTITY_ISSUER_URL: https://keycloak.${HOST}/auth/realms/camunda-platform
       CAMUNDA_OPTIMIZE_IDENTITY_ISSUER_BACKEND_URL: http://${KEYCLOAK_HOST}:18080/auth/realms/camunda-platform
       CAMUNDA_OPTIMIZE_IDENTITY_CLIENTID: optimize
       CAMUNDA_OPTIMIZE_IDENTITY_CLIENTSECRET: ${OPTIMIZE_CLIENT_SECRET}
@@ -327,9 +327,9 @@ services:
       RESTAPI_PUSHER_APP_ID: ${WEBMODELER_PUSHER_APP_ID}
       RESTAPI_PUSHER_KEY: ${WEBMODELER_PUSHER_KEY}
       RESTAPI_PUSHER_SECRET: ${WEBMODELER_PUSHER_SECRET}
-      RESTAPI_OAUTH2_TOKEN_ISSUER: https://keycloak.localhost/auth/realms/camunda-platform
+      RESTAPI_OAUTH2_TOKEN_ISSUER: https://keycloak.${HOST}/auth/realms/camunda-platform
       RESTAPI_OAUTH2_TOKEN_ISSUER_BACKEND_URL: http://${KEYCLOAK_HOST}:18080/auth/realms/camunda-platform
-      RESTAPI_SERVER_URL: https://webmodeler.localhost
+      RESTAPI_SERVER_URL: https://webmodeler.${HOST}
       RESTAPI_MAIL_HOST: mailpit
       RESTAPI_MAIL_PORT: 1025
       RESTAPI_MAIL_ENABLE_TLS: "false"
@@ -369,20 +369,20 @@ services:
     environment:
       RESTAPI_HOST: web-modeler-restapi
       SERVER_HTTPS_ONLY: "false"
-      SERVER_URL: https://webmodeler.localhost
+      SERVER_URL: https://webmodeler.${HOST}
       PUSHER_APP_ID: ${WEBMODELER_PUSHER_APP_ID}
       PUSHER_KEY: ${WEBMODELER_PUSHER_KEY}
       PUSHER_SECRET: ${WEBMODELER_PUSHER_SECRET}
       PUSHER_HOST: web-modeler-websockets
       PUSHER_PORT: "8060"
-      CLIENT_PUSHER_HOST: webmodeler.localhost
+      CLIENT_PUSHER_HOST: webmodeler.${HOST}
       CLIENT_PUSHER_PORT: "443"
       CLIENT_PUSHER_FORCE_TLS: "true"
       CLIENT_PUSHER_KEY: ${WEBMODELER_PUSHER_KEY}
       OAUTH2_CLIENT_ID: web-modeler
       OAUTH2_JWKS_URL: http://${KEYCLOAK_HOST}:18080/auth/realms/camunda-platform/protocol/openid-connect/certs
       OAUTH2_TOKEN_AUDIENCE: web-modeler-api
-      OAUTH2_TOKEN_ISSUER: https://keycloak.localhost/auth/realms/camunda-platform
+      OAUTH2_TOKEN_ISSUER: https://keycloak.${HOST}/auth/realms/camunda-platform
       IDENTITY_BASE_URL: http://identity:8084/
       PLAY_ENABLED: "true"
     networks:
@@ -422,7 +422,7 @@ services:
       - "9100:9100"
     environment:
       NODE_ENV: production
-      KEYCLOAK_BASE_URL: https://keycloak.localhost/auth
+      KEYCLOAK_BASE_URL: https://keycloak.${HOST}/auth
       KEYCLOAK_INTERNAL_BASE_URL: http://${KEYCLOAK_HOST}:18080/auth
       KEYCLOAK_REALM: camunda-platform
       CAMUNDA_IDENTITY_CLIENT_ID: console
