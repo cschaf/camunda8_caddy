@@ -193,8 +193,8 @@ $Realm = "camunda-platform"
 # Read credentials from .env
 $AdminUser = Get-EnvValue -Key "KEYCLOAK_ADMIN_USER"
 $AdminPassword = Get-EnvValue -Key "KEYCLOAK_ADMIN_PASSWORD"
-$Host = Get-EnvValue -Key "HOST"
-$KeycloakHost = "keycloak.${Host}"
+$CamundaHost = Get-EnvValue -Key "HOST"
+$KeycloakHost = "keycloak.${CamundaHost}"
 
 $headers = @{ Authorization = "Bearer (placeholder)" }
 
@@ -212,23 +212,19 @@ Start-Sleep -Milliseconds 500
 $userId = Get-UserId -BaseUrl $KeycloakHost -Headers $headers -Realm $Realm -Username $Username
 Write-Host "User created with ID: $userId"
 
-# Assign roles
+# Assign roles one at a time to avoid PowerShell array coercion issues
 $roleNames = $roleMap[$Role]
-$rolesToAssign = @()
 foreach ($roleName in $roleNames) {
     $role = Get-RealmRole -BaseUrl $KeycloakHost -Headers $headers -Realm $Realm -RoleName $roleName
-    $rolesToAssign += $role
-    Write-Host "  Found role: $roleName"
-}
-
-try {
-    Add-UserRoleMappings -BaseUrl $KeycloakHost -Headers $headers -Realm $Realm -UserId $userId -Roles $rolesToAssign
-    Write-Host "Roles assigned successfully."
-}
-catch {
-    Write-Host "Role assignment failed, rolling back user..."
-    Remove-CamundaUser -BaseUrl $KeycloakHost -Headers $headers -Realm $Realm -UserId $userId
-    throw "Role assignment failed and user rolled back: $_"
+    try {
+        Add-UserRoleMappings -BaseUrl $KeycloakHost -Headers $headers -Realm $Realm -UserId $userId -Roles @($role)
+        Write-Host "  Assigned role: $roleName"
+    }
+    catch {
+        Write-Host "  Failed to assign role: $roleName"
+        Remove-CamundaUser -BaseUrl $KeycloakHost -Headers $headers -Realm $Realm -UserId $userId
+        throw "Role assignment failed and user rolled back: $_"
+    }
 }
 
 Write-Host "`nDone! User '$Username' created with role '$Role'."
