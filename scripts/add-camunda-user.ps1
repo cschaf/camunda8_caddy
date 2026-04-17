@@ -159,7 +159,16 @@ function Get-RealmRole {
 
     $url = "https://${BaseUrl}/auth/admin/realms/${Realm}/roles/${RoleName}"
     try {
-        return Invoke-RestMethod -Uri $url -Method Get -Headers $Headers -SkipCertificateCheck
+        $response = Invoke-RestMethod -Uri $url -Method Get -Headers $Headers -SkipCertificateCheck -ErrorAction Stop
+        # Return only the fields Keycloak needs as a plain hashtable
+        return @{
+            id          = $response.id
+            name        = $response.name
+            description = $response.description
+            composite   = [bool]$response.composite
+            clientRole  = [bool]$response.clientRole
+            containerId = $response.containerId
+        }
     }
     catch {
         throw "Role '$RoleName' not found in Keycloak: $_"
@@ -175,22 +184,12 @@ function Add-UserRoleMappings {
         [hashtable]$Headers,
         [string]$Realm,
         [string]$UserId,
-        [object]$Roles
+        [hashtable]$Role
     )
 
     $url = "https://${BaseUrl}/auth/admin/realms/${Realm}/users/${UserId}/role-mappings/realm"
-    $body = @()
-    foreach ($r in $Roles) {
-        $body += @{
-            id          = $r.id
-            name        = $r.name
-            description = $r.description
-            composite   = $r.composite
-            clientRole  = $r.clientRole
-            containerId = $r.containerId
-        }
-    }
-    Invoke-RestMethod -Uri $url -Method Post -Headers $Headers -ContentType "application/json" -Body ($body | ConvertTo-Json -Depth 10) -SkipCertificateCheck
+    $body = @($Role) | ConvertTo-Json -Depth 10
+    Invoke-RestMethod -Uri $url -Method Post -Headers $Headers -ContentType "application/json" -Body $body -SkipCertificateCheck -ErrorAction Stop
 }
 
 # ---------------------------------------------------------------------------
@@ -233,7 +232,7 @@ $roleNames = $roleMap[$Role]
 foreach ($roleName in $roleNames) {
     $role = Get-RealmRole -BaseUrl $KeycloakHost -Headers $headers -Realm $Realm -RoleName $roleName
     try {
-        Add-UserRoleMappings -BaseUrl $KeycloakHost -Headers $headers -Realm $Realm -UserId $userId -Roles @($role)
+        Add-UserRoleMappings -BaseUrl $KeycloakHost -Headers $headers -Realm $Realm -UserId $userId -Role $role
         Write-Host "  Assigned role: $roleName"
     }
     catch {
