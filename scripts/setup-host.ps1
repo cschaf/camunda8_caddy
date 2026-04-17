@@ -13,15 +13,15 @@ if (-not (Test-Path $envFile)) {
     Write-Error ".env file not found. Run: cp .env.example .env"
 }
 $envContent = Get-Content $envFile | Where-Object { $_ -notmatch '^\s*#' }
-$HOST = $null
+$EnvHost = $null
 $FULLCHAIN_PEM = $null
 $PRIVATEKEY_PEM = $null
 foreach ($line in $envContent) {
-    if ($line -match '^HOST=(.*)') { $HOST = $matches[1].Trim() }
+    if ($line -match '^HOST=(.*)') { $EnvHost = $matches[1].Trim() }
     if ($line -match '^FULLCHAIN_PEM=(.*)') { $FULLCHAIN_PEM = $matches[1].Trim() }
     if ($line -match '^PRIVATEKEY_PEM=(.*)') { $PRIVATEKEY_PEM = $matches[1].Trim() }
 }
-if (-not $HOST) {
+if (-not $EnvHost) {
     Write-Error "HOST not found in .env"
 }
 
@@ -34,31 +34,33 @@ if ($useCustomTls) {
     Write-Host "No custom TLS certificates configured — Caddy will generate self-signed certs"
 }
 
-Write-Host "Configuring for HOST=$HOST"
+Write-Host "Configuring for HOST=$EnvHost"
 
-# Update Caddyfile — replace *.localhost with *.$HOST
+# Update Caddyfile — replace *.localhost with *.$EnvHost, and standalone localhost with $EnvHost
 $CaddyfilePath = Join-Path $PSScriptRoot "..\Caddyfile"
 $CaddyfileContent = Get-Content $CaddyfilePath -Raw
-$updated = $CaddyfileContent -replace '\b(\w+)\.localhost\b', "`$1.$HOST"
+$updated = $CaddyfileContent -replace '\b(\w+)\.localhost\b', "`$1.$EnvHost"
+$updated = $updated -replace '(?m)^localhost\b', $EnvHost
 
 # Add tls directive to each site block if custom certs are provided
 if ($useCustomTls) {
     $tlsBlock = "tls $FULLCHAIN_PEM $PRIVATEKEY_PEM"
-    # Insert tls directive after the opening brace of each site block
-    # Pattern: domain.com {  ->  domain.com { \n    tls ...
-    $updated = $updated -replace (
-        '(\{[\r\n]+)',
-        "`$1    $tlsBlock`n"
-    )
+    # Remove any existing tls directives first so re-runs don't stack duplicates
+    $updated = $updated -replace '(?m)^[ \t]+tls /[^\r\n]+\r?\n', ''
+    # Insert tls directive only after top-level site block opening braces.
+    # Top-level blocks start at column 0 (no leading whitespace), e.g.:
+    #   keycloak.example.com {
+    # Nested blocks (@options, handle, reverse_proxy) are indented and must NOT get a tls line.
+    $updated = $updated -replace '(?m)^(\S[^\n]*\{[ \t]*\r?\n)', "`$1    $tlsBlock`n"
 }
 
 Set-Content -Path $CaddyfilePath -Value $updated -NoNewline
-Write-Host "Updated Caddyfile (replaced *.localhost -> *.$HOST)$(if($useCustomTls){' + added tls directive'})"
+Write-Host "Updated Caddyfile (replaced *.localhost -> *.$EnvHost)$(if($useCustomTls){' + added tls directive'})"
 
 # Update hosts file
 $subdomains = @("keycloak", "identity", "console", "optimize", "orchestration", "webmodeler")
-$hostsEntries = $subdomains | ForEach-Object { "127.0.0.1 $_.$HOST" }
-$hostsBlock = "# Camunda Compose NVL - $HOST`n" + ($hostsEntries -join "`n")
+$hostsEntries = @("127.0.0.1 $EnvHost") + ($subdomains | ForEach-Object { "127.0.0.1 $_.$EnvHost" })
+$hostsBlock = "# Camunda Compose NVL - $EnvHost`n" + ($hostsEntries -join "`n")
 
 # Remove old Camunda entries and add new ones
 $hostsLines = @()
@@ -67,6 +69,6 @@ if (Test-Path $HostsFile) {
 }
 $hostsLines += $hostsBlock
 Set-Content -Path $HostsFile -Value $hostsLines
-Write-Host "Updated hosts file (replaced *.localhost -> *.$HOST)"
+Write-Host "Updated hosts file (replaced *.localhost -> *.$EnvHost)"
 
 Write-Host "`nDone! Restart Caddy or run: docker compose restart reverse-proxy"

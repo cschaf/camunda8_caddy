@@ -96,16 +96,21 @@ if [[ ! -f "$CADDYFILE" ]]; then
     exit 1
 fi
 
-# Replace *.localhost with *.$HOST
+# Replace *.localhost with *.$HOST, and standalone localhost with $HOST
 sed -i "s/\b\([a-z]\+\)\.localhost\b/\1.$HOST/g" "$CADDYFILE"
+sed -i "s/^localhost\b/$HOST/" "$CADDYFILE"
 echo "Updated Caddyfile (replaced *.localhost -> *.$HOST)"
 
 # Add tls directive if custom certs are provided
 if [[ $USE_CUSTOM_TLS -eq 1 ]]; then
-    # Insert "tls <cert> <key>" after the opening brace of each site block
-    # Pattern: domain.com {  ->  domain.com {\n    tls ...
+    # Remove any existing tls directives first so re-runs don't stack duplicates
+    sed -i '/^[[:space:]]*tls \//d' "$CADDYFILE"
+    # Insert "tls <cert> <key>" only after top-level site block opening braces.
+    # Top-level blocks start at column 0 (no leading whitespace), e.g.:
+    #   keycloak.example.com {
+    # Nested blocks (@options, handle, reverse_proxy) are indented and must NOT get a tls line.
     # Use | as delimiter to avoid conflicts with / in file paths
-    sed -i "s|^\([[:space:]]*[a-zA-Z0-9.-]\+[[:space:]]*{[[:space:]]*\)$|\\1\n    tls $FULLCHAIN_PEM $PRIVATEKEY_PEM|" "$CADDYFILE"
+    sed -i "s|^\([a-zA-Z0-9*][a-zA-Z0-9.*:-]*[[:space:]]*{[[:space:]]*\)$|\\1\n    tls $FULLCHAIN_PEM $PRIVATEKEY_PEM|" "$CADDYFILE"
     echo "Added tls directive to Caddyfile"
 fi
 
@@ -115,7 +120,7 @@ fi
 
 SUBDOMAINS="keycloak identity console optimize orchestration webmodeler"
 HOSTS_MARKER="# Camunda Compose NVL - $HOST"
-HOSTS_BLOCK="$HOSTS_MARKER"
+HOSTS_BLOCK="$HOSTS_MARKER\n127.0.0.1 ${HOST}"
 for subdomain in $SUBDOMAINS; do
     HOSTS_BLOCK="$HOSTS_BLOCK\n127.0.0.1 ${subdomain}.${HOST}"
 done

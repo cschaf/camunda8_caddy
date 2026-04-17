@@ -16,7 +16,7 @@
     It is safe to re-run.
 
     Prerequisites:
-    - Caddy reverse proxy must be running so keycloak.localhost resolves
+    - Caddy reverse proxy must be running so keycloak.{HOST} resolves
     - Admin credentials default to admin/admin
 
 .EXAMPLE
@@ -28,7 +28,7 @@
 #>
 
 param(
-    [string]$KeycloakHost = "keycloak.localhost",
+    [string]$KeycloakHost = "",
     [string]$Realm = "camunda-platform",
     [string]$AdminUser = "admin",
     [string]$AdminPassword = "admin"
@@ -45,6 +45,11 @@ if (Test-Path $envFile) {
     }
 }
 $LocalHost = $ProxyDomain  # direct-access URL uses same host value
+
+# Default KeycloakHost to keycloak.{HOST} unless explicitly passed
+if (-not $KeycloakHost) {
+    $KeycloakHost = "keycloak.$ProxyDomain"
+}
 
 # Per-service port mapping: "client-id" = port for direct localhost access
 $localPorts = @{
