@@ -95,6 +95,12 @@ function New-CamundaUser {
         [string]$LastName
     )
 
+    # Check if user already exists
+    $existingUsers = Invoke-RestMethod -Uri "https://${BaseUrl}/auth/admin/realms/${Realm}/users?username=${Username}" -Method Get -Headers $Headers -SkipCertificateCheck
+    if ($existingUsers.Count -gt 0) {
+        throw "User '$Username' already exists (ID: $($existingUsers[0].id). Use Keycloak UI to delete first, or choose a different username."
+    }
+
     $url = "https://${BaseUrl}/auth/admin/realms/${Realm}/users"
     $body = @{
         username  = $Username
@@ -115,7 +121,7 @@ function New-CamundaUser {
     }
     catch {
         if ($_.Exception.Response.StatusCode -eq 409) {
-            throw "User '$Username' already exists"
+            throw "User '$Username' already exists. Use Keycloak UI to delete first, or choose a different username."
         }
         throw "Failed to create user: $_"
     }
