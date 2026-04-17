@@ -33,8 +33,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 ENV_FILE="$PROJECT_DIR/.env"
 
-# Default configuration
-KEYCLOAK_HOST="${KEYCLOAK_HOST:-keycloak.localhost}"
+# Default configuration (KEYCLOAK_HOST resolved after reading .env HOST below)
 REALM="${REALM:-camunda-platform}"
 ADMIN_USER="${ADMIN_USER:-admin}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:-admin}"
@@ -99,6 +98,9 @@ fi
 
 # If no HOST in .env, default to localhost
 LOCAL_HOST="${PROXY_DOMAIN:-localhost}"
+
+# Default KEYCLOAK_HOST to keycloak.{HOST} unless overridden via env var or --keycloak-host flag
+KEYCLOAK_HOST="${KEYCLOAK_HOST:-keycloak.${LOCAL_HOST}}"
 
 # Per-service port mapping: "client-id" = port for direct localhost access
 declare -A LOCAL_PORTS=(
