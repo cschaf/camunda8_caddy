@@ -196,8 +196,8 @@ function Add-UserRoleMappings {
 # Role mappings — specify exact role names from Keycloak
 # ---------------------------------------------------------------------------
 $roleMap = @{
-    NormalUser = @("Account")  # Normal users: no Keycloak/Identity access
-    Admin      = @("admin", "Account", "uma_authorization", "camel-realm-management")
+    NormalUser = @("Default user role", "Orchestration", "Optimize", "Web Modeler", "Console")
+    Admin      = @("Web Modeler", "ManagementIdentity", "Default user role", "Orchestration", "Optimize", "Web Modeler Admin", "Console")
 }
 
 # ---------------------------------------------------------------------------
