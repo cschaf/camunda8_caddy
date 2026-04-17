@@ -158,8 +158,10 @@ get_admin_token() {
 
 update_client_redirect_uris() {
     local client_id="$1"
-    local -a new_uris=("${@:2}")
-    local bearer_token="$3"
+    local localhost_uri="$2"
+    local proxy_uri="$3"
+    local bearer_token="$4"
+    local new_uris=("$localhost_uri" "$proxy_uri")
 
     local clients_url="https://${KEYCLOAK_HOST}/auth/admin/realms/${REALM}/clients?clientId=${client_id}"
 
@@ -246,12 +248,12 @@ echo ""
 for client_id in "${!LOCAL_PORTS[@]}"; do
     echo "Updating client: $client_id..."
 
-    local port="${LOCAL_PORTS[$client_id]}"
-    local subdomain="${PROXY_SUBDOMAINS[$client_id]}"
-    local callback_path="${CALLBACK_PATHS[$client_id]}"
+    port="${LOCAL_PORTS[$client_id]}"
+    subdomain="${PROXY_SUBDOMAINS[$client_id]}"
+    callback_path="${CALLBACK_PATHS[$client_id]}"
 
-    local localhost_uri="http://${LOCAL_HOST}:${port}${callback_path}"
-    local proxy_uri="https://${subdomain}.${PROXY_DOMAIN:-localhost}${callback_path}"
+    localhost_uri="http://${LOCAL_HOST}:${port}${callback_path}"
+    proxy_uri="https://${subdomain}.${PROXY_DOMAIN:-localhost}${callback_path}"
 
     echo "  localhost_uri: $localhost_uri"
     echo "  proxy_uri: $proxy_uri"

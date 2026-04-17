@@ -455,6 +455,7 @@ services:
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ./dashboard:/srv/dashboard:ro
+      - ./certs:/certs:ro
     environment:
       - HOST=${HOST}
       - CAMUNDA_VERSION=${CAMUNDA_VERSION}
