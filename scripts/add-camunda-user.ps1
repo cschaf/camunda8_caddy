@@ -179,8 +179,18 @@ function Add-UserRoleMappings {
     )
 
     $url = "https://${BaseUrl}/auth/admin/realms/${Realm}/users/${UserId}/role-mappings/realm"
-    $body = $Roles | ConvertTo-Json -Depth 10
-    Invoke-RestMethod -Uri $url -Method Post -Headers $Headers -ContentType "application/json" -Body $body -SkipCertificateCheck
+    $body = @()
+    foreach ($r in $Roles) {
+        $body += @{
+            id          = $r.id
+            name        = $r.name
+            description = $r.description
+            composite   = $r.composite
+            clientRole  = $r.clientRole
+            containerId = $r.containerId
+        }
+    }
+    Invoke-RestMethod -Uri $url -Method Post -Headers $Headers -ContentType "application/json" -Body ($body | ConvertTo-Json -Depth 10) -SkipCertificateCheck
 }
 
 # ---------------------------------------------------------------------------
@@ -223,9 +233,7 @@ $roleNames = $roleMap[$Role]
 foreach ($roleName in $roleNames) {
     $role = Get-RealmRole -BaseUrl $KeycloakHost -Headers $headers -Realm $Realm -RoleName $roleName
     try {
-        $roleJson = $role | ConvertTo-Json -Depth 10 -Compress
-        $roleObj = $roleJson | ConvertFrom-Json
-        Add-UserRoleMappings -BaseUrl $KeycloakHost -Headers $headers -Realm $Realm -UserId $userId -Roles @($roleObj)
+        Add-UserRoleMappings -BaseUrl $KeycloakHost -Headers $headers -Realm $Realm -UserId $userId -Roles @($role)
         Write-Host "  Assigned role: $roleName"
     }
     catch {
