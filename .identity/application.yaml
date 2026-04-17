@@ -25,6 +25,7 @@ identity:
           root-url: "https://console.${HOST}"
           redirect-uris:
             - "/"
+            - "http://${HOST}:8087/"
       apis:
         - name: Console API
           audience: "console-api"
@@ -62,9 +63,10 @@ identity:
           id: orchestration
           type: confidential
           secret: ${VALUES_KEYCLOAK_INIT_ORCHESTRATION_SECRET:secret}
-          root-url: "http://localhost:8088"
+          root-url: "https://orchestration.${HOST}"
           redirect-uris:
             - "/sso-callback"
+            - "http://${HOST}:8088/sso-callback"
       apis:
         - name: "Orchestration API"
           audience: "orchestration-api"
@@ -87,9 +89,10 @@ identity:
           id: optimize
           type: confidential
           secret: ${VALUES_KEYCLOAK_INIT_OPTIMIZE_SECRET:demo-optimize-secret}
-          root-url: "http://localhost:8083"
+          root-url: "https://optimize.${HOST}"
           redirect-uris:
             - "/api/authentication/callback"
+            - "http://${HOST}:8083/api/authentication/callback"
       apis:
         - name: Optimize API
           audience: "optimize-api"
@@ -109,9 +112,10 @@ identity:
         - name: "Web Modeler"
           id: web-modeler
           type: public
-          root-url: "http://localhost:8070"
+          root-url: "https://webmodeler.${HOST}"
           redirect-uris:
             - "/login-callback"
+            - "http://${HOST}:8070/login-callback"
       apis:
         - name: Web Modeler Internal API
           audience: "web-modeler-api"
@@ -164,7 +168,7 @@ keycloak:
     connectors:
       secret: ${VALUES_KEYCLOAK_INIT_CONNECTORS_SECRET:demo-connectors-secret}
     webmodeler:
-      root-url: "http://localhost:8070"
+      root-url: "https://webmodeler.${HOST}"
   clients:
   environment:
     clients:
@@ -176,6 +180,7 @@ keycloak:
         redirect-uris:
           - "/auth/login-callback"
           - "https://identity.${HOST}/auth/login-callback"
+          - "http://${HOST}:8084/auth/login-callback"
   users:
     - username: "demo"
       password: "demo"
