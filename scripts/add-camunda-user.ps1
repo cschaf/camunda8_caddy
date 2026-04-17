@@ -175,7 +175,7 @@ function Add-UserRoleMappings {
         [hashtable]$Headers,
         [string]$Realm,
         [string]$UserId,
-        [array]$Roles
+        [object]$Roles
     )
 
     $url = "https://${BaseUrl}/auth/admin/realms/${Realm}/users/${UserId}/role-mappings/realm"
