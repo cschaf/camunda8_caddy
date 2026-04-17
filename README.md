@@ -20,7 +20,15 @@ Open `.env` and set `HOST` to your desired domain. All services will be availabl
 >
 > **Certificate file paths are independent of HOST:** `FULLCHAIN_PEM` and `PRIVATEKEY_PEM` in `.env` are literal file paths to the actual certificate files on disk. If your certificate files have uppercase characters in their names, keep those paths as-is — only the `HOST` value itself needs to be lowercase.
 
-### 2. Create the Caddyfile
+### 2. Create the connector secrets file
+
+```bash
+cp connector-secrets.txt.example connector-secrets.txt
+```
+
+`connector-secrets.txt` is mounted into the Connectors container as an env file. Add any connector secrets you need in `NAME=VALUE` format. The file is gitignored — never commit it.
+
+### 3. Create the Caddyfile
 
 ```bash
 cp Caddyfile.example Caddyfile
@@ -28,7 +36,7 @@ cp Caddyfile.example Caddyfile
 
 The `Caddyfile` is gitignored because the `setup-host` scripts rewrite it with your actual `HOST` value and optional TLS paths. `Caddyfile.example` is the committed template — never edit `Caddyfile` directly; re-run `setup-host` instead.
 
-### 3. Configure hostname, Caddyfile, and hosts
+### 4. Configure hostname, Caddyfile, and hosts
 
 **Linux / macOS:**
 ```bash
@@ -100,7 +108,7 @@ PRIVATEKEY_PEM=/certs/_wildcard.your-hostname+1-key.pem
 
 The Caddyfile change takes effect when the cluster starts (step 3).
 
-### 4. Start the cluster
+### 5. Start the cluster
 
 ```bash
 docker compose up -d
@@ -112,7 +120,7 @@ Wait for all services to be healthy (may take 2–3 minutes on first start):
 docker compose ps
 ```
 
-### 5. Configure Keycloak redirect URIs
+### 6. Configure Keycloak redirect URIs
 
 After the cluster is up, run:
 
@@ -128,7 +136,7 @@ pwsh -File scripts/keycloak-redirects.ps1
 
 Both scripts read `HOST` from `.env` and add the correct HTTPS proxy redirect URIs to Keycloak for all clients. Safe to re-run.
 
-### 6. Access the services
+### 7. Access the services
 
 The dashboard at `https://{HOST}` provides a landing page with links to all services. Links adapt automatically to the configured `HOST`.
 
