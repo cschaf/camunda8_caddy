@@ -162,12 +162,12 @@ function Get-RealmRole {
         $response = Invoke-RestMethod -Uri $url -Method Get -Headers $Headers -SkipCertificateCheck -ErrorAction Stop
         # Return only the fields Keycloak needs as a plain hashtable
         return @{
-            id          = $response.id
-            name        = $response.name
-            description = $response.description
-            composite   = [bool]$response.composite
-            clientRole  = [bool]$response.clientRole
-            containerId = $response.containerId
+            id          = "$($response.id)"
+            name        = "$($response.name)"
+            description = "$($response.description)"
+            composite   = ($response.composite -eq $true)
+            clientRole  = ($response.clientRole -eq $true)
+            containerId = "$($response.containerId)"
         }
     }
     catch {
