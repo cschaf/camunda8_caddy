@@ -41,6 +41,10 @@ $CaddyfilePath = Join-Path $PSScriptRoot "..\Caddyfile"
 $CaddyfileContent = Get-Content $CaddyfilePath -Raw
 $updated = $CaddyfileContent -replace '\b(\w+)\.localhost\b', "`$1.$EnvHost"
 $updated = $updated -replace '(?m)^localhost\b', $EnvHost
+# Also replace any existing $EnvHost value (so re-runs with different HOST work)
+if ($EnvHost) {
+    $updated = $updated -replace 'localhost', $EnvHost
+}
 
 # Add tls directive to each site block if custom certs are provided
 if ($useCustomTls) {

@@ -99,6 +99,11 @@ fi
 # Replace *.localhost with *.$HOST, and standalone localhost with $HOST
 sed -i "s/\b\([a-z]\+\)\.localhost\b/\1.$HOST/g" "$CADDYFILE"
 sed -i "s/^localhost\b/$HOST/" "$CADDYFILE"
+
+# Also replace any existing $HOST value (so re-runs with different HOST work)
+if [[ -n "$HOST" ]]; then
+    sed -i "s/\b[a-zA-Z0-9*][a-zA-Z0-9.*-]*\.${HOST}\b/$HOST/g" "$CADDYFILE"
+fi
 echo "Updated Caddyfile (replaced *.localhost -> *.$HOST)"
 
 # Add tls directive if custom certs are provided
