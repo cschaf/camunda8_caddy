@@ -184,7 +184,7 @@ function Add-UserRoleMappings {
         [hashtable]$Headers,
         [string]$Realm,
         [string]$UserId,
-        [hashtable]$Role
+        [object]$Role
     )
 
     $url = "https://${BaseUrl}/auth/admin/realms/${Realm}/users/${UserId}/role-mappings/realm"
@@ -227,12 +227,21 @@ Start-Sleep -Milliseconds 500
 $userId = Get-UserId -BaseUrl $KeycloakHost -Headers $headers -Realm $Realm -Username $Username
 Write-Host "User created with ID: $userId"
 
-# Assign roles one at a time to avoid PowerShell array coercion issues
+# Assign roles one at a time
 $roleNames = $roleMap[$Role]
 foreach ($roleName in $roleNames) {
     $role = Get-RealmRole -BaseUrl $KeycloakHost -Headers $headers -Realm $Realm -RoleName $roleName
     try {
-        Add-UserRoleMappings -BaseUrl $KeycloakHost -Headers $headers -Realm $Realm -UserId $userId -Role $role
+        $url = "https://${KeycloakHost}/auth/admin/realms/${Realm}/users/${userId}/role-mappings/realm"
+        $body = @(@{
+            id          = $role.id
+            name        = $role.name
+            description = $role.description
+            composite   = $role.composite
+            clientRole  = $role.clientRole
+            containerId = $role.containerId
+        }) | ConvertTo-Json -Depth 10
+        Invoke-RestMethod -Uri $url -Method Post -Headers $headers -ContentType "application/json" -Body $body -SkipCertificateCheck -ErrorAction Stop
         Write-Host "  Assigned role: $roleName"
     }
     catch {
