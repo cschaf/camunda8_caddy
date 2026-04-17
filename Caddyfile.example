@@ -2,16 +2,16 @@
 # Development only - not for production
 
 # Dashboard (landing page)
-bbc-100030.bbc.local {
-    tls /certs/_wildcard.BBC-100030.bbc.local+1.pem /certs/_wildcard.BBC-100030.bbc.local+1-key.pem
+camunda.dev.local {
+    tls /certs/_wildcard.camunda.dev.local+1.pem /certs/_wildcard.camunda.dev.local+1-key.pem
     root * /srv/dashboard
     file_server
     templates
 }
 
 # Keycloak
-keycloak.bbc-100030.bbc.local {
-    tls /certs/_wildcard.BBC-100030.bbc.local+1.pem /certs/_wildcard.BBC-100030.bbc.local+1-key.pem
+keycloak.camunda.dev.local {
+    tls /certs/_wildcard.camunda.dev.local+1.pem /certs/_wildcard.camunda.dev.local+1-key.pem
     # Intercept the OIDC check_session_iframe endpoint and return a mock that always
     # reports "unchanged". Chrome 120+ blocks cross-origin JavaScript cookie access
     # in iframes, so the real iframe fails to read KEYCLOAK_SESSION, returns "error",
@@ -27,8 +27,8 @@ keycloak.bbc-100030.bbc.local {
 }
 
 # Identity
-identity.bbc-100030.bbc.local {
-    tls /certs/_wildcard.BBC-100030.bbc.local+1.pem /certs/_wildcard.BBC-100030.bbc.local+1-key.pem
+identity.camunda.dev.local {
+    tls /certs/_wildcard.camunda.dev.local+1.pem /certs/_wildcard.camunda.dev.local+1-key.pem
     @options {
         method OPTIONS
     }
@@ -42,7 +42,7 @@ identity.bbc-100030.bbc.local {
 
     # Fonts are fetched with sec-fetch-mode: cors by the browser (CSS @font-face),
     # but Identity's Spring Security rejects them because it doesn't recognise
-    # https://identity.bbc-100030.bbc.local as an allowed CORS origin. Strip the Origin header
+    # https://identity.camunda.dev.local as an allowed CORS origin. Strip the Origin header
     # so Spring Security serves them as plain static files.
     @static {
         path /static/*
@@ -57,23 +57,23 @@ identity.bbc-100030.bbc.local {
 }
 
 # Console
-console.bbc-100030.bbc.local {
-    tls /certs/_wildcard.BBC-100030.bbc.local+1.pem /certs/_wildcard.BBC-100030.bbc.local+1-key.pem
+console.camunda.dev.local {
+    tls /certs/_wildcard.camunda.dev.local+1.pem /certs/_wildcard.camunda.dev.local+1-key.pem
     reverse_proxy console:8080
 }
 
 # Optimize
-optimize.bbc-100030.bbc.local {
-    tls /certs/_wildcard.BBC-100030.bbc.local+1.pem /certs/_wildcard.BBC-100030.bbc.local+1-key.pem
+optimize.camunda.dev.local {
+    tls /certs/_wildcard.camunda.dev.local+1.pem /certs/_wildcard.camunda.dev.local+1-key.pem
     reverse_proxy optimize:8090 {
         header_up X-Forwarded-Proto https
-        header_up X-Forwarded-Host optimize.bbc-100030.bbc.local
+        header_up X-Forwarded-Host optimize.camunda.dev.local
     }
 }
 
 # Orchestration (Operate/Tasklist)
-orchestration.bbc-100030.bbc.local {
-    tls /certs/_wildcard.BBC-100030.bbc.local+1.pem /certs/_wildcard.BBC-100030.bbc.local+1-key.pem
+orchestration.camunda.dev.local {
+    tls /certs/_wildcard.camunda.dev.local+1.pem /certs/_wildcard.camunda.dev.local+1-key.pem
     @options {
         method OPTIONS
     }
@@ -98,8 +98,8 @@ orchestration.bbc-100030.bbc.local {
 }
 
 # Web Modeler
-webmodeler.bbc-100030.bbc.local {
-    tls /certs/_wildcard.BBC-100030.bbc.local+1.pem /certs/_wildcard.BBC-100030.bbc.local+1-key.pem
+webmodeler.camunda.dev.local {
+    tls /certs/_wildcard.camunda.dev.local+1.pem /certs/_wildcard.camunda.dev.local+1-key.pem
     # Pusher WebSocket connections (real-time collaboration)
     handle /app/* {
         reverse_proxy web-modeler-websockets:8060

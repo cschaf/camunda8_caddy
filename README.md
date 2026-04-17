@@ -16,11 +16,19 @@ cp .env.example .env
 
 Open `.env` and set `HOST` to your desired domain. All services will be available at `{subdomain}.{HOST}` (e.g. `https://orchestration.localhost` if `HOST=localhost`).
 
-> **Use lowercase for `HOST`:** Browsers normalize domain names to lowercase in HTTP Host headers, and Keycloak validates redirect URIs with case-sensitive string matching. If `HOST` contains uppercase letters (e.g. `BBC-100030.bbc.local`), services that derive their `redirect_uri` from the incoming Host header will produce a lowercase URI that does not match the uppercase URI registered in Keycloak, causing "Invalid parameter: redirect_uri" errors. Always set `HOST` to lowercase (e.g. `bbc-100030.bbc.local`).
+> **Use lowercase for `HOST`:** Browsers normalize domain names to lowercase in HTTP Host headers, and Keycloak validates redirect URIs with case-sensitive string matching. If `HOST` contains uppercase letters (e.g. `Camunda.Dev.Local`), services that derive their `redirect_uri` from the incoming Host header will produce a lowercase URI that does not match the uppercase URI registered in Keycloak, causing "Invalid parameter: redirect_uri" errors. Always set `HOST` to lowercase (e.g. `camunda.dev.local`).
 >
-> **Certificate file paths are independent of HOST:** `FULLCHAIN_PEM` and `PRIVATEKEY_PEM` in `.env` are literal file paths to the actual certificate files on disk. If your certificate files have uppercase characters in their names (e.g. `_wildcard.BBC-100030.bbc.local+1.pem`), keep those paths as-is — only the `HOST` value itself needs to be lowercase.
+> **Certificate file paths are independent of HOST:** `FULLCHAIN_PEM` and `PRIVATEKEY_PEM` in `.env` are literal file paths to the actual certificate files on disk. If your certificate files have uppercase characters in their names, keep those paths as-is — only the `HOST` value itself needs to be lowercase.
 
-### 2. Configure hostname, Caddyfile, and hosts
+### 2. Create the Caddyfile
+
+```bash
+cp Caddyfile.example Caddyfile
+```
+
+The `Caddyfile` is gitignored because the `setup-host` scripts rewrite it with your actual `HOST` value and optional TLS paths. `Caddyfile.example` is the committed template — never edit `Caddyfile` directly; re-run `setup-host` instead.
+
+### 3. Configure hostname, Caddyfile, and hosts
 
 **Linux / macOS:**
 ```bash
@@ -92,7 +100,7 @@ PRIVATEKEY_PEM=/certs/_wildcard.your-hostname+1-key.pem
 
 The Caddyfile change takes effect when the cluster starts (step 3).
 
-### 3. Start the cluster
+### 4. Start the cluster
 
 ```bash
 docker compose up -d
@@ -104,7 +112,7 @@ Wait for all services to be healthy (may take 2–3 minutes on first start):
 docker compose ps
 ```
 
-### 4. Configure Keycloak redirect URIs
+### 5. Configure Keycloak redirect URIs
 
 After the cluster is up, run:
 
@@ -120,7 +128,7 @@ pwsh -File scripts/keycloak-redirects.ps1
 
 Both scripts read `HOST` from `.env` and add the correct HTTPS proxy redirect URIs to Keycloak for all clients. Safe to re-run.
 
-### 5. Access the services
+### 6. Access the services
 
 The dashboard at `https://{HOST}` provides a landing page with links to all services. Links adapt automatically to the configured `HOST`.
 

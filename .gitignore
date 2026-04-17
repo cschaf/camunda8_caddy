@@ -9,6 +9,10 @@ connector-secrets.txt
 
 # Claude Code
 .claude/
+.playwright-mcp/
+
+# Runtime-generated (use Caddyfile.example as template)
+Caddyfile
 
 # IDE / editor
 .vscode/
