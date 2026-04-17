@@ -1,10 +1,10 @@
 identity:
-  url: "https://identity.localhost"
+  url: "https://identity.${HOST}"
   flags:
     multi-tenancy: "false"
 
   authProvider:
-    issuer-url: "https://keycloak.localhost/auth/realms/camunda-platform"
+    issuer-url: "https://keycloak.${HOST}/auth/realms/camunda-platform"
     backend-url: "http://${KEYCLOAK_HOST}:18080/auth/realms/camunda-platform"
 
   component-presets:
@@ -22,7 +22,7 @@ identity:
         - name: "Console"
           id: console
           type: public
-          root-url: "https://console.localhost"
+          root-url: "https://console.${HOST}"
           redirect-uris:
             - "/"
       apis:
@@ -172,10 +172,10 @@ keycloak:
         id: "camunda-identity"
         type: CONFIDENTIAL
         secret: ${CAMUNDA_IDENTITY_CLIENT_SECRET:demo-identity-secret}
-        root-url: "https://identity.localhost"
+        root-url: "https://identity.${HOST}"
         redirect-uris:
           - "/auth/login-callback"
-          - "https://identity.localhost/auth/login-callback"
+          - "https://identity.${HOST}/auth/login-callback"
   users:
     - username: "demo"
       password: "demo"
