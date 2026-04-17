@@ -14,7 +14,7 @@ Complete these steps in order after a fresh clone.
 cp .env.example .env
 ```
 
-Open `.env` and set `HOST` to your desired domain. All services will be available at `{subdomain}.{HOST}` (e.g. `https://orchestration.localhost` if HOST is `localhost`).
+Open `.env` and set `HOST` to your desired domain. All services will be available at `{subdomain}.{HOST}` (e.g. `https://orchestration.localhost` if `HOST=localhost`).
 
 ### 2. Configure hostname, Caddyfile, and hosts
 
@@ -32,12 +32,53 @@ Both scripts read `HOST` from `.env` and update:
 - `Caddyfile` — replaces all `*.localhost` domain names with `*.{HOST}`
 - hosts file — adds `127.0.0.1` entries for all services (keycloak, identity, console, optimize, orchestration, webmodeler)
 
-**Custom TLS certificates (optional):** If you have your own certificates, add to `.env`:
+#### Custom TLS certificates (optional)
+
+By default, Caddy generates a self-signed certificate and your browser will show a security warning. To use a trusted certificate instead, place your certificate files in the `certs/` folder in the project root (it is mounted read-only at `/certs` inside the Caddy container) and set the paths in `.env`:
+
 ```env
-FULLCHAIN_PEM=/path/to/fullchain.pem
-PRIVATEKEY_PEM=/path/to/privkey.pem
+HOST=your-hostname
+FULLCHAIN_PEM=/certs/cert.pem
+PRIVATEKEY_PEM=/certs/private.key
 ```
-The script will inject the `tls` directive into every site block in the Caddyfile. If not set, Caddy generates self-signed certs automatically.
+
+The `setup-host` script will inject a `tls <cert> <key>` directive into every site block in the Caddyfile automatically. If `FULLCHAIN_PEM`/`PRIVATEKEY_PEM` are not set, Caddy generates self-signed certs.
+
+Before starting the cluster, verify that the certificate covers your `HOST`:
+
+```bash
+openssl x509 -in certs/cert.pem -noout -text | grep -A1 "Subject Alternative Name"
+```
+
+It must include `*.your-hostname` (or at least each individual subdomain). Caddy will reject the certificate at startup if the SNI does not match.
+
+> **CA trust:** If the certificate was issued by your corporate CA (e.g. Active Directory), it may already be trusted on your Windows machine and no further action is needed. If browsers still show a warning, import the issuing root CA into the Windows trust store.
+
+**No existing certificate? Use mkcert.**
+
+[mkcert](https://github.com/FiloSottile/mkcert) creates a local CA, installs it into the OS trust store once, and issues wildcard certificates for any domain — including private domains like `*.myhost.corp.local`.
+
+```powershell
+# Install mkcert (run once)
+winget install FiloSottile.mkcert   # Windows
+# brew install mkcert               # macOS
+
+# Register the local CA in the system trust store (run once, as admin on Windows)
+mkcert -install
+
+# Create a wildcard certificate for your HOST (run from the project root)
+mkdir certs
+cd certs
+mkcert "*.BBC-100030.bbc.local" "BBC-100030.bbc.local"
+```
+
+```env
+HOST=BBC-100030.bbc.local
+FULLCHAIN_PEM=/certs/_wildcard.BBC-100030.bbc.local+1.pem
+PRIVATEKEY_PEM=/certs/_wildcard.BBC-100030.bbc.local+1-key.pem
+```
+
+> **Note on filenames:** `mkcert` appends a counter suffix when multiple SANs are given (`+1`, `+2`, …). Check the actual filenames in `certs/` after running `mkcert`.
 
 The Caddyfile change takes effect when the cluster starts (step 3).
 
@@ -80,7 +121,7 @@ Both scripts read `HOST` from `.env` and add the correct HTTPS proxy redirect UR
 | Web Modeler | https://webmodeler.{HOST} |
 | Keycloak Admin | https://keycloak.{HOST}/auth/ (admin / admin) |
 
-> **Note:** Caddy uses a self-signed TLS certificate. Your browser will show a security warning — click "Advanced" and proceed. This is expected for local development.
+> **TLS warning:** If no custom certificates are configured, Caddy uses a self-signed cert. Your browser will show a security warning — click "Advanced" and proceed. With a trusted certificate (your own or one from mkcert) this warning disappears.
 
 ---
 
@@ -88,10 +129,20 @@ Both scripts read `HOST` from `.env` and add the correct HTTPS proxy redirect UR
 
 All configuration is driven by the `HOST` variable in `.env`. To switch domain:
 
-1. Edit `.env` and set `HOST=your-new-domain` (e.g. `camunda.local`)
-2. Run `scripts/setup-host.sh` (Linux/macOS) or `pwsh -File scripts/setup-host.ps1` (Windows) to update Caddyfile and hosts file
-3. Start/restart the cluster: `docker compose up -d` (or `docker compose restart` if already running)
-4. Re-run `scripts/keycloak-redirects.sh` (Linux/macOS) or `pwsh -File scripts/keycloak-redirects.ps1` (Windows) to update Keycloak redirect URIs
+1. Edit `.env` and set `HOST=your-new-domain` (e.g. `BBC-100030.bbc.local`)
+2. If you want trusted TLS, create a new certificate (see [Custom TLS certificates](#custom-tls-certificates-optional) above) and set `FULLCHAIN_PEM`/`PRIVATEKEY_PEM` in `.env`
+3. Run `scripts/setup-host.sh` (Linux/macOS) or `pwsh -File scripts/setup-host.ps1` (Windows) to update Caddyfile and hosts file
+4. Start/restart the cluster: `docker compose up -d` (or `docker compose restart reverse-proxy` if already running)
+5. Re-run `scripts/keycloak-redirects.sh` (Linux/macOS) or `pwsh -File scripts/keycloak-redirects.ps1` (Windows) to update Keycloak redirect URIs
+
+### Accessing from other machines on the network
+
+The hosts file entries added by `setup-host` use `127.0.0.1` and only work on the local machine. To allow other devices on your network to reach the services:
+
+- Add entries pointing to your machine's actual IP (e.g. `192.168.1.10 keycloak.BBC-100030.bbc.local`) to the hosts file on each client machine, **or**
+- Create a wildcard DNS record `*.BBC-100030.bbc.local → <your IP>` in your corporate DNS
+
+Each client machine also needs to trust the CA that signed your certificate. For mkcert, the root certificate is at the path printed by `mkcert -CAROOT` (`rootCA.pem`) — import it into the OS trust store on each client. For a corporate CA it is likely already trusted on domain-joined machines.
 
 ---
 
