@@ -185,3 +185,40 @@ The redirect URI scripts (`keycloak-redirects.sh` / `keycloak-redirects.ps1`) ad
 
 - Keycloak must be accessible at `keycloak.{HOST}` (override with `--keycloak-host` or `KEYCLOAK_HOST` env var)
 - Default admin credentials: `admin` / `admin` (configure with `--admin-user` / `--admin-password` or `ADMIN_USER` / `ADMIN_PASSWORD` env vars)
+
+---
+
+## User Management
+
+Create Camunda users in Keycloak with role-based permissions.
+
+**Linux / macOS:**
+```bash
+bash scripts/add-camunda-user.sh \
+  --username jdoe \
+  --password "changeme" \
+  --email "jdoe@example.com" \
+  --first-name John \
+  --last-name Doe \
+  --role NormalUser
+```
+
+**Windows (PowerShell):**
+```powershell
+pwsh -File scripts/add-camunda-user.ps1 \
+  -Username jdoe \
+  -Password "changeme" \
+  -Email "jdoe@example.com" \
+  -FirstName John \
+  -LastName Doe \
+  -Role NormalUser
+```
+
+### Roles
+
+| Role | Description |
+|------|-------------|
+| `NormalUser` | Default user role + Orchestration + Optimize + Web Modeler |
+| `Admin` | All roles: Web Modeler + ManagementIdentity + Default user role + Orchestration + Optimize + Web Modeler Admin + Console |
+
+The scripts read `HOST` from `.env` to find Keycloak, and credentials from `.env` (`KEYCLOAK_ADMIN_USER`, `KEYCLOAK_ADMIN_PASSWORD`). On failure the created user is automatically rolled back.
