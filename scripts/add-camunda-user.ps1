@@ -227,13 +227,24 @@ Start-Sleep -Milliseconds 500
 $userId = Get-UserId -BaseUrl $KeycloakHost -Headers $headers -Realm $Realm -Username $Username
 Write-Host "User created with ID: $userId"
 
-# Assign roles one at a time using role name only
+# Assign roles one at a time
 $roleNames = $roleMap[$Role]
 foreach ($roleName in $roleNames) {
     try {
-        $url = "https://${KeycloakHost}/auth/admin/realms/${Realm}/users/${userId}/role-mappings/realm"
-        $body = "[{`"name`": `"$roleName`", `"containerId`": `"$Realm`"}]"
-        Invoke-RestMethod -Uri $url -Method Post -Headers $headers -ContentType "application/json" -Body $body -SkipCertificateCheck -ErrorAction Stop
+        # Fetch role details to get the actual role object with its ID
+        $roleUrl = "https://${KeycloakHost}/auth/admin/realms/${Realm}/roles/${roleName}"
+        $roleResp = Invoke-RestMethod -Uri $roleUrl -Method Get -Headers $headers -SkipCertificateCheck -ErrorAction Stop
+        # Build a clean role object from the response
+        $roleBody = @{
+            id          = "$($roleResp.id)"
+            name        = "$($roleResp.name)"
+            description = if ($roleResp.description) { "$($roleResp.description)" } else { "" }
+            composite   = $roleResp.composite
+            clientRole  = $roleResp.clientRole
+            containerId = "$($roleResp.containerId)"
+        } | ConvertTo-Json -Compress
+        $assignUrl = "https://${KeycloakHost}/auth/admin/realms/${Realm}/users/${userId}/role-mappings/realm"
+        Invoke-RestMethod -Uri $assignUrl -Method Post -Headers $headers -ContentType "application/json" -Body "[$roleBody]" -SkipCertificateCheck -ErrorAction Stop | Out-Null
         Write-Host "  Assigned role: $roleName"
     }
     catch {
