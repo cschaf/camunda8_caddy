@@ -232,10 +232,7 @@ $roleNames = $roleMap[$Role]
 foreach ($roleName in $roleNames) {
     try {
         $url = "https://${KeycloakHost}/auth/admin/realms/${Realm}/users/${userId}/role-mappings/realm"
-        $body = @(@{
-            name       = $roleName
-            containerId = $Realm
-        }) | ConvertTo-Json -Depth 10
+        $body = "[{`"name`": `"$roleName`", `"containerId`": `"$Realm`"}]"
         Invoke-RestMethod -Uri $url -Method Post -Headers $headers -ContentType "application/json" -Body $body -SkipCertificateCheck -ErrorAction Stop
         Write-Host "  Assigned role: $roleName"
     }
