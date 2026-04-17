@@ -223,7 +223,9 @@ $roleNames = $roleMap[$Role]
 foreach ($roleName in $roleNames) {
     $role = Get-RealmRole -BaseUrl $KeycloakHost -Headers $headers -Realm $Realm -RoleName $roleName
     try {
-        Add-UserRoleMappings -BaseUrl $KeycloakHost -Headers $headers -Realm $Realm -UserId $userId -Roles @($role)
+        $roleJson = $role | ConvertTo-Json -Depth 10 -Compress
+        $roleObj = $roleJson | ConvertFrom-Json
+        Add-UserRoleMappings -BaseUrl $KeycloakHost -Headers $headers -Realm $Realm -UserId $userId -Roles @($roleObj)
         Write-Host "  Assigned role: $roleName"
     }
     catch {
