@@ -200,6 +200,50 @@ $roleMap = @{
     Admin      = @("Web Modeler", "ManagementIdentity", "Default user role", "Orchestration", "Optimize", "Web Modeler Admin", "Console")
 }
 
+# Camunda internal role mapping (camunda.security.authorizations.enabled=true requires explicit role assignment)
+$camundaRoleMap = @{
+    NormalUser = "readonly-admin"
+    Admin      = "admin"
+}
+
+# ---------------------------------------------------------------------------
+# Helper: Get orchestration client credentials token
+# ---------------------------------------------------------------------------
+function Get-OrchestrationToken {
+    param([string]$KeycloakHost, [string]$ClientSecret)
+
+    $tokenUrl = "https://${KeycloakHost}/auth/realms/camunda-platform/protocol/openid-connect/token"
+    $tokenBody = @{
+        grant_type    = "client_credentials"
+        client_id     = "orchestration"
+        client_secret = $ClientSecret
+    }
+
+    try {
+        $response = Invoke-RestMethod -Uri $tokenUrl -Method Post -ContentType "application/x-www-form-urlencoded" -Body $tokenBody -SkipCertificateCheck
+        return $response.access_token
+    }
+    catch {
+        throw "Failed to get orchestration token: $_"
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Helper: Assign user to Camunda internal role
+# ---------------------------------------------------------------------------
+function Add-CamundaRoleMember {
+    param([string]$OrchestrationHost, [string]$Token, [string]$CamundaRole, [string]$Username)
+
+    $url = "https://${OrchestrationHost}/v2/roles/${CamundaRole}/users/${Username}"
+    try {
+        Invoke-RestMethod -Uri $url -Method Put -Headers @{ Authorization = "Bearer $Token" } -SkipCertificateCheck -ErrorAction Stop | Out-Null
+        Write-Host "  Assigned Camunda role: $CamundaRole"
+    }
+    catch {
+        throw "Failed to assign Camunda role '$CamundaRole' to user '$Username': $_"
+    }
+}
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -209,7 +253,9 @@ $Realm = "camunda-platform"
 $AdminUser = Get-EnvValue -Key "KEYCLOAK_ADMIN_USER"
 $AdminPassword = Get-EnvValue -Key "KEYCLOAK_ADMIN_PASSWORD"
 $CamundaHost = Get-EnvValue -Key "HOST"
+$OrchestrationSecret = Get-EnvValue -Key "ORCHESTRATION_CLIENT_SECRET"
 $KeycloakHost = "keycloak.${CamundaHost}"
+$OrchestrationHost = "orchestration.${CamundaHost}"
 
 $headers = @{ Authorization = "Bearer (placeholder)" }
 
@@ -227,7 +273,7 @@ Start-Sleep -Milliseconds 500
 $userId = Get-UserId -BaseUrl $KeycloakHost -Headers $headers -Realm $Realm -Username $Username
 Write-Host "User created with ID: $userId"
 
-# Assign roles one at a time
+# Assign Keycloak realm roles one at a time
 $roleNames = $roleMap[$Role]
 foreach ($roleName in $roleNames) {
     try {
@@ -245,13 +291,26 @@ foreach ($roleName in $roleNames) {
         } | ConvertTo-Json -Compress
         $assignUrl = "https://${KeycloakHost}/auth/admin/realms/${Realm}/users/${userId}/role-mappings/realm"
         Invoke-RestMethod -Uri $assignUrl -Method Post -Headers $headers -ContentType "application/json" -Body "[$roleBody]" -SkipCertificateCheck -ErrorAction Stop | Out-Null
-        Write-Host "  Assigned role: $roleName"
+        Write-Host "  Assigned Keycloak role: $roleName"
     }
     catch {
         Write-Host "  Failed to assign role: $roleName"
         Remove-CamundaUser -BaseUrl $KeycloakHost -Headers $headers -Realm $Realm -UserId $userId
         throw "Role assignment failed and user rolled back: $_"
     }
+}
+
+# Assign Camunda internal role (required because camunda.security.authorizations.enabled=true)
+Write-Host "Assigning Camunda internal authorization role..."
+$orchToken = Get-OrchestrationToken -KeycloakHost $KeycloakHost -ClientSecret $OrchestrationSecret
+$camundaRole = $camundaRoleMap[$Role]
+try {
+    Add-CamundaRoleMember -OrchestrationHost $OrchestrationHost -Token $orchToken -CamundaRole $camundaRole -Username $Username
+}
+catch {
+    Write-Host "  WARNING: Failed to assign Camunda internal role '$camundaRole': $_"
+    Write-Host "  User was created in Keycloak but may not be able to access Operate/Tasklist."
+    Write-Host "  To fix manually: add '$Username' to initialization.defaultRoles.$($Role.ToLower()).users in .orchestration/application.yaml and restart the orchestration container."
 }
 
 Write-Host "`nDone! User '$Username' created with role '$Role'."

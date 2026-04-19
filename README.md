@@ -120,6 +120,8 @@ Wait for all services to be healthy (may take 2–3 minutes on first start):
 docker compose ps
 ```
 
+The `camunda-init` service starts automatically once `orchestration` is healthy and applies authorization patches (e.g. granting NormalUser the right to complete tasks in Tasklist). It runs once and exits — no manual action needed. To extend it, add entries to `PATCHES` in `scripts/camunda-init.py`.
+
 ### 6. Configure Keycloak redirect URIs
 
 After the cluster is up, run:
@@ -190,6 +192,24 @@ The redirect URI scripts (`keycloak-redirects.sh` / `keycloak-redirects.ps1`) ad
 
 ## User Management
 
+### Hintergrund: Warum braucht man zwei Systeme?
+
+Camunda 8 hat **zwei unabhängige Sicherheitssysteme**, die beide erfüllt sein müssen, damit ein Benutzer auf Operate oder Tasklist zugreifen kann:
+
+1. **Keycloak** – das zentrale Login-System. Hier werden Benutzer angelegt und ihnen Rollen zugewiesen (z.B. „darf Camunda nutzen").
+
+2. **Camundas eigenes Berechtigungssystem** – eine interne Liste, die festlegt, welche Benutzer tatsächlich auf welche Funktionen zugreifen dürfen.
+
+Beide Systeme müssen übereinstimmen — Keycloak allein reicht nicht.
+
+Der mitgelieferte Demo-Benutzer (`demo`) funktioniert direkt nach dem Start, weil er beim ersten Hochfahren automatisch in **beiden** Systemen eingetragen wird. Manuell angelegte Benutzer wurden früher nur in Keycloak eingetragen und landeten deshalb auf einer „Forbidden"-Seite, obwohl ihr Login erfolgreich war.
+
+Das `add-camunda-user`-Skript trägt neue Benutzer daher in beide Systeme ein. Der `camunda-init`-Dienst stellt beim Start außerdem sicher, dass NormalUser-Konten die nötigen Berechtigungen haben, um Aufgaben in Tasklist bearbeiten zu können — ohne manuellen Eingriff.
+
+---
+
+### Benutzer anlegen
+
 Create Camunda users in Keycloak with role-based permissions.
 
 **Linux / macOS:**
@@ -216,9 +236,11 @@ pwsh -File scripts/add-camunda-user.ps1 \
 
 ### Roles
 
-| Role | Description |
-|------|-------------|
-| `NormalUser` | Default user role + Orchestration + Optimize + Web Modeler |
-| `Admin` | All roles: Web Modeler + ManagementIdentity + Default user role + Orchestration + Optimize + Web Modeler Admin + Console |
+| Role | Keycloak realm roles | Camunda internal role | Access |
+|------|----------------------|-----------------------|--------|
+| `NormalUser` | Default user role, Orchestration, Optimize, Web Modeler | `readonly-admin` | Read-only in Operate + Tasklist; can complete tasks |
+| `Admin` | All roles incl. ManagementIdentity, Console, Web Modeler Admin | `admin` | Full access to all components |
 
-The scripts read `HOST` from `.env` to find Keycloak, and credentials from `.env` (`KEYCLOAK_ADMIN_USER`, `KEYCLOAK_ADMIN_PASSWORD`). On failure the created user is automatically rolled back.
+The scripts read `HOST` and `ORCHESTRATION_CLIENT_SECRET` from `.env`. On failure the created user is automatically rolled back.
+
+> **How authorization works:** Camunda 8 has its own internal authorization system (`camunda.security.authorizations.enabled=true`) independent of Keycloak roles. The scripts assign users to both their Keycloak realm roles *and* the corresponding Camunda internal role via the REST API. The `camunda-init` service (started automatically with the stack) patches the `readonly-admin` role to include `UPDATE_USER_TASK`, enabling NormalUser accounts to complete tasks in Tasklist.

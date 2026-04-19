@@ -468,6 +468,21 @@ services:
       keycloak:
         condition: service_healthy
 
+  camunda-init:
+    image: python:3-slim
+    container_name: camunda-init
+    restart: "no"
+    volumes:
+      - "./scripts/camunda-init.py:/init.py:ro"
+    environment:
+      ORCHESTRATION_CLIENT_SECRET: ${ORCHESTRATION_CLIENT_SECRET}
+    command: python /init.py
+    networks:
+      - camunda-platform
+    depends_on:
+      orchestration:
+        condition: service_healthy
+
 volumes:
   orchestration:
   elastic:
