@@ -144,23 +144,7 @@ docker compose ps
 
 The `camunda-init` service starts automatically once `orchestration` is healthy and applies authorization patches (e.g. granting NormalUser the right to complete tasks in Tasklist). It runs once and exits — no manual action needed. To extend it, add entries to `PATCHES` in `scripts/camunda-init.py`.
 
-### 6. Configure Keycloak redirect URIs
-
-After the cluster is up, run:
-
-**Linux / macOS:**
-```bash
-bash scripts/keycloak-redirects.sh
-```
-
-**Windows (PowerShell):**
-```powershell
-pwsh -File scripts/keycloak-redirects.ps1
-```
-
-Both scripts read `HOST` from `.env` and add the correct HTTPS proxy redirect URIs to Keycloak for all clients. Safe to re-run.
-
-### 7. Access the services
+### 6. Access the services
 
 The dashboard at `https://{HOST}` provides a landing page with links to all services. Links adapt automatically to the configured `HOST`.
 
@@ -186,7 +170,7 @@ All configuration is driven by the `HOST` variable in `.env`. To switch domain:
 2. If you want trusted TLS, place certificate files in `certs/` and set `FULLCHAIN_PEM`/`PRIVATEKEY_PEM` in `.env` (see [Custom TLS certificates](#custom-tls-certificates-optional) above)
 3. Run `scripts/setup-host.sh` (Linux/macOS) or `pwsh -File scripts/setup-host.ps1` **as Administrator** (Windows) to update Caddyfile and hosts file
 4. Start/restart the cluster: `docker compose up -d` (or `docker compose restart reverse-proxy` if already running)
-5. Re-run `scripts/keycloak-redirects.sh` (Linux/macOS) or `pwsh -File scripts/keycloak-redirects.ps1` (Windows) to update Keycloak redirect URIs
+5. If Keycloak data persists, the redirect URIs from `.identity/application.yaml` are already correct. Only if you see "Invalid redirect_uri" errors after hostname changes, wipe Keycloak's database volume and restart (`docker compose down -v keycloak-theme postgres && docker compose up -d`).
 
 ### Accessing from other machines on the network
 
@@ -198,17 +182,6 @@ The hosts file entries added by `setup-host` use `127.0.0.1` and only work on th
 Each client machine also needs to trust the CA that signed your certificate. For mkcert, the root certificate is at the path printed by `mkcert -CAROOT` (`rootCA.pem`) — import it into the OS trust store on each client. For a corporate CA it is likely already trusted on domain-joined machines.
 
 ---
-
-## Keycloak Redirect URI Management
-
-Keycloak strictly validates redirect URIs — the browser will only be redirected to URLs explicitly allowlisted for each client. If a redirect URI is missing or wrong, you will see "Invalid redirect_uri" errors after login.
-
-The redirect URI scripts (`keycloak-redirects.sh` / `keycloak-redirects.ps1`) add both direct `localhost` URLs and proxy HTTPS URLs. They read `HOST` from `.env` automatically.
-
-### Prerequisites
-
-- Keycloak must be accessible at `keycloak.{HOST}` (override with `--keycloak-host` or `KEYCLOAK_HOST` env var)
-- Default admin credentials: `admin` / `admin` (configure with `--admin-user` / `--admin-password` or `ADMIN_USER` / `ADMIN_PASSWORD` env vars)
 
 ---
 
