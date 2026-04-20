@@ -589,29 +589,6 @@ services:
           cpus: "0.1"
           memory: 64m
 
-  camunda-init:
-    image: python:3-slim
-    container_name: camunda-init
-    restart: "no"
-    deploy:
-      resources:
-        limits:
-          cpus: "0.5"
-          memory: 512m
-        reservations:
-          cpus: "0.1"
-          memory: 128m
-    volumes:
-      - "./scripts/camunda-init.py:/init.py:ro"
-    environment:
-      ORCHESTRATION_CLIENT_SECRET: ${ORCHESTRATION_CLIENT_SECRET:?ORCHESTRATION_CLIENT_SECRET is required}
-    command: python /init.py
-    networks:
-      - camunda-platform
-    depends_on:
-      orchestration:
-        condition: service_healthy
-
 volumes:
   orchestration:
   elastic:

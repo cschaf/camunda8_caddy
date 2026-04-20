@@ -142,8 +142,6 @@ Wait for all services to be healthy (may take 2–3 minutes on first start):
 docker compose ps
 ```
 
-The `camunda-init` service starts automatically once `orchestration` is healthy and applies authorization patches (e.g. granting NormalUser the right to complete tasks in Tasklist). It runs once and exits — no manual action needed. To extend it, add entries to `PATCHES` in `scripts/camunda-init.py`.
-
 ### 6. Access the services
 
 The dashboard at `https://{HOST}` provides a landing page with links to all services. Links adapt automatically to the configured `HOST`.
@@ -199,7 +197,7 @@ Beide Systeme müssen übereinstimmen — Keycloak allein reicht nicht.
 
 Der mitgelieferte Demo-Benutzer (`demo`) funktioniert direkt nach dem Start, weil er beim ersten Hochfahren automatisch in **beiden** Systemen eingetragen wird. Manuell angelegte Benutzer wurden früher nur in Keycloak eingetragen und landeten deshalb auf einer „Forbidden"-Seite, obwohl ihr Login erfolgreich war.
 
-Das `add-camunda-user`-Skript trägt neue Benutzer daher in beide Systeme ein. Der `camunda-init`-Dienst stellt beim Start außerdem sicher, dass NormalUser-Konten die nötigen Berechtigungen haben, um Aufgaben in Tasklist bearbeiten zu können — ohne manuellen Eingriff.
+Das `add-camunda-user`-Skript trägt neue Benutzer daher in beide Systeme ein.
 
 ---
 
@@ -238,4 +236,4 @@ pwsh -File scripts/add-camunda-user.ps1 \
 
 The scripts read `HOST` and `ORCHESTRATION_CLIENT_SECRET` from `.env`. On failure the created user is automatically rolled back.
 
-> **How authorization works:** Camunda 8 has its own internal authorization system (`camunda.security.authorizations.enabled=true`) independent of Keycloak roles. The scripts assign users to both their Keycloak realm roles *and* the corresponding Camunda internal role via the REST API. The `camunda-init` service (started automatically with the stack) patches the `readonly-admin` role to include `UPDATE_USER_TASK`, enabling NormalUser accounts to complete tasks in Tasklist.
+> **How authorization works:** Camunda 8 has its own internal authorization system (`camunda.security.authorizations.enabled=true`) independent of Keycloak roles. The scripts assign users to both their Keycloak realm roles *and* the corresponding Camunda internal role via the REST API.

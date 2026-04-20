@@ -106,9 +106,8 @@ All services have Docker-level `deploy.resources` limits and reservations. JVM h
 | reverse-proxy | 0.5 | 256m | 64m | — | Caddy Go process |
 | web-modeler-websockets | 0.5 | 256m | 64m | — | Node.js WebSocket server |
 | mailpit | 0.25 | 128m | 32m | — | Go SMTP server |
-| camunda-init | 0.5 | 512m | 128m | — | One-shot Python init job |
 
-**Total limits:** ~27.6 GB, **Total reservations:** ~16.3 GB
+**Total limits:** ~27.2 GB, **Total reservations:** ~16.2 GB
 Leaves ~15.7 GB headroom for the OS and burst.
 
 ### Why 75% for JVM services?
