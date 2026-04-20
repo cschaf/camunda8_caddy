@@ -37,11 +37,19 @@ services:
       CAMUNDA_IDENTITY_BASEURL: http://identity:8084
       CAMUNDA_IDENTITY_AUDIENCE: orchestration-api
       # Resource limits
-      JAVA_TOOL_OPTIONS: "-Xms512m -Xmx512m"
+      JAVA_TOOL_OPTIONS: "-Xms1g -Xmx4500m"
     env_file:
       - path: .env
         required: true
     restart: on-failure
+    deploy:
+      resources:
+        limits:
+          cpus: "4.0"
+          memory: 6G
+        reservations:
+          cpus: "1.0"
+          memory: 4G
     healthcheck:
       test: ["CMD-SHELL", "timeout 10s bash -c ':> /dev/tcp/127.0.0.1/9600' || exit 1"]
       interval: 30s
@@ -71,8 +79,17 @@ services:
       CAMUNDA_CLIENT_AUTH_TOKENURL: http://${KEYCLOAK_HOST}:18080/auth/realms/camunda-platform/protocol/openid-connect/token
       CAMUNDA_CLIENT_AUTH_CLIENTID: ${CONNECTORS_CLIENT_ID}
       CAMUNDA_CLIENT_AUTH_CLIENTSECRET: ${CONNECTORS_CLIENT_SECRET}
+      JAVA_TOOL_OPTIONS: "-Xmx768m"
     env_file: connector-secrets.txt
     restart: on-failure
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1G
+        reservations:
+          cpus: "0.25"
+          memory: 512m
     healthcheck:
       test: ["CMD-SHELL", "wget -q --spider http://localhost:8080/actuator/health/readiness"]
       interval: 30s
@@ -112,6 +129,7 @@ services:
       management.endpoints.web.exposure.include: health,configprops
       MANAGEMENT_ENDPOINT_CONFIGPROPS_SHOW_VALUES: ALWAYS
       management.endpoint.health.probes.enabled: "true"
+      JAVA_TOOL_OPTIONS: "-Xms512m -Xmx2g"
     healthcheck:
       test: ["CMD", "wget", "-q", "--tries=1", "--spider", "http://localhost:8090/api/readyz"]
       interval: 30s
@@ -121,6 +139,14 @@ services:
     volumes:
       - "./.optimize/environment-config.yaml:/optimize/config/environment-config.yaml"
     restart: on-failure
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 3G
+        reservations:
+          cpus: "0.5"
+          memory: 1536m
     networks:
       - camunda-platform
     extra_hosts:
@@ -164,6 +190,14 @@ services:
       retries: 30
       start_period: 60s
     restart: on-failure
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          cpus: "0.25"
+          memory: 256m
     volumes:
       - keycloak-theme:/app/keycloak-theme
       - "./.identity/application.yaml:/app/application.yaml"
@@ -184,6 +218,14 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     restart: on-failure
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          cpus: "0.25"
+          memory: 512m
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}"]
       interval: 10s
@@ -211,6 +253,14 @@ services:
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
       KEYCLOAK_PROXY_HEADERS: xforwarded
     restart: on-failure
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+        reservations:
+          cpus: "0.5"
+          memory: 512m
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:18080/auth"]
       interval: 30s
@@ -247,6 +297,14 @@ services:
         soft: -1
         hard: -1
     restart: on-failure
+    deploy:
+      resources:
+        limits:
+          cpus: "4.0"
+          memory: 8G
+        reservations:
+          cpus: "1.0"
+          memory: 6G
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:9200/_cat/health | grep -q green"]
       interval: 30s
@@ -264,6 +322,14 @@ services:
     container_name: web-modeler-db
     image: postgres:${POSTGRES_VERSION}
     restart: on-failure
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512m
+        reservations:
+          cpus: "0.1"
+          memory: 256m
     healthcheck:
       test: ["CMD", "pg_isready", "-d", "${WEBMODELER_DB_NAME}", "-U", "${WEBMODELER_DB_USER}"]
       interval: 10s
@@ -291,6 +357,14 @@ services:
       - "1025:1025"
       - "8075:8025"
     restart: on-failure
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128m
+        reservations:
+          cpus: "0.05"
+          memory: 32m
     healthcheck:
       test: ["CMD", "/usr/bin/nc", "-z", "localhost", "1025"]
       interval: 30s
@@ -306,6 +380,14 @@ services:
     container_name: web-modeler-restapi
     image: camunda/web-modeler-restapi:${CAMUNDA_WEB_MODELER_VERSION}
     restart: on-failure
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          cpus: "0.25"
+          memory: 512m
     depends_on:
       web-modeler-db:
         condition: service_healthy
@@ -320,7 +402,7 @@ services:
       retries: 5
       start_period: 60s
     environment:
-      JAVA_OPTIONS: -Xmx512m
+      JAVA_OPTIONS: -Xmx768m
       LOGGING_LEVEL_IO_CAMUNDA_MODELER: DEBUG
       CAMUNDA_IDENTITY_BASEURL: http://identity:8084/
       SPRING_DATASOURCE_URL: jdbc:postgresql://web-modeler-db:5432/${WEBMODELER_DB_NAME}
@@ -362,6 +444,14 @@ services:
     ports:
       - "8070:8070"
     restart: on-failure
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512m
+        reservations:
+          cpus: "0.1"
+          memory: 128m
     depends_on:
       web-modeler-restapi:
         condition: service_healthy
@@ -402,6 +492,14 @@ services:
     ports:
       - "8060:8060"
     restart: on-failure
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256m
+        reservations:
+          cpus: "0.1"
+          memory: 64m
     healthcheck:
       test: ["CMD", "wget", "-q", "--tries=1", "--spider", "http://127.0.0.1:8060/up"]
       interval: 30s
@@ -432,7 +530,7 @@ services:
       KEYCLOAK_REALM: camunda-platform
       CAMUNDA_IDENTITY_CLIENT_ID: console
       CAMUNDA_IDENTITY_AUDIENCE: console
-      JAVA_TOOL_OPTIONS: -Xms512m -Xmx1g
+      JAVA_TOOL_OPTIONS: -Xms256m -Xmx768m
     healthcheck:
       test: ["CMD", "wget", "-q", "--tries=1", "--spider", "http://localhost:9100/health/readiness"]
       interval: 30s
@@ -440,9 +538,16 @@ services:
       retries: 5
       start_period: 30s
     restart: on-failure
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          cpus: "0.25"
+          memory: 512m
     volumes:
       - "./.console:/var/run/config"
-    networks:
       - camunda-platform
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -472,11 +577,28 @@ services:
     depends_on:
       keycloak:
         condition: service_healthy
+    restart: on-failure
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256m
+        reservations:
+          cpus: "0.1"
+          memory: 64m
 
   camunda-init:
     image: python:3-slim
     container_name: camunda-init
     restart: "no"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512m
+        reservations:
+          cpus: "0.1"
+          memory: 128m
     volumes:
       - "./scripts/camunda-init.py:/init.py:ro"
     environment:
