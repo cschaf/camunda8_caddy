@@ -13,7 +13,7 @@ identity:
         - name: Connectors
           id: connectors
           type: m2m
-          secret: ${VALUES_KEYCLOAK_INIT_CONNECTORS_SECRET:demo-connectors-secret}
+          secret: ${VALUES_KEYCLOAK_INIT_CONNECTORS_SECRET}
           permissions:
             - audience: "orchestration-api"
               definition: read:*
@@ -62,7 +62,7 @@ identity:
         - name: Orchestration
           id: orchestration
           type: confidential
-          secret: ${VALUES_KEYCLOAK_INIT_ORCHESTRATION_SECRET:secret}
+          secret: ${VALUES_KEYCLOAK_INIT_ORCHESTRATION_SECRET}
           root-url: "https://orchestration.${HOST}"
           redirect-uris:
             - "/sso-callback"
@@ -88,7 +88,7 @@ identity:
         - name: Optimize
           id: optimize
           type: confidential
-          secret: ${VALUES_KEYCLOAK_INIT_OPTIMIZE_SECRET:demo-optimize-secret}
+          secret: ${VALUES_KEYCLOAK_INIT_OPTIMIZE_SECRET}
           root-url: "https://optimize.${HOST}"
           redirect-uris:
             - "/api/authentication/callback"
@@ -156,17 +156,17 @@ identity:
 keycloak:
   url: "http://${KEYCLOAK_HOST}:18080/auth"
   setup:
-    user: "${KEYCLOAK_ADMIN_USER:admin}"
-    password: "${KEYCLOAK_ADMIN_PASSWORD:admin}"
+    user: "${KEYCLOAK_ADMIN_USER}"
+    password: "${KEYCLOAK_ADMIN_PASSWORD}"
   init:
     console:
-      secret: ${VALUES_KEYCLOAK_INIT_CONSOLE_SECRET:demo-console-secret}
+      secret: ${VALUES_KEYCLOAK_INIT_CONSOLE_SECRET}
     orchestration:
-      secret: ${VALUES_KEYCLOAK_INIT_ORCHESTRATION_SECRET:secret}
+      secret: ${VALUES_KEYCLOAK_INIT_ORCHESTRATION_SECRET}
     optimize:
-      secret: ${VALUES_KEYCLOAK_INIT_OPTIMIZE_SECRET:demo-optimize-secret}
+      secret: ${VALUES_KEYCLOAK_INIT_OPTIMIZE_SECRET}
     connectors:
-      secret: ${VALUES_KEYCLOAK_INIT_CONNECTORS_SECRET:demo-connectors-secret}
+      secret: ${VALUES_KEYCLOAK_INIT_CONNECTORS_SECRET}
     webmodeler:
       root-url: "https://webmodeler.${HOST}"
   clients:
@@ -175,7 +175,7 @@ keycloak:
       - name: Identity
         id: "camunda-identity"
         type: CONFIDENTIAL
-        secret: ${CAMUNDA_IDENTITY_CLIENT_SECRET:demo-identity-secret}
+        secret: ${CAMUNDA_IDENTITY_CLIENT_SECRET}
         root-url: "https://identity.${HOST}"
         redirect-uris:
           - "/auth/login-callback"
@@ -183,7 +183,7 @@ keycloak:
           - "http://${HOST}:8084/auth/login-callback"
   users:
     - username: "demo"
-      password: "demo"
+      password: "${DEMO_USER_PASSWORD}"
       firstName: "Demo"
       lastName: "User"
       email: "demo@example.org"
