@@ -2,8 +2,8 @@
 
 This document describes every configuration in this stack, explaining what each setting does, what the default would be, and why this stack's value was chosen. It serves as the authoritative reference for why the stack is configured the way it is.
 
-**Target server:** 16 vCPU / 32 GB RAM Linux server (bare metal or VM)  
-**Architecture:** Self-managed Camunda 8.8 on Docker Compose  
+**Target server:** 16 vCPU / 32 GB RAM Linux server (bare metal or VM)
+**Architecture:** Self-managed Camunda 8.8 on Docker Compose
 **Purpose:** Production-oriented single-node Docker Compose profile
 
 > **Production readiness note:** This is a **single-node Docker Compose profile** — not a highly available production deployment. For production environments, Camunda recommends Kubernetes with Helm (see [Camunda Self-Managed Deployment Overview](https://docs.camunda.io/docs/next/self-managed/setup/overview/)). This profile is suitable for **non-production environments** such as development, testing, and staging. Review the [Development vs Production Trade-offs](#11-development-vs-production-trade-offs) section before using this in any environment where security, durability, or availability matter.
@@ -97,7 +97,7 @@ All services have Docker-level `deploy.resources` limits and reservations. JVM h
 | optimize | 2.0 | 3G | 1536m | `-Xms2304m -Xmx2304m` | 75% of limit (2304m); JVM-based analytics service |
 | keycloak | 2.0 | 2G | 512m | — | Quarkus-based, no JVM heap setting needed |
 | connectors | 2.0 | 1G | 512m | `-Xmx768m` | 75% of limit; outbound integrations only |
-| identity | 1.0 | 1G | 256m | — | Spring Boot, no explicit heap (uses JVM defaults) |
+| identity | 1.0 | 1G | 256m | `-Xms256m -Xmx768m` | 75% of limit; Spring Boot service |
 | console | 1.0 | 1G | 512m | `-Xms256m -Xmx768m` | 75% of limit; Node.js but has a JVM sidecar for metrics |
 | web-modeler-restapi | 1.0 | 1G | 512m | `-Xmx768m` | 75% of limit; Java REST API |
 | postgres (identity) | 1.0 | 1G | 512m | — | No JVM; PostgreSQL manages own memory |
@@ -108,7 +108,7 @@ All services have Docker-level `deploy.resources` limits and reservations. JVM h
 | mailpit | 0.25 | 128m | 32m | — | Go SMTP server |
 | camunda-init | 0.5 | 512m | 128m | — | One-shot Python init job |
 
-**Total limits:** ~27.6 GB, **Total reservations:** ~16.3 GB  
+**Total limits:** ~27.6 GB, **Total reservations:** ~16.3 GB
 Leaves ~15.7 GB headroom for the OS and burst.
 
 ### Why 75% for JVM services?
@@ -178,8 +178,8 @@ threads:
 
 | Setting | Value | Default | Why |
 |---------|-------|---------|-----|
-| `cpuThreadCount` | `4` | `2` | Number of threads for processing workflow commands. With 4 CPU cores allocated, using 4 threads maximizes throughput. The default of 2 would underutilize the container. |
-| `ioThreadCount` | `4` | `2` | Number of threads for IO-bound operations (network, disk). Having 4 IO threads allows the broker to handle many concurrent export/disk operations without blocking the CPU threads. |
+| `cpuThreadCount` | `4` | `2` (was `3`) | Number of threads for processing workflow commands. With 4 CPU cores allocated, using 4 threads maximizes throughput. The Zeebe upstream default is 2; this stack previously used 3. |
+| `ioThreadCount` | `4` | `2` (was `3`) | Number of threads for IO-bound operations (network, disk). Having 4 IO threads allows the broker to handle many concurrent export/disk operations without blocking the CPU threads. The Zeebe upstream default is 2; this stack previously used 3. |
 
 ### Disk Watermarks
 
@@ -279,7 +279,7 @@ The identity service uses this file to:
 2. Configure client secrets, redirect URIs, and allowed origins
 3. Set up the demo user with all required roles
 
-**Hardcoded fallbacks removed:**  
+**Hardcoded fallbacks removed:**
 All `${VAR:default}` patterns have been removed. The stack now **fails fast** at startup if a required environment variable is missing, rather than silently using weak defaults like `admin`, `demo`, or `secret`.
 
 **Demo user wiring:**
@@ -395,7 +395,7 @@ This distinction is critical: the browser must see the public HTTPS URL in the a
 - `CAMUNDA_OPTIMIZE_IDENTITY_ISSUER_BACKEND_URL=http://${KEYCLOAK_HOST}:18080/...` — Internal issuer URL
 - `SERVER_FORWARD_HEADERS_STRATEGY=framework` — Required behind Caddy proxy for correct URL construction
 
-**Important:** Optimize is the only Spring Boot service that runs a **separate** Elasticsearch (not the shared platform ES). It connects to the shared `elasticsearch` container but maintains its own indices with the `optimize-` prefix.
+**Important:** Optimize shares the platform `elasticsearch` container but maintains its own indices under the `optimize-` prefix — it does not use the same index namespace as Operate, Tasklist, or the Zeebe exporter.
 
 ### Identity
 

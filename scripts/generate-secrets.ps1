@@ -23,12 +23,17 @@ function Get-EnvVal([string]$Key) {
     return $line.Substring($Key.Length + 1)
 }
 
+$renovateLine = (Get-Content $EnvExample | Where-Object { $_ -match '^# renovate:' } | Select-Object -First 1) ?? ''
+
 $content = @"
 ## Image versions ##
+$renovateLine
 CAMUNDA_VERSION=$(Get-EnvVal 'CAMUNDA_VERSION')
 CAMUNDA_CONNECTORS_VERSION=$(Get-EnvVal 'CAMUNDA_CONNECTORS_VERSION')
 CAMUNDA_IDENTITY_VERSION=$(Get-EnvVal 'CAMUNDA_IDENTITY_VERSION')
+CAMUNDA_OPERATE_VERSION=$(Get-EnvVal 'CAMUNDA_OPERATE_VERSION')
 CAMUNDA_OPTIMIZE_VERSION=$(Get-EnvVal 'CAMUNDA_OPTIMIZE_VERSION')
+CAMUNDA_TASKLIST_VERSION=$(Get-EnvVal 'CAMUNDA_TASKLIST_VERSION')
 CAMUNDA_WEB_MODELER_VERSION=$(Get-EnvVal 'CAMUNDA_WEB_MODELER_VERSION')
 CAMUNDA_CONSOLE_VERSION=$(Get-EnvVal 'CAMUNDA_CONSOLE_VERSION')
 ELASTIC_VERSION=$(Get-EnvVal 'ELASTIC_VERSION')

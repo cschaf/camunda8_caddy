@@ -113,7 +113,7 @@ echo "Updated Caddyfile (replaced *.localhost -> *.$HOST)"
 
 # Strip any existing tls directives — prevents stale directives from persisting
 # when switching between custom certs and auto-generated certs.
-sed -i '/^[[:space:]]*tls \//d' "$CADDYFILE"
+sed -i '/^[[:space:]]*tls[[:space:]]\{1,\}[^[:space:]]\{1,\}[[:space:]]\{1,\}[^[:space:]]\{1,\}/d' "$CADDYFILE"
 
 # Add tls directive if custom certs are provided
 if [[ $USE_CUSTOM_TLS -eq 1 ]]; then

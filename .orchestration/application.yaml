@@ -113,9 +113,9 @@ camunda:
   operate:
     persistentSessionsEnabled: true
     identity:
-      redirectRootUrl: "https://orchestration.localhost/operate"
+      redirectRootUrl: "https://orchestration.${HOST}/operate"
 
   tasklist:
     identity:
-      redirectRootUrl: "https://orchestration.localhost/tasklist"
+      redirectRootUrl: "https://orchestration.${HOST}/tasklist"
 

@@ -54,7 +54,7 @@ if ($currentHost -and $currentHost -ne $EnvHost) {
 
 # Strip any existing tls directives — prevents stale directives from persisting
 # when switching between custom certs and auto-generated certs.
-$updated = $updated -replace '(?m)^[ \t]+tls /[^\r\n]+\r?\n', ''
+$updated = $updated -replace '(?m)^[ \t]*tls[ \t]+\S+[ \t]+\S+[ \t]*\r?\n', ''
 
 # Add tls directive to each site block if custom certs are provided
 if ($useCustomTls) {
