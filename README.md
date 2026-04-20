@@ -131,13 +131,55 @@ The scripts are **idempotent** — re-running them will not produce duplicate en
 ### 6. Start the cluster
 
 ```bash
-docker compose up -d
+# Linux / macOS
+bash scripts/start.sh
+
+# Windows (PowerShell)
+pwsh -File scripts/start.ps1
 ```
 
 Wait for all services to be healthy (may take 2–3 minutes on first start):
 
 ```bash
 docker compose ps
+```
+
+## Environment Stages
+
+The stack reads `STAGE` from `.env` and applies a matching resource profile from `stages/`. The value is case-insensitive, so `DEV`, `dev`, and `DeV` all select the same profile.
+
+Supported values:
+
+| STAGE | Target |
+|-------|--------|
+| `prod` | Full production-grade resources, matching the base `docker-compose.yaml` limits and reservations |
+| `dev` | Reduced resources for developer workstations with fewer CPUs and less RAM |
+| `test` | Compact resources for constrained test hosts |
+
+Start the stack with the stage-aware wrapper:
+
+```bash
+# Linux / macOS
+bash scripts/start.sh
+
+# Windows (PowerShell)
+pwsh -File scripts/start.ps1
+```
+
+Stop the stack with:
+
+```bash
+# Linux / macOS
+bash scripts/stop.sh
+
+# Windows (PowerShell)
+pwsh -File scripts/stop.ps1
+```
+
+Internally, the start scripts run Docker Compose with the base file and the selected stage override, for example:
+
+```bash
+docker compose -f docker-compose.yaml -f stages/dev.yaml up -d
 ```
 
 ### 7. Access the services

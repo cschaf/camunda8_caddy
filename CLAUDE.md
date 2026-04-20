@@ -11,11 +11,13 @@ This is a Camunda 8 Self-Managed Docker Compose distribution for local developme
 ### Starting the Environment
 
 ```bash
-# Start all services (detached mode)
-docker compose up -d
+# Start all services with the resource profile from STAGE in .env
+bash scripts/start.sh
+pwsh -File scripts/start.ps1
 
 # Stop all services
-docker compose down
+bash scripts/stop.sh
+pwsh -File scripts/stop.ps1
 
 # View logs
 docker compose logs -f [service-name]
@@ -125,6 +127,13 @@ The cluster configuration (`CAMUNDA_MODELER_CLUSTERS_0_URL_WEBAPP`) points to th
 - `.optimize/environment-config.yaml` — Optimize config
 - `.console/application.yaml` — Console config
 - `connector-secrets.txt` — Connectors secrets (mounted as env_file)
+- `stages/` — Stage-specific Docker Compose resource profiles (`prod`, `dev`, `test`) merged on top of `docker-compose.yaml` by the start scripts
+
+### Environment Stages
+
+Use `scripts/start.sh` or `scripts/start.ps1` instead of direct `docker compose up` when starting the stack. The scripts read `STAGE` from `.env`, normalize it case-insensitively, validate `prod|dev|test`, and run Docker Compose with the matching `stages/<stage>.yaml` file.
+
+Use `scripts/stop.sh` or `scripts/stop.ps1` for the matching shutdown command.
 
 ### Reverse Proxy
 
