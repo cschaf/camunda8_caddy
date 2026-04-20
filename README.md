@@ -58,27 +58,7 @@ cp Caddyfile.example Caddyfile
 
 The `Caddyfile` is gitignored because the `setup-host` scripts rewrite it with your actual `HOST` value and optional TLS paths. `Caddyfile.example` is the committed template — never edit `Caddyfile` directly; re-run `setup-host` instead.
 
-### 4. Configure hostname, Caddyfile, and hosts
-
-**Linux / macOS:**
-```bash
-bash scripts/setup-host.sh
-```
-
-**Windows (PowerShell — run as Administrator):**
-```powershell
-pwsh -File scripts/setup-host.ps1
-```
-
-> **Admin required on Windows:** the script writes to `C:\Windows\System32\drivers\etc\hosts`. Without elevation the Caddyfile update still succeeds but the hosts file update will fail.
-
-Both scripts read `HOST` from `.env` and update:
-- `Caddyfile` — replaces all `*.localhost` domain names with `*.{HOST}`, including the root `{HOST} {` dashboard block
-- hosts file — adds `127.0.0.1 {HOST}` and `127.0.0.1` entries for all subdomains (keycloak, identity, console, optimize, orchestration, webmodeler)
-
-The scripts are **idempotent** — re-running them will not produce duplicate entries.
-
-#### Custom TLS certificates (optional)
+### 4. Custom TLS certificates (optional)
 
 By default, Caddy generates a self-signed certificate and your browser will show a security warning. To use a trusted certificate instead, place your certificate files in the `certs/` folder in the project root (it is mounted read-only at `/certs` inside the Caddy container) and set the paths in `.env`:
 
@@ -89,8 +69,6 @@ PRIVATEKEY_PEM=/certs/private.key
 ```
 
 > **Note:** The `certs/` folder is listed in `.gitignore` — certificate files (especially private keys) will never be accidentally committed.
-
-The `setup-host` script will inject a `tls <cert> <key>` directive into every top-level site block in the Caddyfile automatically. If `FULLCHAIN_PEM`/`PRIVATEKEY_PEM` are not set, Caddy generates self-signed certs.
 
 Before starting the cluster, verify that the certificate covers your `HOST`:
 
@@ -128,9 +106,29 @@ PRIVATEKEY_PEM=/certs/_wildcard.your-hostname+1-key.pem
 
 > **Note on filenames:** `mkcert` appends a counter suffix when multiple SANs are given (`+1`, `+2`, …). Check the actual filenames in `certs/` after running `mkcert`.
 
-The Caddyfile change takes effect when the cluster starts (step 3).
+The `setup-host` script in the next step reads `FULLCHAIN_PEM` and `PRIVATEKEY_PEM` from `.env` and injects a `tls <cert> <key>` directive into every top-level site block in the Caddyfile. If those variables are not set, Caddy generates self-signed certs instead.
 
-### 5. Start the cluster
+### 5. Configure hostname, Caddyfile, and hosts
+
+**Linux / macOS:**
+```bash
+bash scripts/setup-host.sh
+```
+
+**Windows (PowerShell — run as Administrator):**
+```powershell
+pwsh -File scripts/setup-host.ps1
+```
+
+> **Admin required on Windows:** the script writes to `C:\Windows\System32\drivers\etc\hosts`. Without elevation the Caddyfile update still succeeds but the hosts file update will fail.
+
+Both scripts read `HOST` from `.env` and update:
+- `Caddyfile` — replaces all `*.localhost` domain names with `*.{HOST}`, including the root `{HOST} {` dashboard block; also injects `tls` directives if custom certificates are configured
+- hosts file — adds `127.0.0.1 {HOST}` and `127.0.0.1` entries for all subdomains (keycloak, identity, console, optimize, orchestration, webmodeler)
+
+The scripts are **idempotent** — re-running them will not produce duplicate entries.
+
+### 6. Start the cluster
 
 ```bash
 docker compose up -d
@@ -142,7 +140,7 @@ Wait for all services to be healthy (may take 2–3 minutes on first start):
 docker compose ps
 ```
 
-### 6. Access the services
+### 7. Access the services
 
 The dashboard at `https://{HOST}` provides a landing page with links to all services. Links adapt automatically to the configured `HOST`.
 
