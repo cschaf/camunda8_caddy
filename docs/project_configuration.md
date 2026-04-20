@@ -2,9 +2,9 @@
 
 This document describes every configuration in this stack, explaining what each setting does, what the default would be, and why this stack's value was chosen. It serves as the authoritative reference for why the stack is configured the way it is.
 
-**Target server:** 16 vCPU / 32 GB RAM Linux server (bare metal or VM)
+**Target server:** Depends on environment stage — see [Resource Allocation](#3-resource-allocation)
 **Architecture:** Self-managed Camunda 8.8 on Docker Compose
-**Purpose:** Production-oriented single-node Docker Compose profile
+**Purpose:** Production-oriented single-node Docker Compose profile with configurable resource tiers (prod / dev / test)
 
 > **Production readiness note:** This is a **single-node Docker Compose profile** — not a highly available production deployment. For production environments, Camunda recommends Kubernetes with Helm (see [Camunda Self-Managed Deployment Overview](https://docs.camunda.io/docs/next/self-managed/setup/overview/)). This profile is suitable for **non-production environments** such as development, testing, and staging. Review the [Development vs Production Trade-offs](#11-development-vs-production-trade-offs) section before using this in any environment where security, durability, or availability matter.
 
@@ -86,9 +86,13 @@ CAMUNDA_SECURITY_AUTHENTICATION_OIDC_TOKENURI: http://keycloak:18080/auth/realms
 
 ## 3. Resource Allocation
 
-All services have Docker-level `deploy.resources` limits and reservations. JVM heaps are aligned to memory limits (75% of container limit for JVM services, 50% for Elasticsearch which uses Lucene off-heap page cache for the other half).
+Resources are managed through **environment stages**. The `STAGE` variable in `.env` selects a profile (`prod`, `dev`, or `test`) that Docker Compose merges on top of the base `docker-compose.yaml`. Each profile overrides `deploy.resources` limits and reservations, and for JVM services, scales heap sizes proportionally to prevent OOM kills.
 
-### Resource Table
+For a complete side-by-side comparison of all stages, see [docs/stage_comparison.md](stage_comparison.md).
+
+### Base (Production) Profile
+
+The following table shows the **base** resource configuration — what the `prod` stage uses. This is the reference profile calibrated for a 16 vCPU / 32 GB RAM Linux server.
 
 | Service | CPU limit | Memory limit | Memory reservation | JVM Heap | Heap Rationale |
 |---------|-----------|--------------|-------------------|----------|----------------|
@@ -109,6 +113,15 @@ All services have Docker-level `deploy.resources` limits and reservations. JVM h
 
 **Total limits:** ~27.2 GB, **Total reservations:** ~16.2 GB
 Leaves ~15.7 GB headroom for the OS and burst.
+
+### Reduced Profiles
+
+| Stage | Target hardware | Total memory limits | Typical use |
+|-------|----------------|---------------------|-------------|
+| `dev` | 8 vCPU / 16 GB RAM workstation | ~15 GB | Local development on laptops or smaller VMs |
+| `test` | 6 vCPU / 12 GB RAM host | ~11 GB | CI runners, integration test environments |
+
+Reduced profiles halve (dev) or quarter (test) CPU and memory limits for heavy and medium services, and scale JVM heaps proportionally — Elasticsearch to 50% of its reduced limit, all other JVM services to 75%.
 
 ### Why 75% for JVM services?
 
@@ -155,7 +168,7 @@ environment:
 | `cluster.routing.allocation.disk.watermark.high=90%` | `90%` | `90%` | Elasticsearch blocks shard allocation entirely above 90%. Combined with flood_stage at 95%, gives two warning thresholds before read-only lock. |
 | `cluster.routing.allocation.disk.watermark.flood_stage=95%` | `95%` | `95%` | At 95%, Elasticsearch marks all indices on the node as read-only (`index.blocks.read_only_allow_delete`). Requires manual intervention to clear. The gap between 90% and 95% gives operators a window to react. |
 | `indices.breaker.total.limit=75%` | `75%` | `70%` | The parent circuit breaker limit for all sub-breakers (fielddata, request, in-flight). 75% of JVM heap. Raised slightly from 70% because Optimize performs large aggregations that can approach the limit. If this trips, it causes `TooManyBookmarks` or aggregation failures in Optimize. |
-| `ES_JAVA_OPTS=-Xms4g -Xmx4g` | `4g` | 50% of container | 4 GB heap (50% of the 8 GB limit) for Lucene to use the other ~4 GB as off-heap page cache. |
+| `ES_JAVA_OPTS=-Xms4g -Xmx4g` | `4g` | 50% of container | 4 GB heap (50% of the 8 GB limit) for Lucene to use the other ~4 GB as off-heap page cache. Scaled down proportionally in `dev` and `test` stages. |
 
 ### Previously Removed: `cluster.routing.allocation.disk.threshold_enabled=false`
 
