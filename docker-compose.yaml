@@ -548,6 +548,7 @@ services:
           memory: 512m
     volumes:
       - "./.console:/var/run/config"
+    networks:
       - camunda-platform
     extra_hosts:
       - "host.docker.internal:host-gateway"
