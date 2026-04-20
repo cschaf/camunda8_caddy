@@ -216,13 +216,7 @@ bash scripts/add-camunda-user.sh \
 
 **Windows (PowerShell):**
 ```powershell
-pwsh -File scripts/add-camunda-user.ps1 \
-  -Username jdoe \
-  -Password "changeme" \
-  -Email "jdoe@example.com" \
-  -FirstName John \
-  -LastName Doe \
-  -Role NormalUser
+pwsh -File scripts/add-camunda-user.ps1 -Username jdoe -Password "changeme" -Email "jdoe@example.com" -FirstName John -LastName Doe -Role NormalUser
 ```
 
 ### Roles
