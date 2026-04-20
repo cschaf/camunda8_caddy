@@ -59,7 +59,8 @@ zeebe:
         className: "io.camunda.zeebe.exporter.ElasticsearchExporter"
         args:
           url: "http://elasticsearch:9200"
-          # Default is 1000, reduced to 1 for faster local development feedback
+          # Default is 1000; batching avoids excessive Lucene segment churn.
+          # A value of 1 would write every event individually, causing rapid index growth.
           bulk:
             size: 1000
           index:

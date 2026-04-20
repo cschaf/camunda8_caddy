@@ -4,7 +4,9 @@ This document describes every configuration in this stack, explaining what each 
 
 **Target server:** 16 vCPU / 32 GB RAM Linux server (bare metal or VM)  
 **Architecture:** Self-managed Camunda 8.8 on Docker Compose  
-**Purpose:** Production-ready single-node Camunda 8 deployment
+**Purpose:** Production-oriented single-node Docker Compose profile
+
+> **Production readiness note:** This is a **single-node Docker Compose profile** — not a highly available production deployment. For production environments, Camunda recommends Kubernetes with Helm (see [Camunda Self-Managed Deployment Overview](https://docs.camunda.io/docs/next/self-managed/setup/overview/)). This profile is suitable for **non-production environments** such as development, testing, and staging. Review the [Development vs Production Trade-offs](#11-development-vs-production-trade-offs) section before using this in any environment where security, durability, or availability matter.
 
 ---
 
@@ -445,7 +447,7 @@ Three components:
 - `RESTAPI_OAUTH2_TOKEN_ISSUER=https://keycloak.${HOST}/...` — Browser-facing issuer (used for JWT validation from webapp)
 - `RESTAPI_OAUTH2_TOKEN_ISSUER_BACKEND_URL=http://${KEYCLOAK_HOST}:18080/...` — Internal issuer URL
 - `RESTAPI_PUSHER_*` — Pusher configuration for WebSocket communication with the websockets service
-- `CAMUNDA_MODELER_CLUSTERS_0_URL_WEBAPP=http://localhost:8088` — Points to the **Orchestration** UI (not Web Modeler itself), because Web Modeler connects to the Zeebe broker running in Orchestration
+- `CAMUNDA_MODELER_CLUSTERS_0_URL_WEBAPP=https://orchestration.${HOST}` — Points to the **Orchestration** UI (not Web Modeler itself), because Web Modeler connects to the Zeebe broker running in Orchestration. Uses the browser-reachable HTTPS proxy URL so it works from remote clients on the network, not just the Docker host machine.
 
 **WebSocket via proxy:** When `webmodeler.camunda.dev.local` is served over HTTPS, the browser's Pusher client connects to `wss://webmodeler.camunda.dev.local/app/*`. Caddy proxies this to `web-modeler-websockets:8060`. See [Reverse Proxy section](#9-reverse-proxy-caddy) for the `handle /app/*` directive.
 
@@ -471,11 +473,7 @@ Three components:
 
 ### TLS Configuration
 
-```caddy
-tls /certs/_wildcard.camunda.dev.local+1.pem /certs/_wildcard.camunda.dev.local+1-key.pem
-```
-
-A wildcard certificate covers all subdomains. If `FULLCHAIN_PEM`/`PRIVATEKEY_PEM` are not set in `.env`, Caddy generates a self-signed wildcard certificate automatically via ACME.
+When `FULLCHAIN_PEM` and `PRIVATEKEY_PEM` are set in `.env`, the `setup-host` scripts inject a `tls <cert> <key>` directive into each top-level site block. When those variables are unset, Caddy auto-generates a self-signed certificate for all sites automatically — no explicit `tls` directive is needed in the Caddyfile template.
 
 ### Key Configuration Details
 
