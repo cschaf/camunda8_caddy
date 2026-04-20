@@ -1,5 +1,15 @@
 # Camunda 8 Self-Managed - Docker Compose
 
+## Prerequisites
+
+- [Docker Engine](https://docs.docker.com/engine/install/) 24.0+ and [Docker Compose](https://docs.docker.com/compose/install/) ( Compose V2 plugin `docker compose`)
+- [Git](https://git-scm.com/downloads) — to clone this repository
+- **Linux/macOS:** Bash + `openssl` (for `generate-secrets.sh`)
+- **Windows:** PowerShell 7+ (for `.ps1` scripts)
+- `bash` available in your PATH — some health checks inside containers run `bash -c` commands
+
+> **RAM:** This stack reserves ~16 GB and limits at ~27 GB. The host machine needs at least **32 GB RAM** for stable operation.
+
 ## Usage
 
 For end user usage, please check the official documentation of [Camunda 8 Self-Managed Docker Compose](https://docs.camunda.io/docs/next/self-managed/quickstart/developer-quickstart/docker-compose/).
@@ -8,13 +18,25 @@ For end user usage, please check the official documentation of [Camunda 8 Self-M
 
 Complete these steps in order after a fresh clone.
 
-### 1. Create the environment file
+### 1. Generate environment file with strong random secrets
 
+```bash
+# Linux / macOS
+bash scripts/generate-secrets.sh
+
+# Windows (PowerShell)
+pwsh -File scripts/generate-secrets.ps1
+```
+
+This creates `.env` with cryptographically random secrets (48-character hex strings via `openssl rand -hex 24` / `System.Security.Cryptography.RandomNumberGenerator`). The file is given restricted permissions (`chmod 600` on Linux/macOS).
+
+> **Always use `--force` / `-Force` with caution** — it overwrites an existing `.env`, invalidating all current secrets. Not recommended on an already-running deployment.
+
+**Local demo fallback:** If you need weak demo secrets for a quick local demo (never use this in any environment where security matters), copy `.env.example` instead:
 ```bash
 cp .env.example .env
 ```
-
-Open `.env` and set `HOST` to your desired domain. All services will be available at `{subdomain}.{HOST}` (e.g. `https://orchestration.localhost` if `HOST=localhost`).
+The `.env.example` file contains known weak values (`admin`, `demo`, `demo-connectors-secret`, etc.) and is clearly marked unsafe for production.
 
 > **Use lowercase for `HOST`:** Browsers normalize domain names to lowercase in HTTP Host headers, and Keycloak validates redirect URIs with case-sensitive string matching. If `HOST` contains uppercase letters (e.g. `Camunda.Dev.Local`), services that derive their `redirect_uri` from the incoming Host header will produce a lowercase URI that does not match the uppercase URI registered in Keycloak, causing "Invalid parameter: redirect_uri" errors. Always set `HOST` to lowercase (e.g. `camunda.dev.local`).
 >
@@ -36,27 +58,7 @@ cp Caddyfile.example Caddyfile
 
 The `Caddyfile` is gitignored because the `setup-host` scripts rewrite it with your actual `HOST` value and optional TLS paths. `Caddyfile.example` is the committed template — never edit `Caddyfile` directly; re-run `setup-host` instead.
 
-### 4. Configure hostname, Caddyfile, and hosts
-
-**Linux / macOS:**
-```bash
-bash scripts/setup-host.sh
-```
-
-**Windows (PowerShell — run as Administrator):**
-```powershell
-pwsh -File scripts/setup-host.ps1
-```
-
-> **Admin required on Windows:** the script writes to `C:\Windows\System32\drivers\etc\hosts`. Without elevation the Caddyfile update still succeeds but the hosts file update will fail.
-
-Both scripts read `HOST` from `.env` and update:
-- `Caddyfile` — replaces all `*.localhost` domain names with `*.{HOST}`, including the root `{HOST} {` dashboard block
-- hosts file — adds `127.0.0.1 {HOST}` and `127.0.0.1` entries for all subdomains (keycloak, identity, console, optimize, orchestration, webmodeler)
-
-The scripts are **idempotent** — re-running them will not produce duplicate entries.
-
-#### Custom TLS certificates (optional)
+### 4. Custom TLS certificates (optional)
 
 By default, Caddy generates a self-signed certificate and your browser will show a security warning. To use a trusted certificate instead, place your certificate files in the `certs/` folder in the project root (it is mounted read-only at `/certs` inside the Caddy container) and set the paths in `.env`:
 
@@ -67,8 +69,6 @@ PRIVATEKEY_PEM=/certs/private.key
 ```
 
 > **Note:** The `certs/` folder is listed in `.gitignore` — certificate files (especially private keys) will never be accidentally committed.
-
-The `setup-host` script will inject a `tls <cert> <key>` directive into every top-level site block in the Caddyfile automatically. If `FULLCHAIN_PEM`/`PRIVATEKEY_PEM` are not set, Caddy generates self-signed certs.
 
 Before starting the cluster, verify that the certificate covers your `HOST`:
 
@@ -106,9 +106,29 @@ PRIVATEKEY_PEM=/certs/_wildcard.your-hostname+1-key.pem
 
 > **Note on filenames:** `mkcert` appends a counter suffix when multiple SANs are given (`+1`, `+2`, …). Check the actual filenames in `certs/` after running `mkcert`.
 
-The Caddyfile change takes effect when the cluster starts (step 3).
+The `setup-host` script in the next step reads `FULLCHAIN_PEM` and `PRIVATEKEY_PEM` from `.env` and injects a `tls <cert> <key>` directive into every top-level site block in the Caddyfile. If those variables are not set, Caddy generates self-signed certs instead.
 
-### 5. Start the cluster
+### 5. Configure hostname, Caddyfile, and hosts
+
+**Linux / macOS:**
+```bash
+bash scripts/setup-host.sh
+```
+
+**Windows (PowerShell — run as Administrator):**
+```powershell
+pwsh -File scripts/setup-host.ps1
+```
+
+> **Admin required on Windows:** the script writes to `C:\Windows\System32\drivers\etc\hosts`. Without elevation the Caddyfile update still succeeds but the hosts file update will fail.
+
+Both scripts read `HOST` from `.env` and update:
+- `Caddyfile` — replaces all `*.localhost` domain names with `*.{HOST}`, including the root `{HOST} {` dashboard block; also injects `tls` directives if custom certificates are configured
+- hosts file — adds `127.0.0.1 {HOST}` and `127.0.0.1` entries for all subdomains (keycloak, identity, console, optimize, orchestration, webmodeler)
+
+The scripts are **idempotent** — re-running them will not produce duplicate entries.
+
+### 6. Start the cluster
 
 ```bash
 docker compose up -d
@@ -119,24 +139,6 @@ Wait for all services to be healthy (may take 2–3 minutes on first start):
 ```bash
 docker compose ps
 ```
-
-The `camunda-init` service starts automatically once `orchestration` is healthy and applies authorization patches (e.g. granting NormalUser the right to complete tasks in Tasklist). It runs once and exits — no manual action needed. To extend it, add entries to `PATCHES` in `scripts/camunda-init.py`.
-
-### 6. Configure Keycloak redirect URIs
-
-After the cluster is up, run:
-
-**Linux / macOS:**
-```bash
-bash scripts/keycloak-redirects.sh
-```
-
-**Windows (PowerShell):**
-```powershell
-pwsh -File scripts/keycloak-redirects.ps1
-```
-
-Both scripts read `HOST` from `.env` and add the correct HTTPS proxy redirect URIs to Keycloak for all clients. Safe to re-run.
 
 ### 7. Access the services
 
@@ -164,7 +166,7 @@ All configuration is driven by the `HOST` variable in `.env`. To switch domain:
 2. If you want trusted TLS, place certificate files in `certs/` and set `FULLCHAIN_PEM`/`PRIVATEKEY_PEM` in `.env` (see [Custom TLS certificates](#custom-tls-certificates-optional) above)
 3. Run `scripts/setup-host.sh` (Linux/macOS) or `pwsh -File scripts/setup-host.ps1` **as Administrator** (Windows) to update Caddyfile and hosts file
 4. Start/restart the cluster: `docker compose up -d` (or `docker compose restart reverse-proxy` if already running)
-5. Re-run `scripts/keycloak-redirects.sh` (Linux/macOS) or `pwsh -File scripts/keycloak-redirects.ps1` (Windows) to update Keycloak redirect URIs
+5. If Keycloak data persists, the redirect URIs from `.identity/application.yaml` are already correct. Only if you see "Invalid redirect_uri" errors after hostname changes, wipe Keycloak's database volume and restart (`docker compose down -v keycloak-theme postgres && docker compose up -d`).
 
 ### Accessing from other machines on the network
 
@@ -177,61 +179,38 @@ Each client machine also needs to trust the CA that signed your certificate. For
 
 ---
 
-## Keycloak Redirect URI Management
-
-Keycloak strictly validates redirect URIs — the browser will only be redirected to URLs explicitly allowlisted for each client. If a redirect URI is missing or wrong, you will see "Invalid redirect_uri" errors after login.
-
-The redirect URI scripts (`keycloak-redirects.sh` / `keycloak-redirects.ps1`) add both direct `localhost` URLs and proxy HTTPS URLs. They read `HOST` from `.env` automatically.
-
-### Prerequisites
-
-- Keycloak must be accessible at `keycloak.{HOST}` (override with `--keycloak-host` or `KEYCLOAK_HOST` env var)
-- Default admin credentials: `admin` / `admin` (configure with `--admin-user` / `--admin-password` or `ADMIN_USER` / `ADMIN_PASSWORD` env vars)
-
 ---
 
 ## User Management
 
-### Hintergrund: Warum braucht man zwei Systeme?
+### Background: Why two systems?
 
-Camunda 8 hat **zwei unabhängige Sicherheitssysteme**, die beide erfüllt sein müssen, damit ein Benutzer auf Operate oder Tasklist zugreifen kann:
+Camunda 8 has **two independent security systems**. Both must be satisfied for a user to access Operate or Tasklist:
 
-1. **Keycloak** – das zentrale Login-System. Hier werden Benutzer angelegt und ihnen Rollen zugewiesen (z.B. „darf Camunda nutzen").
+1. **Keycloak** — the central login system. Users are created here and assigned roles (e.g., "may use Camunda").
 
-2. **Camundas eigenes Berechtigungssystem** – eine interne Liste, die festlegt, welche Benutzer tatsächlich auf welche Funktionen zugreifen dürfen.
+2. **Camunda's own authorization system** — an internal list that defines which users may actually access which functions.
 
-Beide Systeme müssen übereinstimmen — Keycloak allein reicht nicht.
+Both systems must match — Keycloak alone is not enough.
 
-Der mitgelieferte Demo-Benutzer (`demo`) funktioniert direkt nach dem Start, weil er beim ersten Hochfahren automatisch in **beiden** Systemen eingetragen wird. Manuell angelegte Benutzer wurden früher nur in Keycloak eingetragen und landeten deshalb auf einer „Forbidden"-Seite, obwohl ihr Login erfolgreich war.
+The built-in demo user (`demo`) works immediately after startup because it is automatically registered in **both** systems on first boot. Previously, manually created users were only added to Keycloak and ended up on a "Forbidden" page even though their login succeeded.
 
-Das `add-camunda-user`-Skript trägt neue Benutzer daher in beide Systeme ein. Der `camunda-init`-Dienst stellt beim Start außerdem sicher, dass NormalUser-Konten die nötigen Berechtigungen haben, um Aufgaben in Tasklist bearbeiten zu können — ohne manuellen Eingriff.
+The `add-camunda-user` script therefore adds new users to both systems.
 
 ---
 
-### Benutzer anlegen
+### Creating users
 
 Create Camunda users in Keycloak with role-based permissions.
 
 **Linux / macOS:**
 ```bash
-bash scripts/add-camunda-user.sh \
-  --username jdoe \
-  --password "changeme" \
-  --email "jdoe@example.com" \
-  --first-name John \
-  --last-name Doe \
-  --role NormalUser
+bash scripts/add-camunda-user.sh --username jdoe --password "changeme" --email "jdoe@example.com" --first-name John --last-name Doe --role NormalUser
 ```
 
 **Windows (PowerShell):**
 ```powershell
-pwsh -File scripts/add-camunda-user.ps1 \
-  -Username jdoe \
-  -Password "changeme" \
-  -Email "jdoe@example.com" \
-  -FirstName John \
-  -LastName Doe \
-  -Role NormalUser
+pwsh -File scripts/add-camunda-user.ps1 -Username jdoe -Password "changeme" -Email "jdoe@example.com" -FirstName John -LastName Doe -Role NormalUser
 ```
 
 ### Roles
@@ -243,4 +222,4 @@ pwsh -File scripts/add-camunda-user.ps1 \
 
 The scripts read `HOST` and `ORCHESTRATION_CLIENT_SECRET` from `.env`. On failure the created user is automatically rolled back.
 
-> **How authorization works:** Camunda 8 has its own internal authorization system (`camunda.security.authorizations.enabled=true`) independent of Keycloak roles. The scripts assign users to both their Keycloak realm roles *and* the corresponding Camunda internal role via the REST API. The `camunda-init` service (started automatically with the stack) patches the `readonly-admin` role to include `UPDATE_USER_TASK`, enabling NormalUser accounts to complete tasks in Tasklist.
+> **How authorization works:** Camunda 8 has its own internal authorization system (`camunda.security.authorizations.enabled=true`) independent of Keycloak roles. The scripts assign users to both their Keycloak realm roles *and* the corresponding Camunda internal role via the REST API.

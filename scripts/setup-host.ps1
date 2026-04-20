@@ -52,11 +52,13 @@ if ($currentHost -and $currentHost -ne $EnvHost) {
     $updated = $updated -replace "\b$escaped\b", $EnvHost
 }
 
+# Strip any existing tls directives — prevents stale directives from persisting
+# when switching between custom certs and auto-generated certs.
+$updated = $updated -replace '(?m)^[ \t]*tls[ \t]+\S+[ \t]+\S+[ \t]*\r?\n', ''
+
 # Add tls directive to each site block if custom certs are provided
 if ($useCustomTls) {
     $tlsBlock = "tls $FULLCHAIN_PEM $PRIVATEKEY_PEM"
-    # Remove any existing tls directives first so re-runs don't stack duplicates
-    $updated = $updated -replace '(?m)^[ \t]+tls /[^\r\n]+\r?\n', ''
     # Insert tls directive only after top-level site block opening braces.
     # Top-level blocks start at column 0 (no leading whitespace), e.g.:
     #   keycloak.example.com {

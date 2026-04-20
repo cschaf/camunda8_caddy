@@ -111,10 +111,12 @@ if [[ -n "$current_host" && "$current_host" != "$HOST" ]]; then
 fi
 echo "Updated Caddyfile (replaced *.localhost -> *.$HOST)"
 
+# Strip any existing tls directives — prevents stale directives from persisting
+# when switching between custom certs and auto-generated certs.
+sed -i '/^[[:space:]]*tls[[:space:]]\{1,\}[^[:space:]]\{1,\}[[:space:]]\{1,\}[^[:space:]]\{1,\}/d' "$CADDYFILE"
+
 # Add tls directive if custom certs are provided
 if [[ $USE_CUSTOM_TLS -eq 1 ]]; then
-    # Remove any existing tls directives first so re-runs don't stack duplicates
-    sed -i '/^[[:space:]]*tls \//d' "$CADDYFILE"
     # Insert "tls <cert> <key>" only after top-level site block opening braces.
     # Top-level blocks start at column 0 (no leading whitespace), e.g.:
     #   keycloak.example.com {

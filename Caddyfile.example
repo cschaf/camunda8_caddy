@@ -1,9 +1,13 @@
 # Caddyfile for Camunda Compose NVL - Reverse Proxy
 # Development only - not for production
 
+# Custom TLS certificates (optional):
+# If FULLCHAIN_PEM and PRIVATEKEY_PEM are set in .env, the setup-host scripts
+# inject a "tls <cert> <key>" directive for each site block below.
+# If not set, Caddy automatically generates self-signed certificates for all sites.
+
 # Dashboard (landing page)
 camunda.dev.local {
-    tls /certs/_wildcard.camunda.dev.local+1.pem /certs/_wildcard.camunda.dev.local+1-key.pem
     root * /srv/dashboard
     file_server
     templates
@@ -11,7 +15,6 @@ camunda.dev.local {
 
 # Keycloak
 keycloak.camunda.dev.local {
-    tls /certs/_wildcard.camunda.dev.local+1.pem /certs/_wildcard.camunda.dev.local+1-key.pem
     # Intercept the OIDC check_session_iframe endpoint and return a mock that always
     # reports "unchanged". Chrome 120+ blocks cross-origin JavaScript cookie access
     # in iframes, so the real iframe fails to read KEYCLOAK_SESSION, returns "error",
@@ -28,7 +31,6 @@ keycloak.camunda.dev.local {
 
 # Identity
 identity.camunda.dev.local {
-    tls /certs/_wildcard.camunda.dev.local+1.pem /certs/_wildcard.camunda.dev.local+1-key.pem
     @options {
         method OPTIONS
     }
@@ -58,13 +60,11 @@ identity.camunda.dev.local {
 
 # Console
 console.camunda.dev.local {
-    tls /certs/_wildcard.camunda.dev.local+1.pem /certs/_wildcard.camunda.dev.local+1-key.pem
     reverse_proxy console:8080
 }
 
 # Optimize
 optimize.camunda.dev.local {
-    tls /certs/_wildcard.camunda.dev.local+1.pem /certs/_wildcard.camunda.dev.local+1-key.pem
     reverse_proxy optimize:8090 {
         header_up X-Forwarded-Proto https
         header_up X-Forwarded-Host optimize.camunda.dev.local
@@ -73,7 +73,6 @@ optimize.camunda.dev.local {
 
 # Orchestration (Operate/Tasklist)
 orchestration.camunda.dev.local {
-    tls /certs/_wildcard.camunda.dev.local+1.pem /certs/_wildcard.camunda.dev.local+1-key.pem
     @options {
         method OPTIONS
     }
@@ -99,7 +98,6 @@ orchestration.camunda.dev.local {
 
 # Web Modeler
 webmodeler.camunda.dev.local {
-    tls /certs/_wildcard.camunda.dev.local+1.pem /certs/_wildcard.camunda.dev.local+1-key.pem
     # Pusher WebSocket connections (real-time collaboration)
     handle /app/* {
         reverse_proxy web-modeler-websockets:8060
