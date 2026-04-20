@@ -48,6 +48,14 @@ KEYCLOAK_HOST=$(Get-EnvVal 'KEYCLOAK_HOST')
 ## Stage / Environment Label ##
 STAGE=$(Get-EnvVal 'STAGE')
 
+## Dashboard Banner ##
+BANNER_DARKMODE=$(Get-EnvVal 'BANNER_DARKMODE')
+BANNER_LIGHTMODE=$(Get-EnvVal 'BANNER_LIGHTMODE')
+
+## TLS Certificates (Optional) ##
+FULLCHAIN_PEM=$(Get-EnvVal 'FULLCHAIN_PEM')
+PRIVATEKEY_PEM=$(Get-EnvVal 'PRIVATEKEY_PEM')
+
 ## OIDC Client Configuration ##
 ORCHESTRATION_CLIENT_ID=$(Get-EnvVal 'ORCHESTRATION_CLIENT_ID')
 ORCHESTRATION_CLIENT_SECRET=$(gen)

@@ -51,6 +51,14 @@ KEYCLOAK_HOST=$(get_val KEYCLOAK_HOST)
 ## Stage / Environment Label ##
 STAGE=$(get_val STAGE)
 
+## Dashboard Banner ##
+BANNER_DARKMODE=$(get_val BANNER_DARKMODE)
+BANNER_LIGHTMODE=$(get_val BANNER_LIGHTMODE)
+
+## TLS Certificates (Optional) ##
+FULLCHAIN_PEM=$(get_val FULLCHAIN_PEM)
+PRIVATEKEY_PEM=$(get_val PRIVATEKEY_PEM)
+
 ## OIDC Client Configuration ##
 ORCHESTRATION_CLIENT_ID=$(get_val ORCHESTRATION_CLIENT_ID)
 ORCHESTRATION_CLIENT_SECRET=$(gen)
