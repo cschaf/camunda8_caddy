@@ -11,8 +11,8 @@
 <body>
     <div class="page">
         <div class="top-bar"></div>
-        <img class="banner banner-light" src="{{env "BANNER_LIGHTMODE"}}" alt="">
-        <img class="banner banner-dark" src="{{env "BANNER_DARKMODE"}}" alt="">
+        <img class="banner banner-light" src="{{env "BANNER_LIGHTMODE"}}" alt="" onload="this.classList.add('loaded')" onerror="this.remove()">
+        <img class="banner banner-dark" src="{{env "BANNER_DARKMODE"}}" alt="" onload="this.classList.add('loaded')" onerror="this.remove()">
         <div class="container">
             <header>
                 <div class="brand">

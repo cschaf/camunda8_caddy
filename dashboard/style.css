@@ -62,11 +62,11 @@ body {
     display: none;
 }
 
-body:not(.dark) .banner-light {
+body:not(.dark) .banner-light.loaded {
     display: block;
 }
 
-body.dark .banner-dark {
+body.dark .banner-dark.loaded {
     display: block;
 }
 
