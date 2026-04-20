@@ -37,7 +37,7 @@ services:
       CAMUNDA_IDENTITY_BASEURL: http://identity:8084
       CAMUNDA_IDENTITY_AUDIENCE: orchestration-api
       # Resource limits
-      JAVA_TOOL_OPTIONS: "-Xms1g -Xmx4500m"
+      JAVA_TOOL_OPTIONS: "-Xms4500m -Xmx4500m"
     env_file:
       - path: .env
         required: true
@@ -46,7 +46,7 @@ services:
       resources:
         limits:
           cpus: "4.0"
-          memory: 6G
+          memory: 8G
         reservations:
           cpus: "1.0"
           memory: 4G
@@ -129,7 +129,7 @@ services:
       management.endpoints.web.exposure.include: health,configprops
       MANAGEMENT_ENDPOINT_CONFIGPROPS_SHOW_VALUES: ALWAYS
       management.endpoint.health.probes.enabled: "true"
-      JAVA_TOOL_OPTIONS: "-Xms512m -Xmx2g"
+      JAVA_TOOL_OPTIONS: "-Xms2304m -Xmx2304m"
     healthcheck:
       test: ["CMD", "wget", "-q", "--tries=1", "--spider", "http://localhost:8090/api/readyz"]
       interval: 30s
@@ -183,6 +183,7 @@ services:
       MANAGEMENT_ENDPOINT_CONFIGPROPS_SHOW_VALUES: ALWAYS
       CAMUNDA_IDENTITY_CLIENT_SECRET: ${CAMUNDA_IDENTITY_CLIENT_SECRET}
       DEMO_USER_PASSWORD: ${DEMO_USER_PASSWORD}
+      JAVA_TOOL_OPTIONS: "-Xms256m -Xmx768m"
     healthcheck:
       test: ["CMD", "wget", "-q", "--tries=1", "--spider", "http://localhost:8082/actuator/health"]
       interval: 5s

@@ -93,8 +93,8 @@ All services have Docker-level `deploy.resources` limits and reservations. JVM h
 | Service | CPU limit | Memory limit | Memory reservation | JVM Heap | Heap Rationale |
 |---------|-----------|--------------|-------------------|----------|----------------|
 | elasticsearch | 4.0 | 8G | 6G | `-Xms4g -Xmx4g` | 50% of limit (Lucene uses remaining for OS page cache) |
-| orchestration | 4.0 | 6G | 4G | `-Xms1g -Xmx4500m` | 75% of limit; Zeebe broker + embedded Operate/Tasklist |
-| optimize | 2.0 | 3G | 1536m | `-Xms512m -Xmx2g` | 75% of limit; JVM-based analytics service |
+| orchestration | 4.0 | 8G | 4G | `-Xms4500m -Xmx4500m` | 57% of limit; Zeebe broker + embedded Operate/Tasklist; leaves 3.5G for RocksDB off-heap, Netty buffers, and OS page cache |
+| optimize | 2.0 | 3G | 1536m | `-Xms2304m -Xmx2304m` | 75% of limit (2304m); JVM-based analytics service |
 | keycloak | 2.0 | 2G | 512m | — | Quarkus-based, no JVM heap setting needed |
 | connectors | 2.0 | 1G | 512m | `-Xmx768m` | 75% of limit; outbound integrations only |
 | identity | 1.0 | 1G | 256m | — | Spring Boot, no explicit heap (uses JVM defaults) |
@@ -108,8 +108,8 @@ All services have Docker-level `deploy.resources` limits and reservations. JVM h
 | mailpit | 0.25 | 128m | 32m | — | Go SMTP server |
 | camunda-init | 0.5 | 512m | 128m | — | One-shot Python init job |
 
-**Total limits:** ~25.6 GB, **Total reservations:** ~14.3 GB  
-Leaves ~17.7 GB headroom for OS, burst, and non-containerized processes.
+**Total limits:** ~27.6 GB, **Total reservations:** ~16.3 GB  
+Leaves ~15.7 GB headroom for the OS and burst.
 
 ### Why 75% for JVM services?
 
@@ -118,6 +118,8 @@ JVM services (orchestration, connectors, optimize, web-modeler-restapi, console)
 - Thread stacks
 - Off-heap buffers (Netty, etc.)
 - GC overhead headroom
+
+> **Exception — Orchestration at ~57%:** The Zeebe broker runs its RocksDB state store **off-heap** (via direct I/O), which can consume 1–2 GB+ under moderate load. The orchestration container's 8G limit and 4.5G heap leaves ~3.5G for RocksDB block cache, WAL buffers, and OS page cache — sufficient for sustained throughput. Do not reduce the heap below 4.5G without monitoring RocksDB I/O wait metrics.
 
 ### Why 50% for Elasticsearch?
 
