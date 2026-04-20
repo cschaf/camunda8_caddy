@@ -43,7 +43,7 @@
             </header>
 
             <main class="grid">
-                <a href="https://orchestration.{{env "HOST"}}" class="card" target="_blank" rel="noopener noreferrer">
+                <a href="https://orchestration.{{env "HOST"}}" class="card" target="_blank" rel="noopener noreferrer" data-health-url="https://orchestration.{{env "HOST"}}/health">
                     <div class="card-accent"></div>
                     <div class="icon">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -54,9 +54,10 @@
                     <h2>Orchestration</h2>
                     <p>Operate & Tasklist</p>
                     <span class="url">orchestration.{{env "HOST"}}</span>
+                    <div class="status"><span class="status-led"></span><span class="status-text">Checking...</span></div>
                 </a>
 
-                <a href="https://console.{{env "HOST"}}" class="card" target="_blank" rel="noopener noreferrer">
+                <a href="https://console.{{env "HOST"}}" class="card" target="_blank" rel="noopener noreferrer" data-health-url="https://console.{{env "HOST"}}/health">
                     <div class="card-accent"></div>
                     <div class="icon">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -67,9 +68,10 @@
                     <h2>Console</h2>
                     <p>Cluster Management</p>
                     <span class="url">console.{{env "HOST"}}</span>
+                    <div class="status"><span class="status-led"></span><span class="status-text">Checking...</span></div>
                 </a>
 
-                <a href="https://optimize.{{env "HOST"}}" class="card" target="_blank" rel="noopener noreferrer">
+                <a href="https://optimize.{{env "HOST"}}" class="card" target="_blank" rel="noopener noreferrer" data-health-url="https://optimize.{{env "HOST"}}/health">
                     <div class="card-accent"></div>
                     <div class="icon">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -80,9 +82,10 @@
                     <h2>Optimize</h2>
                     <p>Process Analytics</p>
                     <span class="url">optimize.{{env "HOST"}}</span>
+                    <div class="status"><span class="status-led"></span><span class="status-text">Checking...</span></div>
                 </a>
 
-                <a href="https://webmodeler.{{env "HOST"}}" class="card" target="_blank" rel="noopener noreferrer">
+                <a href="https://webmodeler.{{env "HOST"}}" class="card" target="_blank" rel="noopener noreferrer" data-health-url="https://webmodeler.{{env "HOST"}}/health">
                     <div class="card-accent"></div>
                     <div class="icon">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -95,9 +98,10 @@
                     <h2>Web Modeler</h2>
                     <p>Process Modeling</p>
                     <span class="url">webmodeler.{{env "HOST"}}</span>
+                    <div class="status"><span class="status-led"></span><span class="status-text">Checking...</span></div>
                 </a>
 
-                <a href="https://identity.{{env "HOST"}}" class="card" target="_blank" rel="noopener noreferrer">
+                <a href="https://identity.{{env "HOST"}}" class="card" target="_blank" rel="noopener noreferrer" data-health-url="https://identity.{{env "HOST"}}/health">
                     <div class="card-accent"></div>
                     <div class="icon">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -108,9 +112,10 @@
                     <h2>Identity</h2>
                     <p>User Management</p>
                     <span class="url">identity.{{env "HOST"}}</span>
+                    <div class="status"><span class="status-led"></span><span class="status-text">Checking...</span></div>
                 </a>
 
-                <a href="https://keycloak.{{env "HOST"}}" class="card" target="_blank" rel="noopener noreferrer">
+                <a href="https://keycloak.{{env "HOST"}}" class="card" target="_blank" rel="noopener noreferrer" data-health-url="https://keycloak.{{env "HOST"}}/health">
                     <div class="card-accent"></div>
                     <div class="icon">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -121,6 +126,7 @@
                     <h2>Keycloak</h2>
                     <p>Identity Provider Admin</p>
                     <span class="url">keycloak.{{env "HOST"}}</span>
+                    <div class="status"><span class="status-led"></span><span class="status-text">Checking...</span></div>
                 </a>
             </main>
 
@@ -132,7 +138,6 @@
 
     <script>
         const toggle = document.getElementById('themeToggle');
-        const root = document.documentElement;
         const saved = localStorage.getItem('theme');
         const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
 
@@ -144,6 +149,39 @@
             document.body.classList.toggle('dark');
             localStorage.setItem('theme', document.body.classList.contains('dark') ? 'dark' : 'light');
         });
+
+        // Status-Check
+        async function checkHealth(url) {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 5000);
+            try {
+                const response = await fetch(url, { method: 'GET', redirect: 'manual', signal: controller.signal });
+                clearTimeout(timeout);
+                // opaqueredirect = Server hat Redirect (302) gesendet → online
+                if (response.type === 'opaqueredirect') return true;
+                // 502/503/504 = Caddy kann Backend nicht erreichen → offline
+                return ![502, 503, 504].includes(response.status);
+            } catch (e) {
+                clearTimeout(timeout);
+                return false;
+            }
+        }
+
+        async function updateStatuses() {
+            const cards = document.querySelectorAll('.card[data-health-url]');
+            await Promise.all(Array.from(cards).map(async (card) => {
+                const url = card.dataset.healthUrl;
+                const status = card.querySelector('.status');
+                const text = status.querySelector('.status-text');
+                const isOnline = await checkHealth(url);
+                status.classList.toggle('online', isOnline);
+                status.classList.toggle('offline', !isOnline);
+                text.textContent = isOnline ? 'Online' : 'Offline';
+            }));
+        }
+
+        updateStatuses();
+        setInterval(updateStatuses, 10000);
     </script>
 </body>
 </html>

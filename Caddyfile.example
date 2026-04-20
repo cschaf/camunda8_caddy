@@ -15,6 +15,14 @@ camunda.dev.local {
 
 # Keycloak
 keycloak.camunda.dev.local {
+    # Health check endpoint for dashboard status LEDs
+    handle /health {
+        header Access-Control-Allow-Origin "*"
+        reverse_proxy keycloak:18080 {
+            header_down -Cross-Origin-Resource-Policy
+            header_down -Cross-Origin-Embedder-Policy
+        }
+    }
     # Intercept the OIDC check_session_iframe endpoint and return a mock that always
     # reports "unchanged". Chrome 120+ blocks cross-origin JavaScript cookie access
     # in iframes, so the real iframe fails to read KEYCLOAK_SESSION, returns "error",
@@ -31,6 +39,14 @@ keycloak.camunda.dev.local {
 
 # Identity
 identity.camunda.dev.local {
+    # Health check endpoint for dashboard status LEDs
+    handle /health {
+        header Access-Control-Allow-Origin "*"
+        reverse_proxy identity:8084 {
+            header_down -Cross-Origin-Resource-Policy
+            header_down -Cross-Origin-Embedder-Policy
+        }
+    }
     @options {
         method OPTIONS
     }
@@ -60,11 +76,29 @@ identity.camunda.dev.local {
 
 # Console
 console.camunda.dev.local {
+    # Health check endpoint for dashboard status LEDs
+    handle /health {
+        header Access-Control-Allow-Origin "*"
+        reverse_proxy console:8080 {
+            header_down -Cross-Origin-Resource-Policy
+            header_down -Cross-Origin-Embedder-Policy
+        }
+    }
     reverse_proxy console:8080
 }
 
 # Optimize
 optimize.camunda.dev.local {
+    # Health check endpoint for dashboard status LEDs
+    handle /health {
+        header Access-Control-Allow-Origin "*"
+        reverse_proxy optimize:8090 {
+            header_down -Cross-Origin-Resource-Policy
+            header_down -Cross-Origin-Embedder-Policy
+            header_up X-Forwarded-Proto https
+            header_up X-Forwarded-Host optimize.camunda.dev.local
+        }
+    }
     reverse_proxy optimize:8090 {
         header_up X-Forwarded-Proto https
         header_up X-Forwarded-Host optimize.camunda.dev.local
@@ -73,6 +107,14 @@ optimize.camunda.dev.local {
 
 # Orchestration (Operate/Tasklist)
 orchestration.camunda.dev.local {
+    # Health check endpoint for dashboard status LEDs
+    handle /health {
+        header Access-Control-Allow-Origin "*"
+        reverse_proxy orchestration:8080 {
+            header_down -Cross-Origin-Resource-Policy
+            header_down -Cross-Origin-Embedder-Policy
+        }
+    }
     @options {
         method OPTIONS
     }
@@ -98,6 +140,14 @@ orchestration.camunda.dev.local {
 
 # Web Modeler
 webmodeler.camunda.dev.local {
+    # Health check endpoint for dashboard status LEDs
+    handle /health {
+        header Access-Control-Allow-Origin "*"
+        reverse_proxy web-modeler-webapp:8070 {
+            header_down -Cross-Origin-Resource-Policy
+            header_down -Cross-Origin-Embedder-Policy
+        }
+    }
     # Pusher WebSocket connections (real-time collaboration)
     handle /app/* {
         reverse_proxy web-modeler-websockets:8060

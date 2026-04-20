@@ -291,6 +291,40 @@ body.dark .theme-toggle .icon-sun {
     transform: translateX(3px);
 }
 
+.status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 12px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--camunda-muted);
+}
+
+.status-led {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #9ca3af;
+    transition: background 0.3s ease, box-shadow 0.3s ease;
+}
+
+.status.online .status-led {
+    background: #22c55e;
+    box-shadow: 0 0 6px rgba(34, 197, 94, 0.5);
+    animation: pulse-green 2s infinite;
+}
+
+.status.offline .status-led {
+    background: #ef4444;
+    box-shadow: 0 0 6px rgba(239, 68, 68, 0.4);
+}
+
+@keyframes pulse-green {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+
 footer {
     text-align: center;
     font-size: 0.8rem;
