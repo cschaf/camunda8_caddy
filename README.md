@@ -1,5 +1,15 @@
 # Camunda 8 Self-Managed - Docker Compose
 
+## Prerequisites
+
+- [Docker Engine](https://docs.docker.com/engine/install/) 24.0+ and [Docker Compose](https://docs.docker.com/compose/install/) ( Compose V2 plugin `docker compose`)
+- [Git](https://git-scm.com/downloads) — to clone this repository
+- **Linux/macOS:** Bash + `openssl` (for `generate-secrets.sh`)
+- **Windows:** PowerShell 7+ (for `.ps1` scripts)
+- `bash` available in your PATH — some health checks inside containers run `bash -c` commands
+
+> **RAM:** This stack reserves ~16 GB and limits at ~27 GB. The host machine needs at least **32 GB RAM** for stable operation.
+
 ## Usage
 
 For end user usage, please check the official documentation of [Camunda 8 Self-Managed Docker Compose](https://docs.camunda.io/docs/next/self-managed/quickstart/developer-quickstart/docker-compose/).
