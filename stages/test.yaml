@@ -10,6 +10,8 @@ services:
         reservations:
           cpus: "0.25"
           memory: 1536M
+    environment:
+      JAVA_TOOL_OPTIONS: "-Xms2304m -Xmx2304m"
 
   elasticsearch:
     deploy:
@@ -20,6 +22,8 @@ services:
         reservations:
           cpus: "0.25"
           memory: 2048M
+    environment:
+      - "ES_JAVA_OPTS=-Xms1536m -Xmx1536m"
 
   optimize:
     deploy:
@@ -30,6 +34,8 @@ services:
         reservations:
           cpus: "0.25"
           memory: 512M
+    environment:
+      JAVA_TOOL_OPTIONS: "-Xms768m -Xmx768m"
 
   keycloak:
     deploy:
@@ -50,6 +56,8 @@ services:
         reservations:
           cpus: "0.1"
           memory: 192M
+    environment:
+      JAVA_TOOL_OPTIONS: "-Xms256m -Xmx256m"
 
   identity:
     deploy:
@@ -60,6 +68,8 @@ services:
         reservations:
           cpus: "0.125"
           memory: 192M
+    environment:
+      JAVA_TOOL_OPTIONS: "-Xms256m -Xmx256m"
 
   web-modeler-restapi:
     deploy:
@@ -70,6 +80,8 @@ services:
         reservations:
           cpus: "0.125"
           memory: 192M
+    environment:
+      JAVA_OPTIONS: "-Xmx256m"
 
   postgres:
     deploy:
@@ -100,6 +112,8 @@ services:
         reservations:
           cpus: "0.125"
           memory: 256M
+    environment:
+      JAVA_TOOL_OPTIONS: "-Xms384m -Xmx384m"
 
   web-modeler-webapp:
     deploy:
