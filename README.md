@@ -138,6 +138,8 @@ bash scripts/start.sh
 pwsh -File scripts/start.ps1
 ```
 
+> **Note:** PowerShell 7+ required on Windows. For PS 5.1, use `docker compose -f docker-compose.yaml -f stages/$STAGE.yaml up -d` directly.
+
 Wait for all services to be healthy (may take 2–3 minutes on first start):
 
 ```bash

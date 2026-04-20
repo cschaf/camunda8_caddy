@@ -10,6 +10,8 @@ services:
         reservations:
           cpus: "1.0"
           memory: 4096M
+    environment:
+      JAVA_TOOL_OPTIONS: "-Xms4500m -Xmx4500m"
 
   elasticsearch:
     deploy:
