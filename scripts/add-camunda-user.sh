@@ -85,6 +85,14 @@ if [[ -f "$ENV_FILE" ]]; then
             ORCHESTRATION_CLIENT_SECRET="${BASH_REMATCH[1]}"
             ORCHESTRATION_CLIENT_SECRET="${ORCHESTRATION_CLIENT_SECRET//[[:space:]]/}"
         fi
+        if [[ "$line" =~ ^KEYCLOAK_ADMIN_USER=(.*) ]]; then
+            ADMIN_USER="${BASH_REMATCH[1]}"
+            ADMIN_USER="${ADMIN_USER//[[:space:]]/}"
+        fi
+        if [[ "$line" =~ ^KEYCLOAK_ADMIN_PASSWORD=(.*) ]]; then
+            ADMIN_PASSWORD="${BASH_REMATCH[1]}"
+            ADMIN_PASSWORD="${ADMIN_PASSWORD//[[:space:]]/}"
+        fi
     done < "$ENV_FILE"
 fi
 
