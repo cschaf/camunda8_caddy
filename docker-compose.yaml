@@ -572,6 +572,8 @@ services:
       - HOST=${HOST:?HOST is required}
       - CAMUNDA_VERSION=${CAMUNDA_VERSION:?CAMUNDA_VERSION is required}
       - STAGE=${STAGE:?STAGE is required}
+      - BANNER_DARKMODE=${BANNER_DARKMODE}
+      - BANNER_LIGHTMODE=${BANNER_LIGHTMODE}
     networks:
       - camunda-platform
       - identity-network

@@ -54,6 +54,22 @@ body {
     width: 100%;
 }
 
+.banner {
+    width: 100%;
+    max-height: 120px;
+    object-fit: contain;
+    background: var(--camunda-light-gray);
+    display: none;
+}
+
+body:not(.dark) .banner-light {
+    display: block;
+}
+
+body.dark .banner-dark {
+    display: block;
+}
+
 .container {
     max-width: 1100px;
     width: 100%;
