@@ -185,23 +185,23 @@ Each client machine also needs to trust the CA that signed your certificate. For
 
 ## User Management
 
-### Hintergrund: Warum braucht man zwei Systeme?
+### Background: Why two systems?
 
-Camunda 8 hat **zwei unabhängige Sicherheitssysteme**, die beide erfüllt sein müssen, damit ein Benutzer auf Operate oder Tasklist zugreifen kann:
+Camunda 8 has **two independent security systems**. Both must be satisfied for a user to access Operate or Tasklist:
 
-1. **Keycloak** – das zentrale Login-System. Hier werden Benutzer angelegt und ihnen Rollen zugewiesen (z.B. „darf Camunda nutzen").
+1. **Keycloak** — the central login system. Users are created here and assigned roles (e.g., "may use Camunda").
 
-2. **Camundas eigenes Berechtigungssystem** – eine interne Liste, die festlegt, welche Benutzer tatsächlich auf welche Funktionen zugreifen dürfen.
+2. **Camunda's own authorization system** — an internal list that defines which users may actually access which functions.
 
-Beide Systeme müssen übereinstimmen — Keycloak allein reicht nicht.
+Both systems must match — Keycloak alone is not enough.
 
-Der mitgelieferte Demo-Benutzer (`demo`) funktioniert direkt nach dem Start, weil er beim ersten Hochfahren automatisch in **beiden** Systemen eingetragen wird. Manuell angelegte Benutzer wurden früher nur in Keycloak eingetragen und landeten deshalb auf einer „Forbidden"-Seite, obwohl ihr Login erfolgreich war.
+The built-in demo user (`demo`) works immediately after startup because it is automatically registered in **both** systems on first boot. Previously, manually created users were only added to Keycloak and ended up on a "Forbidden" page even though their login succeeded.
 
-Das `add-camunda-user`-Skript trägt neue Benutzer daher in beide Systeme ein.
+The `add-camunda-user` script therefore adds new users to both systems.
 
 ---
 
-### Benutzer anlegen
+### Creating users
 
 Create Camunda users in Keycloak with role-based permissions.
 
