@@ -205,13 +205,7 @@ Create Camunda users in Keycloak with role-based permissions.
 
 **Linux / macOS:**
 ```bash
-bash scripts/add-camunda-user.sh \
-  --username jdoe \
-  --password "changeme" \
-  --email "jdoe@example.com" \
-  --first-name John \
-  --last-name Doe \
-  --role NormalUser
+bash scripts/add-camunda-user.sh --username jdoe --password "changeme" --email "jdoe@example.com" --first-name John --last-name Doe --role NormalUser
 ```
 
 **Windows (PowerShell):**
