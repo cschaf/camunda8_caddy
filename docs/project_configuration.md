@@ -93,26 +93,26 @@ For a complete side-by-side comparison of all stages, see [docs/stage_comparison
 
 ### Base (Production) Profile
 
-The following table shows the **base** resource configuration — what the `prod` stage uses. This is the reference profile calibrated for a 16 vCPU / 32 GB RAM Linux server.
+The following table shows the **base** resource configuration — what the `prod` stage uses. This is the reference profile calibrated for a 16 vCPU / 32 GB RAM Linux server. The summed per-container CPU limits keep a small intentional CPU overcommit buffer, so treat them as aggregate caps rather than required physical cores.
 
 | Service | CPU limit | Memory limit | Memory reservation | JVM Heap | Heap Rationale |
 |---------|-----------|--------------|-------------------|----------|----------------|
 | elasticsearch | 4.0 | 8G | 6G | `-Xms4g -Xmx4g` | 50% of limit (Lucene uses remaining for OS page cache) |
 | orchestration | 4.0 | 8G | 4G | `-Xms4500m -Xmx4500m` | 57% of limit; Zeebe broker + embedded Operate/Tasklist; leaves 3.5G for RocksDB off-heap, Netty buffers, and OS page cache |
-| optimize | 2.0 | 3G | 1536m | `-Xms2304m -Xmx2304m` | 75% of limit (2304m); JVM-based analytics service |
-| keycloak | 2.0 | 2G | 512m | — | Quarkus-based, no JVM heap setting needed |
-| connectors | 2.0 | 1G | 512m | `-Xmx768m` | 75% of limit; outbound integrations only |
+| optimize | 1.5 | 3G | 1536m | `-Xms2304m -Xmx2304m` | 75% of limit (2304m); JVM-based analytics service |
+| keycloak | 1.5 | 2G | 512m | — | Quarkus-based, no JVM heap setting needed |
+| connectors | 1.0 | 1G | 512m | `-Xmx768m` | 75% of limit; outbound integrations only |
 | identity | 1.0 | 1G | 256m | `-Xms256m -Xmx768m` | 75% of limit; Spring Boot service |
-| console | 1.0 | 1G | 512m | `-Xms256m -Xmx768m` | 75% of limit; Node.js but has a JVM sidecar for metrics |
+| console | 0.5 | 1G | 512m | `-Xms256m -Xmx768m` | 75% of limit; Node.js but has a JVM sidecar for metrics |
 | web-modeler-restapi | 1.0 | 1G | 512m | `-Xmx768m` | 75% of limit; Java REST API |
 | postgres (identity) | 1.0 | 1G | 512m | — | No JVM; PostgreSQL manages own memory |
-| web-modeler-webapp | 1.0 | 512m | 128m | — | Node.js React app |
+| web-modeler-webapp | 0.5 | 512m | 128m | — | Node.js React app |
 | postgres (web-modeler) | 0.5 | 512m | 256m | — | No JVM |
 | reverse-proxy | 0.5 | 256m | 64m | — | Caddy Go process |
 | web-modeler-websockets | 0.5 | 256m | 64m | — | Node.js WebSocket server |
 | mailpit | 0.25 | 128m | 32m | — | Go SMTP server |
 
-**Total limits:** ~27.2 GB, **Total reservations:** ~16.2 GB
+**Aggregate CPU limits:** ~17.75 cores, **Total limits:** ~27.2 GB, **Total reservations:** ~16.2 GB
 Leaves ~15.7 GB headroom for the OS and burst.
 
 > **Autoheal note:** `autoheal` is intentionally not part of the stage-based resource tables. It is a lightweight operational sidecar with no explicit `deploy.resources` overrides in this stack, so its footprint is negligible compared with the Camunda services it monitors.

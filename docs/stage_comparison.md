@@ -35,13 +35,13 @@ The stack supports three environment stages, selected via the `STAGE` variable i
 
 | Service | Stage | CPU Limit | Memory Limit | CPU Reservation | Memory Reservation | JVM Heap |
 |---------|-------|-----------|--------------|-----------------|-------------------|----------|
-| optimize | prod | 2.0 | 3072M | 0.5 | 1536M | 2304m |
+| optimize | prod | 1.5 | 3072M | 0.5 | 1536M | 2304m |
 | optimize | dev | 1.0 | 1536M | 0.25 | 768M | 1152m |
 | optimize | test | 0.75 | 1024M | 0.25 | 512M | 768m |
-| keycloak | prod | 2.0 | 2048M | 0.5 | 512M | - |
+| keycloak | prod | 1.5 | 2048M | 0.5 | 512M | - |
 | keycloak | dev | 1.0 | 1024M | 0.25 | 256M | - |
 | keycloak | test | 0.75 | 768M | 0.25 | 256M | - |
-| connectors | prod | 2.0 | 1024M | 0.25 | 512M | 768m |
+| connectors | prod | 1.0 | 1024M | 0.25 | 512M | 768m |
 | connectors | dev | 1.0 | 512M | 0.125 | 256M | 384m |
 | connectors | test | 0.75 | 384M | 0.1 | 192M | 256m |
 | identity | prod | 1.0 | 1024M | 0.25 | 256M | 768m |
@@ -61,10 +61,10 @@ The stack supports three environment stages, selected via the `STAGE` variable i
 | web-modeler-db | prod | 0.5 | 512M | 0.1 | 256M |
 | web-modeler-db | dev | 0.25 | 256M | 0.05 | 128M |
 | web-modeler-db | test | 0.25 | 256M | 0.05 | 128M |
-| console | prod | 1.0 | 1024M | 0.25 | 512M |
+| console | prod | 0.5 | 1024M | 0.25 | 512M |
 | console | dev | 0.5 | 512M | 0.125 | 256M |
 | console | test | 0.5 | 512M | 0.125 | 256M |
-| web-modeler-webapp | prod | 1.0 | 512M | 0.1 | 128M |
+| web-modeler-webapp | prod | 0.5 | 512M | 0.1 | 128M |
 | web-modeler-webapp | dev | 0.5 | 256M | 0.05 | 64M |
 | web-modeler-webapp | test | 0.25 | 256M | 0.05 | 64M |
 | web-modeler-websockets | prod | 0.5 | 256M | 0.1 | 64M |
@@ -88,11 +88,13 @@ Services without a JVM heap column (keycloak, postgres, web-modeler-db, web-mode
 
 ## Total Footprint Estimates
 
-| Stage | Total CPU Limits | Total Memory Limits | Min Free RAM Needed |
-|-------|-----------------|---------------------|---------------------|
-| prod | ~20.0 cores | ~28 GB | ~32 GB (with OS overhead) |
-| dev | ~10.0 cores | ~15 GB | ~16 GB (with OS overhead) |
-| test | ~7.5 cores | ~11 GB | ~12 GB (with OS overhead) |
+| Stage | Aggregate CPU Limits | Total Memory Limits | Min Free RAM Needed |
+|-------|----------------------|---------------------|---------------------|
+| prod | ~17.75 cores | ~28 GB | ~32 GB (with OS overhead) |
+| dev | ~10.5 cores | ~15 GB | ~16 GB (with OS overhead) |
+| test | ~8.25 cores | ~11 GB | ~12 GB (with OS overhead) |
+
+Aggregate CPU limits are the sum of each container's individual `deploy.resources.limits.cpus` values. They are not a guarantee that the host has that many physical cores available at once. The `prod` profile is still intended for a 16 vCPU / 32 GB host, and the current `~17.75` aggregate keeps only a small CPU overcommit buffer on the assumption that not every service will hit its limit simultaneously.
 
 ## Usage
 
