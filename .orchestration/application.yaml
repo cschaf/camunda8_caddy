@@ -65,6 +65,12 @@ zeebe:
             size: 1000
           index:
             prefix: "zeebe-record"
+            numberOfShards: 1
+            numberOfReplicas: 0
+          retention:
+            enabled: true
+            minimumAge: 30d
+            policyName: zeebe-record-retention-policy
       CamundaExporter:
         className: "io.camunda.exporter.CamundaExporter"
         args:
@@ -72,6 +78,14 @@ zeebe:
             type: elasticsearch
             url: "http://elasticsearch:9200"
           createSchema: true
+          index:
+            numberOfShards: 1
+            numberOfReplicas: 0
+          history:
+            retention:
+              enabled: true
+              minimumAge: 30d
+              policyName: camunda-retention-policy
 
 camunda:
   persistent:
@@ -114,8 +128,14 @@ camunda:
     persistentSessionsEnabled: true
     identity:
       redirectRootUrl: "https://orchestration.${HOST}/operate"
+    archiver:
+      ilmEnabled: true
+      ilmMinAgeForDeleteArchivedIndices: 30d
 
   tasklist:
     identity:
       redirectRootUrl: "https://orchestration.${HOST}/tasklist"
+    archiver:
+      ilmEnabled: true
+      ilmMinAgeForDeleteArchivedIndices: 30d
 
