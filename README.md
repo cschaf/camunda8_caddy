@@ -14,6 +14,11 @@
 
 For end user usage, please check the official documentation of [Camunda 8 Self-Managed Docker Compose](https://docs.camunda.io/docs/next/self-managed/quickstart/developer-quickstart/docker-compose/).
 
+## Documentation
+
+- [`docs/project_configuration.md`](docs/project_configuration.md) - Full configuration reference for this stack, including service settings, resource sizing, reverse proxy behavior, `autoheal`, and the host recovery guard.
+- [`docs/stage_comparison.md`](docs/stage_comparison.md) - Side-by-side comparison of the `prod`, `dev`, and `test` stage resource profiles.
+
 ## First Start Setup
 
 Complete these steps in order after a fresh clone.
