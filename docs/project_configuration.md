@@ -351,24 +351,36 @@ camunda:
 | `archiver.ilmEnabled` | `true` | `false` | Same mechanism as Operate. Tasklist archives completed user tasks and process instances to dated indices. ILM ensures these do not grow without bound. |
 | `archiver.ilmMinAgeForDeleteArchivedIndices` | `30d` | (none) | 30-day retention for Tasklist archives, consistent with Operate and the exporters. |
 
-### Optimize Data Retention (Offenes TODO)
+### Optimize Data Retention
 
-> **Note:** Optimize does **not** manage data retention via YAML configuration. The `number_of_shards: 1` setting in `.optimize/environment-config.yaml` only reduces shard overhead per index — it does not delete old data.
+> **Note:** The `number_of_shards: 1` setting in `.optimize/environment-config.yaml` only reduces shard overhead per index — it does not delete old data. Retention is configured separately via `historyCleanup`.
 
-For complete retention configuration in Optimize, there are two paths:
+History cleanup is pre-configured in `.optimize/environment-config.yaml`:
 
-**Option A: Optimize Admin UI**
-1. Open the Optimize UI (`https://optimize.{HOST}` or `http://localhost:8083`)
-2. Navigate to **Administration → History Cleanup**
-3. Enable "History Cleanup" and set a retention period (e.g. 30 days)
-4. Save the setting
-
-**Option B: Optimize REST API**
-```bash
-curl -X PUT "http://localhost:8083/api/configuration/history-cleanup" \
-  -H "Content-Type: application/json" \
-  -d '{"enabled": true, "cronExpression": "0 1 * * *", "historyCleanupStrategyDto": {"ttlInDays": 30}}'
+```yaml
+historyCleanup:
+  cronTrigger: '0 1 * * *'
+  ttl: 'P30D'
+  processDataCleanup:
+    enabled: true
 ```
+
+| Setting | Value | Description |
+|---------|-------|-------------|
+| `cronTrigger` | `0 1 * * *` | Runs daily at 01:00 UTC |
+| `ttl` | `P30D` | Deletes process data older than 30 days (ISO 8601) |
+| `processDataCleanup.enabled` | `true` | Enables automated cleanup |
+
+To change the retention period, edit `ttl` in `.optimize/environment-config.yaml` and restart the Optimize container. You can also configure this via the Optimize Admin UI at **Administration → History Cleanup**.
+
+**Verifying the configuration:** After restarting Optimize, check the container logs for:
+```
+Initializing OptimizeCleanupScheduler
+Starting cleanup scheduling
+```
+These messages confirm the scheduler is active. No errors or warnings related to `historyCleanup` should appear.
+
+To test the cleanup job without waiting for the scheduled time, temporarily change `cronTrigger` to a near-future time (e.g. `*/5 * * * *` for every 5 minutes), restart the container, wait for the job to run, then revert the trigger.
 
 Without this configuration, `optimize-*` indices grow indefinitely. Shard exhaustion is slowed by `number_of_shards: 1`, but not prevented.
 
@@ -815,7 +827,7 @@ Several settings are intentionally development-oriented and should be reviewed b
 | `numberOfReplicas: 0` | orchestration, optimize | `1` | Single failure loses data |
 | `discovery.type=single-node` | elasticsearch | multi-node cluster | No HA, single point of failure |
 | `snapshotPeriod: 5m` | orchestration | `15m` | More frequent snapshots = more IO overhead |
-| ILM / retention policies | Enabled (30d) — Zeebe, Camunda, Operate, Tasklist | Disabled by default | Enabled on all exporters and archivers with a 30-day window. Without retention, historical index data volume grows indefinitely and leads to shard exhaustion, heap pressure, and cluster instability (Operate/Optimize stop displaying data). **Optimize retention is still missing** (see the "Optimize Data Retention" section above) — it must be configured via the Optimize Admin UI. |
+| ILM / retention policies | Enabled (30d) — Zeebe, Camunda, Operate, Tasklist | Disabled by default | Enabled on all exporters and archivers with a 30-day window. Optimize retention is pre-configured in `.optimize/environment-config.yaml` (30 days). Without retention, historical index data volume grows indefinitely and leads to shard exhaustion, heap pressure, and cluster instability (Operate/Optimize stop displaying data). |
 
 ### Network/TLS Settings
 

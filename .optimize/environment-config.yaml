@@ -3,18 +3,18 @@ es:
     index:
       number_of_shards: 1
       number_of_replicas: 0
-
 zeebe:
   enabled: true
-
 enterprise: false
-
 security:
   auth:
     cookie:
       same-site:
         enabled: false
-
 ui:
   logoutHidden: true
-
+historyCleanup:
+  cronTrigger: 0 1 * * *
+  ttl: P30D
+  processDataCleanup:
+    enabled: true
