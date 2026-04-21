@@ -351,6 +351,27 @@ camunda:
 | `archiver.ilmEnabled` | `true` | `false` | Same mechanism as Operate. Tasklist archives completed user tasks and process instances to dated indices. ILM ensures these do not grow without bound. |
 | `archiver.ilmMinAgeForDeleteArchivedIndices` | `30d` | (none) | 30-day retention for Tasklist archives, consistent with Operate and the exporters. |
 
+### Optimize Data Retention (Offenes TODO)
+
+> **Note:** Optimize does **not** manage data retention via YAML configuration. The `number_of_shards: 1` setting in `.optimize/environment-config.yaml` only reduces shard overhead per index — it does not delete old data.
+
+For complete retention configuration in Optimize, there are two paths:
+
+**Option A: Optimize Admin UI**
+1. Open the Optimize UI (`https://optimize.{HOST}` or `http://localhost:8083`)
+2. Navigate to **Administration → History Cleanup**
+3. Enable "History Cleanup" and set a retention period (e.g. 30 days)
+4. Save the setting
+
+**Option B: Optimize REST API**
+```bash
+curl -X PUT "http://localhost:8083/api/configuration/history-cleanup" \
+  -H "Content-Type: application/json" \
+  -d '{"enabled": true, "cronExpression": "0 1 * * *", "historyCleanupStrategyDto": {"ttlInDays": 30}}'
+```
+
+Without this configuration, `optimize-*` indices grow indefinitely. Shard exhaustion is slowed by `number_of_shards: 1`, but not prevented.
+
 ### Snapshot Period
 
 ```yaml
