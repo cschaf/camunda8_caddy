@@ -148,6 +148,8 @@ docker compose ps
 
 The stack also includes an `autoheal` sidecar that watches labeled containers and restarts them when Docker marks them as `unhealthy`. It complements `restart: unless-stopped`, which covers unexpected process exits. `autoheal` does not restart containers that were stopped intentionally with `docker stop` or removed with `docker compose down`.
 
+For host-level recovery, the repository also provides `scripts/ensure-stack.sh`. It is intended for cron and checks whether all expected Compose services for the configured `STAGE` are currently running. If one or more containers are missing or stopped, it starts only those missing services with the same stage-aware Compose file selection used by the repository startup scripts. This is useful after a host reboot, after Docker starts later than the OS, or when selected containers were not recreated automatically. On Windows, the equivalent manual helper is `pwsh -File scripts/ensure-stack.ps1`.
+
 ## Environment Stages
 
 The stack reads `STAGE` from `.env` and applies a matching resource profile from `stages/`. The value is case-insensitive, so `DEV`, `dev`, and `DeV` all select the same profile.
@@ -184,6 +186,20 @@ Internally, the start scripts run Docker Compose with the base file and the sele
 
 ```bash
 docker compose -f docker-compose.yaml -f stages/dev.yaml up -d
+```
+
+To run the stack guard from cron on Linux every 30 minutes, add an entry similar to:
+
+```cron
+*/30 * * * * cd /path/to/CamundaComposeNVL && bash scripts/ensure-stack.sh >> /var/log/camunda-ensure-stack.log 2>&1
+```
+
+This guard is intentionally separate from `autoheal`: `autoheal` handles containers that are still running but become `unhealthy`, while `ensure-stack.sh` handles missing or stopped containers and host reboot recovery without restarting healthy services.
+
+For manual recovery on Windows, run:
+
+```powershell
+pwsh -File scripts/ensure-stack.ps1
 ```
 
 ### 7. Access the services

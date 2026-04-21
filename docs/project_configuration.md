@@ -469,6 +469,39 @@ Console is **Node.js**, not Spring Boot. This means Spring Boot configuration go
 
 **Operational implication:** For `autoheal` to be effective, a service must have both a meaningful Docker `healthcheck` and the `autoheal=true` label. This is why the reverse proxy now has its own health probe in addition to the application services.
 
+### Host Recovery Guard
+
+**Script:** `scripts/ensure-stack.sh`
+
+This repository also includes a host-level guard script intended for cron on Linux hosts. It uses the same `.env` file and the same stage-aware Compose file selection as `scripts/start.sh`.
+
+**What it does:**
+- Resolves the active `STAGE` from `.env`
+- Builds the expected service list from `docker compose config --services`
+- Checks which services are currently running via `docker compose ps --services --status running`
+- Starts only the expected services that are currently missing or stopped
+
+**Why it exists:** Docker restart policies and `autoheal` are not sufficient for every host reboot or daemon-start ordering scenario. If the server comes back up and part of the Camunda stack is missing, `ensure-stack.sh` reconciles only the missing services back to the desired state without restarting healthy ones.
+
+**Separation of responsibilities:**
+- `restart: unless-stopped` handles unexpected process exits
+- `autoheal` handles containers that are still running but become `unhealthy`
+- `ensure-stack.sh` handles missing or stopped containers and boot-time stack recovery
+
+**Example cron setup (every 30 minutes):**
+
+```bash
+crontab -e
+```
+
+Add:
+
+```cron
+*/30 * * * * cd /path/to/CamundaComposeNVL && bash scripts/ensure-stack.sh >> /var/log/camunda-ensure-stack.log 2>&1
+```
+
+This runs the guard twice per hour, writes timestamped output to a dedicated log file, and starts only the services that are missing or stopped.
+
 ### Web Modeler
 
 Three components:
