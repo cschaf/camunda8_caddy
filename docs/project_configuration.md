@@ -815,7 +815,7 @@ Several settings are intentionally development-oriented and should be reviewed b
 | `numberOfReplicas: 0` | orchestration, optimize | `1` | Single failure loses data |
 | `discovery.type=single-node` | elasticsearch | multi-node cluster | No HA, single point of failure |
 | `snapshotPeriod: 5m` | orchestration | `15m` | More frequent snapshots = more IO overhead |
-| No ILM / retention policies | elasticsearch, orchestration | ILM enabled with appropriate retention periods | Historical data grows indefinitely; eventually causes shard exhaustion, heap pressure, and cluster instability (Operate/Optimize stop displaying data). The current stack enables ILM on the Zeebe exporter (`zeebe-record-retention-policy`), Camunda exporter (`camunda-retention-policy`), Operate archiver, and Tasklist archiver, all with a 30-day retention window. On a single-node cluster this also caps shard creation by setting `numberOfShards: 1` per index, preventing the default 3-shard overhead that multiplies daily index growth. |
+| ILM / retention policies | Enabled (30d) — Zeebe, Camunda, Operate, Tasklist | Disabled by default | Enabled on all exporters and archivers with a 30-day window. Without retention, historical index data volume grows indefinitely and leads to shard exhaustion, heap pressure, and cluster instability (Operate/Optimize stop displaying data). **Optimize retention is still missing** (see the "Optimize Data Retention" section above) — it must be configured via the Optimize Admin UI. |
 
 ### Network/TLS Settings
 
