@@ -148,15 +148,17 @@ Elasticsearch uses Lucene for full-text indexing. Lucene maintains an **off-heap
 
 ```yaml
 environment:
-  - bootstrap.memory_lock=true       # Prevent Elasticsearch swapping
-  - discovery.type=single-node       # No clustering (single-node dev/prod)
-  - xpack.security.enabled=false     # No TLS/auth for internal ES
-  - cluster.max_shards_per_node=3000 # Increased from default 1000
+  - bootstrap.memory_lock=true                     # Prevent Elasticsearch swapping
+  - discovery.type=single-node                     # No clustering (single-node dev/prod)
+  - xpack.security.enabled=false                   # No TLS/auth for internal ES
+  - cluster.max_shards_per_node=1000              # Realistic limit for single-node (was 3000)
+  - action.auto_create_index=false                 # Prevent unplanned index creation
+  - indices.memory.index_buffer_size=20%           # Larger indexing buffer for write throughput
   - cluster.routing.allocation.disk.watermark.low=85%
   - cluster.routing.allocation.disk.watermark.high=90%
   - cluster.routing.allocation.disk.watermark.flood_stage=95%
-  - indices.breaker.total.limit=75%  # Circuit breaker for aggregations
-  - "ES_JAVA_OPTS=-Xms4g -Xmx4g"    # 4 GB heap
+  - indices.breaker.total.limit=75%                # Circuit breaker for aggregations
+  - "ES_JAVA_OPTS=-Xms4g -Xmx4g"                  # 4 GB heap
 ```
 
 ### Setting Explanations
@@ -166,12 +168,43 @@ environment:
 | `bootstrap.memory_lock=true` | `true` | `false` | Lock Elasticsearch's memory at boot using `mlockall`. Prevents the OS from swapping ES pages to disk, which would cause catastrophic latency spikes. Elasticsearch is a latency-sensitive in-memory store. |
 | `discovery.type=single-node` | `single-node` | `multi-node` | This stack runs a single Elasticsearch node. Multi-node would require a cluster with minimum master node quorum. `single-node` disables shard allocation fencing that would otherwise reject writes. |
 | `xpack.security.enabled=false` | `false` | `true` | Security (TLS + auth) is disabled for this internal-only service. All access is through Camunda services on the internal Docker network. In production multi-node setups, you'd enable this. |
-| `cluster.max_shards_per_node=3000` | `3000` | `1000` | **Critical for long-running Camunda deployments.** Each process instance creates indices; each incident, variable, and audit log creates shards. Default 1000 is regularly exceeded in production Camunda installations causing `circuit_breaking_exception` errors. 3000 provides headroom for ~6 months of moderate load. |
+| `cluster.max_shards_per_node=1000` | `1000` | `1000` | **Hard cap on the total number of shards this single node can hold.** The previous value of `3000` allowed Elasticsearch to create so many shards that the JVM heap was exhausted before the limit was reached, causing OOM and cluster instability. On an 8 GB single-node, each shard carries ~10–30 MB of heap overhead. 1000 shards is the Elasticsearch 8.x default and a realistic ceiling for this node size. |
 | `cluster.routing.allocation.disk.watermark.low=85%` | `85%` | `85%` | Elasticsearch stops allocating shards to a node when disk usage reaches 85%. Gives operators time to add storage before the node goes read-only. |
 | `cluster.routing.allocation.disk.watermark.high=90%` | `90%` | `90%` | Elasticsearch blocks shard allocation entirely above 90%. Combined with flood_stage at 95%, gives two warning thresholds before read-only lock. |
 | `cluster.routing.allocation.disk.watermark.flood_stage=95%` | `95%` | `95%` | At 95%, Elasticsearch marks all indices on the node as read-only (`index.blocks.read_only_allow_delete`). Requires manual intervention to clear. The gap between 90% and 95% gives operators a window to react. |
 | `indices.breaker.total.limit=75%` | `75%` | `70%` | The parent circuit breaker limit for all sub-breakers (fielddata, request, in-flight). 75% of JVM heap. Raised slightly from 70% because Optimize performs large aggregations that can approach the limit. If this trips, it causes `TooManyBookmarks` or aggregation failures in Optimize. |
 | `ES_JAVA_OPTS=-Xms4g -Xmx4g` | `4g` | 50% of container | 4 GB heap (50% of the 8 GB limit) for Lucene to use the other ~4 GB as off-heap page cache. Scaled down proportionally in `dev` and `test` stages. |
+| `action.auto_create_index=false` | `false` | `true` | Prevents any service or misconfiguration from creating indices that are not explicitly planned. Without this, a typo in an index name or a rogue exporter could create new indices that silently consume shards and disk space. |
+| `indices.memory.index_buffer_size=20%` | `20%` | `10%` | The percentage of JVM heap reserved for the indexing buffer. A larger buffer allows Elasticsearch to batch more in-memory writes before flushing to disk, improving throughput for Camunda's high-volume event stream. 20% is appropriate given the 4 GB heap and write-heavy workload. |
+
+### Index Lifecycle Management (ILM) and Data Retention
+
+Camunda 8 creates a large number of time-based indices:
+
+- **Zeebe exporter** writes one index per record type per day (`zeebe-record-*`)
+- **Operate** archives completed process instances to dated indices (`operate-list-view-*`, `operate-operation-*`)
+- **Tasklist** archives similarly (`tasklist-list-view-*`, `tasklist-operation-*`)
+- **Optimize** maintains its own time-based indices under the `optimize-` prefix
+
+Without cleanup, these indices accumulate indefinitely. The old configuration had **no retention policies**, which led to:
+
+1. **Shard exhaustion** — Each daily index defaults to 3 shards (Zeebe exporter). With ~15 record types, that is ~45 new shards per day. In 30 days: ~1,350 shards. The old `max_shards_per_node=3000` merely delayed the failure instead of preventing it.
+2. **Disk bloat** — Archived process data, historical variables, and incident records accumulate forever.
+3. **Query degradation** — Elasticsearch must keep metadata for every shard in heap. Beyond ~500–800 shards on an 8 GB node, query latency degrades and the node becomes unstable.
+
+**The fix: ILM + retention everywhere.**
+
+| Component | Retention Mechanism | Minimum Age | What Gets Deleted |
+|-----------|-------------------|-------------|-------------------|
+| Zeebe Exporter | ILM policy on index templates | 30 days | Old `zeebe-record-*` daily indices |
+| Camunda Exporter | History retention policy | 30 days | Old Camunda unified history indices |
+| Operate | Archiver ILM | 30 days | Archived `operate-*` indices older than 30 days |
+| Tasklist | Archiver ILM | 30 days | Archived `tasklist-*` indices older than 30 days |
+| Optimize | Optimize's built-in cleanup | Configured in Optimize UI | Optimize dashboard data (managed separately) |
+
+**Shard reduction:** All exporters and Optimize are now configured with `numberOfShards: 1`. On a single-node deployment, multiple shards provide zero parallelism — the node cannot distribute shards to other nodes. Each additional shard only adds heap overhead (mappings, segments, bitsets). Reducing from 3 to 1 cuts total shard count by ~67%.
+
+> **Note:** These settings only affect **newly created indices**. Existing indices retain their original shard count. The ILM policies are applied to index templates and will take effect on the next rollover or daily index creation. To force an immediate cleanup of old indices, use the Elasticsearch Delete Index API or reduce `minimumAge` temporarily in a dev environment.
 
 ### Previously Removed: `cluster.routing.allocation.disk.threshold_enabled=false`
 
@@ -227,6 +260,94 @@ exporters:
 | Setting | Value | Default | Why |
 |---------|-------|---------|-----|
 | `bulk.size` | `1000` | `1000` | The Elasticsearch exporter batches records before flushing. A value of `1000` means "flush when the batch reaches 1000 records OR the flush interval expires." The old dev value of `1` wrote every event individually, causing Lucene segment explosion and rapid index count growth. 1000 is a production-appropriate batch size that balances latency (flush every ~1s under moderate load) with index efficiency. |
+
+### Exporter Index Shards
+
+```yaml
+exporters:
+  elasticsearch:
+    args:
+      index:
+        numberOfShards: 1
+  CamundaExporter:
+    args:
+      index:
+        numberOfShards: 1
+        numberOfReplicas: 0
+```
+
+| Setting | Value | Default | Why |
+|---------|-------|---------|-----|
+| `elasticsearch.index.numberOfShards` | `1` | `3` | The Zeebe Elasticsearch exporter creates one index per record type per day. The upstream default of 3 shards per index is designed for multi-node clusters where shards are distributed for parallelism. On a single-node deployment, 3 shards provide zero benefit — the node cannot distribute work across itself. Each shard consumes heap for mappings, segments, and caches. Setting this to 1 reduces total shard count by ~67%. |
+| `CamundaExporter.index.numberOfShards` | `1` | `3` | Same rationale as above. The Camunda Exporter (new unified exporter in 8.6+) also defaults to 3 shards. Setting it to 1 on a single-node stack eliminates redundant heap overhead. |
+| `CamundaExporter.index.numberOfReplicas` | `0` | `0` | No replicas on a single-node cluster. A replica would live on the same node as the primary, providing no failover benefit while doubling disk and heap usage. |
+
+### Exporter Data Retention (Zeebe Elasticsearch Exporter)
+
+```yaml
+exporters:
+  elasticsearch:
+    args:
+      retention:
+        enabled: true
+        minimumAge: 30d
+        policyName: zeebe-record-retention-policy
+```
+
+| Setting | Value | Default | Why |
+|---------|-------|---------|-----|
+| `retention.enabled` | `true` | `false` | Enables an Elasticsearch Index Lifecycle Management (ILM) policy that is automatically created and attached to all index templates generated by the exporter. Without this, `zeebe-record-*` indices grow forever. |
+| `retention.minimumAge` | `30d` | `30d` | Indices older than 30 days are deleted by the ILM policy. 30 days is a reasonable balance between operational history availability and storage growth. Adjust based on your compliance requirements. |
+| `retention.policyName` | `zeebe-record-retention-policy` | `zeebe-record-retention-policy` | The name of the ILM policy created in Elasticsearch. Can be changed if you manage multiple Camunda clusters on the same ES instance. |
+
+### Camunda Exporter History Retention
+
+```yaml
+exporters:
+  CamundaExporter:
+    args:
+      history:
+        retention:
+          enabled: true
+          minimumAge: 30d
+          policyName: camunda-retention-policy
+```
+
+| Setting | Value | Default | Why |
+|---------|-------|---------|-----|
+| `history.retention.enabled` | `true` | `false` | The Camunda Exporter writes historical process data to time-based indices. Enabling retention ensures these indices are deleted automatically after the minimum age, preventing unbounded disk growth. |
+| `history.retention.minimumAge` | `30d` | `30d` | Matches the Zeebe exporter retention period so all Camunda historical data has a consistent 30-day lifecycle. |
+| `history.retention.policyName` | `camunda-retention-policy` | (empty) | The ILM policy name for Camunda Exporter indices. Distinct from the Zeebe exporter policy to allow independent tuning. |
+
+### Operate Archiver ILM
+
+```yaml
+camunda:
+  operate:
+    archiver:
+      ilmEnabled: true
+      ilmMinAgeForDeleteArchivedIndices: 30d
+```
+
+| Setting | Value | Default | Why |
+|---------|-------|---------|-----|
+| `archiver.ilmEnabled` | `true` | `false` | Operate's archiver moves completed process instances from active indices to archived indices (e.g., `operate-list-view-2024.01.01`). Without ILM, these archived indices accumulate indefinitely. Enabling ILM attaches a deletion policy to archived indices. |
+| `archiver.ilmMinAgeForDeleteArchivedIndices` | `30d` | (none) | Archived indices older than 30 days are deleted. This should match or exceed the Zeebe exporter retention so you do not delete archived Operate data while the raw Zeebe records still exist. |
+
+### Tasklist Archiver ILM
+
+```yaml
+camunda:
+  tasklist:
+    archiver:
+      ilmEnabled: true
+      ilmMinAgeForDeleteArchivedIndices: 30d
+```
+
+| Setting | Value | Default | Why |
+|---------|-------|---------|-----|
+| `archiver.ilmEnabled` | `true` | `false` | Same mechanism as Operate. Tasklist archives completed user tasks and process instances to dated indices. ILM ensures these do not grow without bound. |
+| `archiver.ilmMinAgeForDeleteArchivedIndices` | `30d` | (none) | 30-day retention for Tasklist archives, consistent with Operate and the exporters. |
 
 ### Snapshot Period
 
@@ -671,6 +792,7 @@ Several settings are intentionally development-oriented and should be reviewed b
 | `numberOfReplicas: 0` | orchestration, optimize | `1` | Single failure loses data |
 | `discovery.type=single-node` | elasticsearch | multi-node cluster | No HA, single point of failure |
 | `snapshotPeriod: 5m` | orchestration | `15m` | More frequent snapshots = more IO overhead |
+| No ILM / retention policies | elasticsearch, orchestration | ILM enabled with appropriate retention periods | Historical data grows indefinitely; eventually causes shard exhaustion, heap pressure, and cluster instability (Operate/Optimize stop displaying data). The current stack enables ILM on the Zeebe exporter (`zeebe-record-retention-policy`), Camunda exporter (`camunda-retention-policy`), Operate archiver, and Tasklist archiver, all with a 30-day retention window. On a single-node cluster this also caps shard creation by setting `numberOfShards: 1` per index, preventing the default 3-shard overhead that multiplies daily index growth. |
 
 ### Network/TLS Settings
 
