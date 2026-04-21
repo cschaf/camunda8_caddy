@@ -1,0 +1,208 @@
+$ErrorActionPreference = "Stop"
+
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$ProjectDir = Resolve-Path (Join-Path $ScriptDir "..")
+
+. (Join-Path $ScriptDir "lib\backup-common.ps1")
+
+$TestMode = $false
+
+function Show-Usage {
+    Write-Host "Usage: $(Split-Path -Leaf $PSCommandPath) [OPTIONS]"
+    Write-Host ""
+    Write-Host "Options:"
+    Write-Host "  --test     Simulate backup without modifying data"
+    Write-Host "  -h, --help Show this help message"
+    exit 0
+}
+
+function Parse-Args {
+    param([string[]]$Args)
+    foreach ($arg in $Args) {
+        switch ($arg) {
+            "--test" { $script:TestMode = $true }
+            { $_ -in "-h","--help" } { Show-Usage }
+            default {
+                Write-Host "Unknown option: $arg"
+                Show-Usage
+            }
+        }
+    }
+}
+
+function Main {
+    Parse-Args -Args $args
+
+    Load-Env
+    $stage = Get-Stage
+    $cmd = Get-DockerComposeCmd
+
+    New-Item -ItemType Directory -Path $BackupBaseDir -Force | Out-Null
+    $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+    $backupDir = Join-Path $BackupBaseDir $timestamp
+    $Global:LogFile = Join-Path $backupDir "backup.log"
+
+    if ($TestMode) {
+        Log "=== TEST MODE: Simulating backup without modifying data ==="
+        $backupDir = Join-Path $BackupBaseDir "TEST_$timestamp"
+        $Global:LogFile = Join-Path $backupDir "backup.log"
+    }
+
+    Acquire-Lock
+
+    New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
+    Log "Starting backup to $backupDir"
+    Log "Stage: $stage"
+
+    # Check stack status
+    Log "Checking stack status..."
+    try {
+        Invoke-Expression "$cmd ps" | Out-Null
+    }
+    catch {
+        Log "ERROR: Stack is not running. Start it first with scripts/start.ps1"
+        exit 1
+    }
+
+    Check-ServicesHealth | Out-Null
+
+    # Backup configs
+    Log "Backing up configuration files..."
+    $configArchive = Join-Path $backupDir "configs.tar.gz"
+    if ($TestMode) {
+        Log "[TEST] Would create config archive: $configArchive"
+        Log "[TEST] Including: .env, connector-secrets.txt, Caddyfile, .*/application.yaml"
+    }
+    else {
+        $configItems = @(
+            (Join-Path $ProjectDir ".env"),
+            (Join-Path $ProjectDir "connector-secrets.txt"),
+            (Join-Path $ProjectDir "Caddyfile"),
+            (Join-Path $ProjectDir ".orchestration\application.yaml"),
+            (Join-Path $ProjectDir ".connectors\application.yaml"),
+            (Join-Path $ProjectDir ".optimize\environment-config.yaml"),
+            (Join-Path $ProjectDir ".identity\application.yaml"),
+            (Join-Path $ProjectDir ".console\application.yaml")
+        )
+        $existingItems = $configItems | Where-Object { Test-Path $_ }
+        if ($existingItems) {
+            tar czf $configArchive -C $ProjectDir ($existingItems | ForEach-Object { $_ -replace [regex]::Escape("$ProjectDir\"), "" })
+        }
+        Log "Configs backed up: $configArchive"
+    }
+
+    # Orchestration stop + Zeebe state backup + start
+    Log "Stopping orchestration for cold backup..."
+    if ($TestMode) {
+        Log "[TEST] Would stop orchestration"
+        Log "[TEST] Would backup Zeebe state from volume 'orchestration'"
+        Log "[TEST] Would start orchestration"
+    }
+    else {
+        Invoke-Expression "$cmd stop --timeout 60 orchestration" | Out-Null
+        Start-Sleep -Seconds 2
+
+        Log "Backing up Zeebe state (volume: orchestration)..."
+        docker run --rm `
+            -v orchestration:/data `
+            -v "${backupDir}:/backup" `
+            alpine tar czf /backup/orchestration.tar.gz -C /data .
+
+        Log "Starting orchestration..."
+        Invoke-Expression "$cmd start orchestration" | Out-Null
+        Start-Sleep -Seconds 2
+    }
+
+    # Keycloak DB backup
+    Log "Backing up Keycloak database..."
+    if ($TestMode) {
+        Log "[TEST] Would pg_dump Keycloak DB: $env:POSTGRES_DB"
+    }
+    else {
+        $pgDumpCmd = "docker exec postgres pg_dump -Fc -U `"$env:POSTGRES_USER`" `"$env:POSTGRES_DB`""
+        $outputFile = Join-Path $backupDir "keycloak.sql.gz"
+        Invoke-Expression "$pgDumpCmd | gzip > `"$outputFile`""
+        Log "Keycloak DB backed up: $outputFile"
+    }
+
+    # Web Modeler DB backup
+    Log "Backing up Web Modeler database..."
+    if ($TestMode) {
+        Log "[TEST] Would pg_dump Web Modeler DB: $env:WEBMODELER_DB_NAME"
+    }
+    else {
+        $pgDumpCmd = "docker exec web-modeler-db pg_dump -Fc -U `"$env:WEBMODELER_DB_USER`" `"$env:WEBMODELER_DB_NAME`""
+        $outputFile = Join-Path $backupDir "webmodeler.sql.gz"
+        Invoke-Expression "$pgDumpCmd | gzip > `"$outputFile`""
+        Log "Web Modeler DB backed up: $outputFile"
+    }
+
+    # Elasticsearch snapshot
+    Log "Creating Elasticsearch snapshot..."
+    if ($TestMode) {
+        Log "[TEST] Would register snapshot repo 'backup-repo'"
+        Log "[TEST] Would create snapshot 'snapshot_$timestamp'"
+    }
+    else {
+        $esBackupDir = Join-Path $ProjectDir "backups\elasticsearch"
+        New-Item -ItemType Directory -Path $esBackupDir -Force | Out-Null
+
+        $esRepoBody = '{"type":"fs","settings":{"location":"/usr/share/elasticsearch/backup","compress":true}}'
+        try {
+            Invoke-RestMethod -Uri "http://localhost:9200/_snapshot/backup-repo" -Method Put -ContentType "application/json" -Body $esRepoBody | Out-Null
+        }
+        catch {
+            Log "WARNING: Could not register snapshot repo (may already exist)"
+        }
+
+        $snapshotName = "snapshot_$timestamp"
+        $snapshotBody = '{"indices":"*","ignore_unavailable":true,"include_global_state":true}'
+        $snapshotInfoFile = Join-Path $backupDir "snapshot-info.json"
+        try {
+            $response = Invoke-RestMethod -Uri "http://localhost:9200/_snapshot/backup-repo/${snapshotName}?wait_for_completion=true" -Method Put -ContentType "application/json" -Body $snapshotBody
+            $response | ConvertTo-Json -Depth 10 | Set-Content -Path $snapshotInfoFile
+
+            $state = $response.snapshot.state
+            if ($state -ne "SUCCESS") {
+                Log "WARNING: Elasticsearch snapshot state: $state"
+            }
+            else {
+                Log "Elasticsearch snapshot created successfully: $snapshotName"
+            }
+        }
+        catch {
+            Log "WARNING: Elasticsearch snapshot creation failed: $_"
+            @{error=$_.Exception.Message} | ConvertTo-Json | Set-Content -Path $snapshotInfoFile
+        }
+    }
+
+    # Create manifest
+    Log "Creating manifest..."
+    if ($TestMode) {
+        Log "[TEST] Would create manifest.json"
+    }
+    else {
+        Create-Manifest -BackupDir $backupDir
+    }
+
+    # Cleanup old backups
+    Log "Cleaning up old backups..."
+    if ($TestMode) {
+        Log "[TEST] Would delete backups older than 7 days"
+    }
+    else {
+        Cleanup-OldBackups -RetentionDays 7
+    }
+
+    Release-Lock
+
+    if ($TestMode) {
+        Log "=== TEST MODE complete. Simulated backup: $backupDir ==="
+        Remove-Item -Path $backupDir -Recurse -Force
+    }
+    else {
+        Log "Backup completed successfully: $backupDir"
+    }
+}
+
+Main

@@ -1,0 +1,373 @@
+$ErrorActionPreference = "Stop"
+
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$ProjectDir = Resolve-Path (Join-Path $ScriptDir "..")
+
+. (Join-Path $ScriptDir "lib\backup-common.ps1")
+
+$BackupDir = ""
+$Force = $false
+$DryRun = $false
+$CrossCluster = $false
+$TestMode = $false
+
+function Show-Usage {
+    Write-Host "Usage: $(Split-Path -Leaf $PSCommandPath) [OPTIONS] <backup-directory>"
+    Write-Host ""
+    Write-Host "Arguments:"
+    Write-Host "  backup-directory   Path to backup directory (e.g., backups\20240115_120000)"
+    Write-Host ""
+    Write-Host "Options:"
+    Write-Host "  --force           Skip all prompts"
+    Write-Host "  --dry-run         Show what would be done without executing"
+    Write-Host "  --cross-cluster   Enable cross-cluster restore (skips config overwrite)"
+    Write-Host "  --test            Verify backup integrity without restoring"
+    Write-Host "  -h, --help        Show this help message"
+    exit 0
+}
+
+function Parse-Args {
+    param([string[]]$Args)
+    for ($i = 0; $i -lt $Args.Count; $i++) {
+        $arg = $Args[$i]
+        switch ($arg) {
+            "--force" { $script:Force = $true }
+            "--dry-run" { $script:DryRun = $true }
+            "--cross-cluster" { $script:CrossCluster = $true }
+            "--test" { $script:TestMode = $true }
+            { $_ -in "-h","--help" } { Show-Usage }
+            { $_.StartsWith("-") } {
+                Write-Host "Unknown option: $arg"
+                Show-Usage
+            }
+            default {
+                if (-not $script:BackupDir) {
+                    $script:BackupDir = $arg
+                } else {
+                    Write-Host "Unexpected argument: $arg"
+                    Show-Usage
+                }
+            }
+        }
+    }
+}
+
+function Wait-ForService {
+    param([string]$Service)
+    $cmd = Get-DockerComposeCmd
+    $retries = 60
+    $delay = 5
+
+    Log "Waiting for $Service to be healthy..."
+    for ($i = 1; $i -le $retries; $i++) {
+        try {
+            $info = Invoke-Expression "$cmd ps `"$Service`" --format json" | ConvertFrom-Json
+            $status = $info.Health
+            if (-not $status) { $status = $info.State }
+            if ($status -eq "healthy") {
+                Log "$Service is healthy."
+                return $true
+            }
+        }
+        catch { }
+        Start-Sleep -Seconds $delay
+    }
+
+    Log "ERROR: $Service did not become healthy within $($retries * $delay) seconds"
+    return $false
+}
+
+function Main {
+    Parse-Args -Args $args
+
+    if (-not $BackupDir) {
+        Write-Host "ERROR: Backup directory is required."
+        Show-Usage
+    }
+
+    # Resolve relative path
+    if (-not [System.IO.Path]::IsPathRooted($BackupDir)) {
+        $BackupDir = Join-Path $ProjectDir $BackupDir
+    }
+
+    if (-not (Test-Path $BackupDir)) {
+        Log "ERROR: Backup directory not found: $BackupDir"
+        exit 1
+    }
+
+    Load-Env
+    $stage = Get-Stage
+    $cmd = Get-DockerComposeCmd
+
+    $Global:LogFile = Join-Path $BackupDir "restore.log"
+    New-Item -ItemType Directory -Path $BackupBaseDir -Force | Out-Null
+    Acquire-Lock
+
+    Log "Starting restore from: $BackupDir"
+    Log "Stage: $stage"
+
+    # Pre-flight checks
+    Log "Running pre-flight checks..."
+
+    $manifestFile = Join-Path $BackupDir "manifest.json"
+    if (-not (Test-Path $manifestFile)) {
+        Log "ERROR: Manifest not found in backup directory"
+        exit 1
+    }
+
+    if ($TestMode) {
+        Log "=== TEST MODE: Verifying backup integrity ==="
+        Verify-Manifest -BackupDir $BackupDir
+        Log "=== TEST MODE complete. Backup integrity verified. ==="
+        Release-Lock
+        exit 0
+    }
+
+    Verify-Manifest -BackupDir $BackupDir
+
+    $manifest = Get-Content $manifestFile | ConvertFrom-Json
+    $sourceHost = $manifest.source_host
+    $manifestElasticVersion = $manifest.versions.elasticsearch
+    $manifestCamundaVersion = $manifest.versions.camunda
+
+    # Cross-cluster checks
+    if ($CrossCluster) {
+        Log "Cross-cluster restore mode enabled."
+
+        if ($manifestElasticVersion -and $manifestElasticVersion -ne $env:ELASTIC_VERSION) {
+            Log "ERROR: Elasticsearch version mismatch. Backup: $manifestElasticVersion, Current: $($env:ELASTIC_VERSION)"
+            exit 1
+        }
+
+        if ($manifestCamundaVersion -and $manifestCamundaVersion -ne $env:CAMUNDA_VERSION) {
+            Log "ERROR: Camunda version mismatch. Backup: $manifestCamundaVersion, Current: $($env:CAMUNDA_VERSION)"
+            exit 1
+        }
+
+        if ($sourceHost -and $sourceHost -ne $env:HOST) {
+            Log "WARNING: Source host mismatch. Backup from: $sourceHost, Current: $($env:HOST)"
+        }
+    }
+
+    # Host mismatch warning
+    if (-not $CrossCluster -and $sourceHost -and $sourceHost -ne $env:HOST) {
+        Log "WARNING: This backup was created on a different host ($sourceHost)."
+        Log "WARNING: Config restore may contain incorrect hostnames."
+    }
+
+    # Interactive warning
+    if (-not $Force -and -not $DryRun) {
+        Write-Host ""
+        Write-Host "WARNING: This will OVERWRITE ALL current data in the Camunda stack!"
+        Write-Host "Backup: $BackupDir"
+        Write-Host ""
+        $response = Read-Host "Are you sure you want to continue? [y/N]"
+        if ($response -notmatch '^[Yy]$') {
+            Log "Restore aborted by user."
+            Release-Lock
+            exit 0
+        }
+    }
+    elseif ($DryRun) {
+        Log "=== DRY RUN MODE: Showing what would be done ==="
+    }
+
+    # Stop stack
+    Log "Stopping Camunda stack..."
+    if ($DryRun) {
+        Log "[DRY-RUN] Would run: $cmd down"
+    }
+    else {
+        Invoke-Expression "$cmd down" | Out-Null
+    }
+
+    # Remove volumes
+    Log "Removing data volumes..."
+    if ($DryRun) {
+        Log "[DRY-RUN] Would remove volumes: orchestration, elastic, postgres, postgres-web"
+        Log "[DRY-RUN] Would keep volume: keycloak-theme"
+    }
+    else {
+        $volumes = @("orchestration", "elastic", "postgres", "postgres-web")
+        foreach ($vol in $volumes) {
+            try {
+                docker volume rm $vol 2>$null | Out-Null
+            }
+            catch {
+                Log "WARNING: Could not remove volume $vol (may not exist)"
+            }
+        }
+        Log "Volumes removed."
+    }
+
+    # Start stack
+    Log "Starting stack with fresh volumes..."
+    if ($DryRun) {
+        Log "[DRY-RUN] Would run: $cmd up -d"
+    }
+    else {
+        Invoke-Expression "$cmd up -d" | Out-Null
+    }
+
+    # Wait for core services
+    if (-not $DryRun) {
+        Wait-ForService -Service "postgres" | Out-Null
+        Wait-ForService -Service "web-modeler-db" | Out-Null
+        Wait-ForService -Service "elasticsearch" | Out-Null
+        Log "Core services are healthy."
+    }
+    else {
+        Log "[DRY-RUN] Would wait for postgres, web-modeler-db, elasticsearch to be healthy"
+    }
+
+    # Restore Keycloak DB
+    Log "Restoring Keycloak database..."
+    $keycloakBackup = Join-Path $BackupDir "keycloak.sql.gz"
+    if ($DryRun) {
+        Log "[DRY-RUN] Would restore Keycloak DB from: $keycloakBackup"
+    }
+    else {
+        if (Test-Path $keycloakBackup) {
+            $pgRestoreCmd = "gunzip -c `"$keycloakBackup`" | docker exec -i postgres pg_restore -U `"$env:POSTGRES_USER`" -d `"$env:POSTGRES_DB`" --clean --if-exists"
+            Invoke-Expression "$pgRestoreCmd 2>`$null" | Out-Null
+            Log "Keycloak database restored."
+        }
+        else {
+            Log "WARNING: Keycloak backup not found, skipping."
+        }
+    }
+
+    # Restore Web Modeler DB
+    Log "Restoring Web Modeler database..."
+    $webmodelerBackup = Join-Path $BackupDir "webmodeler.sql.gz"
+    if ($DryRun) {
+        Log "[DRY-RUN] Would restore Web Modeler DB from: $webmodelerBackup"
+    }
+    else {
+        if (Test-Path $webmodelerBackup) {
+            $pgRestoreCmd = "gunzip -c `"$webmodelerBackup`" | docker exec -i web-modeler-db pg_restore -U `"$env:WEBMODELER_DB_USER`" -d `"$env:WEBMODELER_DB_NAME`" --clean --if-exists"
+            Invoke-Expression "$pgRestoreCmd 2>`$null" | Out-Null
+            Log "Web Modeler database restored."
+        }
+        else {
+            Log "WARNING: Web Modeler backup not found, skipping."
+        }
+    }
+
+    # Restore Elasticsearch
+    Log "Restoring Elasticsearch snapshot..."
+    if ($DryRun) {
+        Log "[DRY-RUN] Would restore Elasticsearch snapshot"
+    }
+    else {
+        $snapshotInfoFile = Join-Path $BackupDir "snapshot-info.json"
+        $snapshotName = $null
+        if (Test-Path $snapshotInfoFile) {
+            $snapshotInfo = Get-Content $snapshotInfoFile | ConvertFrom-Json
+            $snapshotName = $snapshotInfo.snapshot.name
+        }
+        if (-not $snapshotName) {
+            $timestamp = Split-Path -Leaf $BackupDir
+            $snapshotName = "snapshot_$timestamp"
+        }
+
+        $esRepoBody = '{"type":"fs","settings":{"location":"/usr/share/elasticsearch/backup","compress":true}}'
+        try {
+            Invoke-RestMethod -Uri "http://localhost:9200/_snapshot/backup-repo" -Method Put -ContentType "application/json" -Body $esRepoBody | Out-Null
+        }
+        catch {
+            Log "WARNING: Could not register snapshot repo (may already exist)"
+        }
+
+        Log "Closing Elasticsearch indices before restore..."
+        try {
+            Invoke-RestMethod -Uri "http://localhost:9200/_all/_close" -Method Post | Out-Null
+        }
+        catch {
+            Log "WARNING: Could not close indices (may already be closed)"
+        }
+
+        Log "Restoring snapshot: $snapshotName"
+        try {
+            $restoreResponse = Invoke-RestMethod -Uri "http://localhost:9200/_snapshot/backup-repo/$snapshotName/_restore?wait_for_completion=true" -Method Post -ContentType "application/json" -Body '{"include_global_state":true}'
+            Log "Elasticsearch snapshot restored successfully."
+        }
+        catch {
+            Log "WARNING: Elasticsearch restore failed: $_"
+        }
+    }
+
+    # Restore Zeebe state
+    Log "Restoring Zeebe state..."
+    $orchBackup = Join-Path $BackupDir "orchestration.tar.gz"
+    if ($DryRun) {
+        Log "[DRY-RUN] Would restore Zeebe state from: $orchBackup"
+    }
+    else {
+        if (Test-Path $orchBackup) {
+            docker run --rm `
+                -v orchestration:/data `
+                -v "${BackupDir}:/backup" `
+                alpine sh -c "cd /data && tar xzf /backup/orchestration.tar.gz"
+            Log "Zeebe state restored."
+        }
+        else {
+            Log "WARNING: Orchestration backup not found, skipping."
+        }
+    }
+
+    # Restore configs
+    if ($CrossCluster) {
+        Log "Cross-cluster mode: configs will NOT be overwritten."
+        Log "Extracting configs to restored-configs/ for reference..."
+        $configArchive = Join-Path $BackupDir "configs.tar.gz"
+        if (-not $DryRun -and (Test-Path $configArchive)) {
+            $restoredConfigsDir = Join-Path $BackupDir "restored-configs"
+            New-Item -ItemType Directory -Path $restoredConfigsDir -Force | Out-Null
+            tar xzf $configArchive -C $restoredConfigsDir
+            Log "Configs extracted to: $restoredConfigsDir"
+        }
+    }
+    else {
+        Log "Restoring configuration files..."
+        $configArchive = Join-Path $BackupDir "configs.tar.gz"
+        if ($DryRun) {
+            Log "[DRY-RUN] Would extract configs.tar.gz to project root"
+        }
+        else {
+            if (Test-Path $configArchive) {
+                tar xzf $configArchive -C $ProjectDir
+                Log "Configuration files restored."
+            }
+            else {
+                Log "WARNING: Config backup not found, skipping."
+            }
+        }
+    }
+
+    # Restart stack
+    Log "Restarting stack..."
+    if ($DryRun) {
+        Log "[DRY-RUN] Would run: $cmd restart"
+    }
+    else {
+        Invoke-Expression "$cmd restart" | Out-Null
+        Start-Sleep -Seconds 5
+    }
+
+    # Health check
+    Log "Waiting for all services to be healthy..."
+    if ($DryRun) {
+        Log "[DRY-RUN] Would check service health"
+        Log "=== DRY RUN complete ==="
+    }
+    else {
+        Start-Sleep -Seconds 10
+        Check-ServicesHealth | Out-Null
+        Log "Restore completed successfully."
+    }
+
+    Release-Lock
+}
+
+Main

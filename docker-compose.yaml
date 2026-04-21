@@ -306,6 +306,7 @@ services:
       - cluster.routing.allocation.disk.watermark.high=90%
       - cluster.routing.allocation.disk.watermark.flood_stage=95%
       - indices.breaker.total.limit=75%
+      - path.repo=/usr/share/elasticsearch/backup
       - "ES_JAVA_OPTS=-Xms4g -Xmx4g"
     ulimits:
       memlock:
@@ -330,6 +331,7 @@ services:
       start_period: 60s
     volumes:
       - elastic:/usr/share/elasticsearch/data
+      - ./backups/elasticsearch:/usr/share/elasticsearch/backup
     networks:
       - camunda-platform
     extra_hosts:
