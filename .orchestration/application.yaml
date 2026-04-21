@@ -66,6 +66,7 @@ zeebe:
           index:
             prefix: "zeebe-record"
             numberOfShards: 1
+            numberOfReplicas: 0
           retention:
             enabled: true
             minimumAge: 30d

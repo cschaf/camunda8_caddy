@@ -269,6 +269,7 @@ exporters:
     args:
       index:
         numberOfShards: 1
+        numberOfReplicas: 0
   CamundaExporter:
     args:
       index:
@@ -279,6 +280,7 @@ exporters:
 | Setting | Value | Default | Why |
 |---------|-------|---------|-----|
 | `elasticsearch.index.numberOfShards` | `1` | `3` | The Zeebe Elasticsearch exporter creates one index per record type per day. The upstream default of 3 shards per index is designed for multi-node clusters where shards are distributed for parallelism. On a single-node deployment, 3 shards provide zero benefit — the node cannot distribute work across itself. Each shard consumes heap for mappings, segments, and caches. Setting this to 1 reduces total shard count by ~67%. |
+| `elasticsearch.index.numberOfReplicas` | `0` | `0` | No replica on a single-node cluster. A replica would reside on the same node as the primary — no failover benefit, but double the disk and heap consumption. Explicitly set for consistency with the CamundaExporter and as protection against default changes in future Camunda versions. |
 | `CamundaExporter.index.numberOfShards` | `1` | `3` | Same rationale as above. The Camunda Exporter (new unified exporter in 8.6+) also defaults to 3 shards. Setting it to 1 on a single-node stack eliminates redundant heap overhead. |
 | `CamundaExporter.index.numberOfReplicas` | `0` | `0` | No replicas on a single-node cluster. A replica would live on the same node as the primary, providing no failover benefit while doubling disk and heap usage. |
 
