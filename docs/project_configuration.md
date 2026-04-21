@@ -152,7 +152,7 @@ environment:
   - discovery.type=single-node                     # No clustering (single-node dev/prod)
   - xpack.security.enabled=false                   # No TLS/auth for internal ES
   - cluster.max_shards_per_node=1000              # Realistic limit for single-node (was 3000)
-  - action.auto_create_index=false                 # Prevent unplanned index creation
+  - "action.auto_create_index=.security*,zeebe-record*,operate-*,tasklist-*,optimize-*,camunda-*,web-modeler-*,identity-*"
   - indices.memory.index_buffer_size=20%           # Larger indexing buffer for write throughput
   - cluster.routing.allocation.disk.watermark.low=85%
   - cluster.routing.allocation.disk.watermark.high=90%
@@ -174,7 +174,7 @@ environment:
 | `cluster.routing.allocation.disk.watermark.flood_stage=95%` | `95%` | `95%` | At 95%, Elasticsearch marks all indices on the node as read-only (`index.blocks.read_only_allow_delete`). Requires manual intervention to clear. The gap between 90% and 95% gives operators a window to react. |
 | `indices.breaker.total.limit=75%` | `75%` | `70%` | The parent circuit breaker limit for all sub-breakers (fielddata, request, in-flight). 75% of JVM heap. Raised slightly from 70% because Optimize performs large aggregations that can approach the limit. If this trips, it causes `TooManyBookmarks` or aggregation failures in Optimize. |
 | `ES_JAVA_OPTS=-Xms4g -Xmx4g` | `4g` | 50% of container | 4 GB heap (50% of the 8 GB limit) for Lucene to use the other ~4 GB as off-heap page cache. Scaled down proportionally in `dev` and `test` stages. |
-| `action.auto_create_index=false` | `false` | `true` | Prevents any service or misconfiguration from creating indices that are not explicitly planned. Without this, a typo in an index name or a rogue exporter could create new indices that silently consume shards and disk space. |
+| `action.auto_create_index=...` | Whitelist (Camunda patterns) | `true` | Prevents rogue services or typos from creating indices outside known patterns. A whitelist (instead of blanket `false`) is safer because Optimize and Web Modeler restapi may auto-create indices on first startup before their templates are registered. All known Camunda index prefixes are explicitly allowed: `zeebe-record*`, `operate-*`, `tasklist-*`, `optimize-*`, `camunda-*`, `web-modeler-*`, `identity-*`. |
 | `indices.memory.index_buffer_size=20%` | `20%` | `10%` | The percentage of JVM heap reserved for the indexing buffer. A larger buffer allows Elasticsearch to batch more in-memory writes before flushing to disk, improving throughput for Camunda's high-volume event stream. 20% is appropriate given the 4 GB heap and write-heavy workload. |
 
 ### Index Lifecycle Management (ILM) and Data Retention

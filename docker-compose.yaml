@@ -300,7 +300,7 @@ services:
       - discovery.type=single-node
       - xpack.security.enabled=false
       - cluster.max_shards_per_node=1000
-      - action.auto_create_index=false
+      - "action.auto_create_index=.security*,zeebe-record*,operate-*,tasklist-*,optimize-*,camunda-*,web-modeler-*,identity-*"
       - indices.memory.index_buffer_size=20%
       - cluster.routing.allocation.disk.watermark.low=85%
       - cluster.routing.allocation.disk.watermark.high=90%
