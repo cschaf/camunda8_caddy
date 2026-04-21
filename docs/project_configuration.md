@@ -42,6 +42,7 @@ This stack deploys a full Camunda 8.8 self-managed platform with:
 | **Console** | `camunda/console:8.8.133` | Cluster overview and management UI |
 | **PostgreSQL** (×2) | `postgres:15-alpine3.22` | Identity/Keycloak DB + Web Modeler DB |
 | **Caddy** | `caddy:latest` | Reverse proxy with automatic HTTPS and subdomain routing |
+| **Autoheal** | `willfarrell/autoheal:latest` | Restarts labeled containers when Docker health checks mark them as unhealthy |
 
 ### Container Networks
 
@@ -113,6 +114,8 @@ The following table shows the **base** resource configuration — what the `prod
 
 **Total limits:** ~27.2 GB, **Total reservations:** ~16.2 GB
 Leaves ~15.7 GB headroom for the OS and burst.
+
+> **Autoheal note:** `autoheal` is intentionally not part of the stage-based resource tables. It is a lightweight operational sidecar with no explicit `deploy.resources` overrides in this stack, so its footprint is negligible compared with the Camunda services it monitors.
 
 ### Reduced Profiles
 
@@ -446,6 +449,26 @@ Keycloak is the OIDC provider. On first startup, Identity calls the Keycloak Adm
 
 Console is **Node.js**, not Spring Boot. This means Spring Boot configuration gotchas (CSRF origin checking, `SERVER_FORWARD_HEADERS_STRATEGY`, font CORS issues) do not apply. It uses different env vars (`KEYCLOAK_BASE_URL` vs Spring's `issuer-url` style).
 
+**Health checks and autoheal:** Console exposes its readiness probe on port 9100. Docker uses that probe to set the container health state, and the `autoheal` sidecar watches the `autoheal=true` label and restarts Console if it becomes `unhealthy` while still running.
+
+### Autoheal
+
+**Image:** `willfarrell/autoheal:latest`
+
+`autoheal` is a small operational sidecar that watches Docker health states over `/var/run/docker.sock`. When a labeled container transitions to `unhealthy`, `autoheal` issues a Docker restart for that container.
+
+**What it does in this stack:**
+- Monitors services labeled with `autoheal=true`
+- Restarts services whose Docker `healthcheck` status becomes `unhealthy`
+- Complements `restart: unless-stopped`, which handles unexpected process exits
+
+**What it does not do:**
+- It does **not** restart containers stopped intentionally with `docker stop`
+- It does **not** recreate containers removed by `docker compose down`
+- It does **not** replace Docker restart policies; it only reacts to the `unhealthy` health state
+
+**Operational implication:** For `autoheal` to be effective, a service must have both a meaningful Docker `healthcheck` and the `autoheal=true` label. This is why the reverse proxy now has its own health probe in addition to the application services.
+
 ### Web Modeler
 
 Three components:
@@ -472,6 +495,8 @@ Three components:
 **Image:** `caddy:latest`
 
 **Port:** 443 (HTTPS only)
+
+The reverse proxy also defines a Docker health check against Caddy's local admin endpoint. That probe exists primarily so `autoheal` can distinguish a healthy proxy from one that is still running but no longer serving traffic correctly.
 
 ### Subdomain Routes
 

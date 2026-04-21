@@ -23,28 +23,9 @@ pwsh -File scripts/stop.ps1
 docker compose logs -f [service-name]
 ```
 
-### Running Tests
+### Cluster Changes
 
-E2e tests are in `tests/` using Playwright.
-
-```bash
-cd tests
-
-# Install dependencies
-npm install
-
-# Run all tests
-npm test
-
-# Run tests in headed mode (visual browser)
-npm run test:headed
-
-# Run tests with Playwright debugger
-npm run test:debug
-
-# View HTML report
-npm run report
-```
+Do not write automated tests for cluster changes in this repository. Cluster-related changes should be validated through Docker Compose configuration checks and manual runtime verification instead.
 
 ## Architecture
 

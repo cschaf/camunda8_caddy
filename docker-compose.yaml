@@ -41,7 +41,9 @@ services:
     env_file:
       - path: .env
         required: true
-    restart: on-failure
+    labels:
+      - autoheal=true
+    restart: unless-stopped
     deploy:
       resources:
         limits:
@@ -81,7 +83,9 @@ services:
       CAMUNDA_CLIENT_AUTH_CLIENTSECRET: ${CONNECTORS_CLIENT_SECRET:?CONNECTORS_CLIENT_SECRET is required}
       JAVA_TOOL_OPTIONS: "-Xmx768m"
     env_file: connector-secrets.txt
-    restart: on-failure
+    labels:
+      - autoheal=true
+    restart: unless-stopped
     deploy:
       resources:
         limits:
@@ -138,7 +142,9 @@ services:
       start_period: 30s
     volumes:
       - "./.optimize/environment-config.yaml:/optimize/config/environment-config.yaml"
-    restart: on-failure
+    labels:
+      - autoheal=true
+    restart: unless-stopped
     deploy:
       resources:
         limits:
@@ -190,7 +196,9 @@ services:
       timeout: 15s
       retries: 30
       start_period: 60s
-    restart: on-failure
+    labels:
+      - autoheal=true
+    restart: unless-stopped
     deploy:
       resources:
         limits:
@@ -218,7 +226,9 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
       POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
-    restart: on-failure
+    labels:
+      - autoheal=true
+    restart: unless-stopped
     deploy:
       resources:
         limits:
@@ -253,7 +263,9 @@ services:
       KEYCLOAK_ADMIN_USER: ${KEYCLOAK_ADMIN_USER:?KEYCLOAK_ADMIN_USER is required}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?KEYCLOAK_ADMIN_PASSWORD is required}
       KEYCLOAK_PROXY_HEADERS: xforwarded
-    restart: on-failure
+    labels:
+      - autoheal=true
+    restart: unless-stopped
     deploy:
       resources:
         limits:
@@ -297,7 +309,9 @@ services:
       memlock:
         soft: -1
         hard: -1
-    restart: on-failure
+    labels:
+      - autoheal=true
+    restart: unless-stopped
     deploy:
       resources:
         limits:
@@ -322,7 +336,9 @@ services:
   web-modeler-db:
     container_name: web-modeler-db
     image: postgres:${POSTGRES_VERSION}
-    restart: on-failure
+    labels:
+      - autoheal=true
+    restart: unless-stopped
     deploy:
       resources:
         limits:
@@ -357,7 +373,9 @@ services:
     ports:
       - "1025:1025"
       - "8075:8025"
-    restart: on-failure
+    labels:
+      - autoheal=true
+    restart: unless-stopped
     deploy:
       resources:
         limits:
@@ -380,7 +398,9 @@ services:
   web-modeler-restapi:
     container_name: web-modeler-restapi
     image: camunda/web-modeler-restapi:${CAMUNDA_WEB_MODELER_VERSION}
-    restart: on-failure
+    labels:
+      - autoheal=true
+    restart: unless-stopped
     deploy:
       resources:
         limits:
@@ -444,7 +464,9 @@ services:
     image: camunda/web-modeler-webapp:${CAMUNDA_WEB_MODELER_VERSION}
     ports:
       - "8070:8070"
-    restart: on-failure
+    labels:
+      - autoheal=true
+    restart: unless-stopped
     deploy:
       resources:
         limits:
@@ -492,7 +514,9 @@ services:
     image: camunda/web-modeler-websockets:${CAMUNDA_WEB_MODELER_VERSION}
     ports:
       - "8060:8060"
-    restart: on-failure
+    labels:
+      - autoheal=true
+    restart: unless-stopped
     deploy:
       resources:
         limits:
@@ -532,13 +556,15 @@ services:
       CAMUNDA_IDENTITY_CLIENT_ID: console
       CAMUNDA_IDENTITY_AUDIENCE: console
       JAVA_TOOL_OPTIONS: -Xms256m -Xmx768m
+    labels:
+      - autoheal=true
     healthcheck:
       test: ["CMD", "wget", "-q", "--tries=1", "--spider", "http://localhost:9100/health/readiness"]
       interval: 30s
       timeout: 5s
       retries: 5
       start_period: 30s
-    restart: on-failure
+    restart: unless-stopped
     deploy:
       resources:
         limits:
@@ -559,6 +585,15 @@ services:
       keycloak:
         condition: service_healthy
 
+  autoheal:
+    image: willfarrell/autoheal:latest
+    container_name: autoheal
+    restart: unless-stopped
+    environment:
+      AUTOHEAL_INTERVAL: 30
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
   reverse-proxy:
     image: caddy:latest
     container_name: reverse-proxy
@@ -574,6 +609,8 @@ services:
       - STAGE=${STAGE:?STAGE is required}
       - BANNER_DARKMODE=${BANNER_DARKMODE}
       - BANNER_LIGHTMODE=${BANNER_LIGHTMODE}
+    labels:
+      - autoheal=true
     networks:
       - camunda-platform
       - identity-network
@@ -581,7 +618,13 @@ services:
     depends_on:
       keycloak:
         condition: service_healthy
-    restart: on-failure
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:2019/config/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
     deploy:
       resources:
         limits:

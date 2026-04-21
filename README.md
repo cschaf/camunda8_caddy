@@ -146,6 +146,8 @@ Wait for all services to be healthy (may take 2–3 minutes on first start):
 docker compose ps
 ```
 
+The stack also includes an `autoheal` sidecar that watches labeled containers and restarts them when Docker marks them as `unhealthy`. It complements `restart: unless-stopped`, which covers unexpected process exits. `autoheal` does not restart containers that were stopped intentionally with `docker stop` or removed with `docker compose down`.
+
 ## Environment Stages
 
 The stack reads `STAGE` from `.env` and applies a matching resource profile from `stages/`. The value is case-insensitive, so `DEV`, `dev`, and `DeV` all select the same profile.
