@@ -127,7 +127,7 @@ function Main {
         }
 
         Log "Starting orchestration..."
-        Invoke-Expression "$cmd start orchestration" | Out-Null
+        Invoke-Expression "$cmd up -d --no-deps orchestration" | Out-Null
         Start-Sleep -Seconds 2
     }
 

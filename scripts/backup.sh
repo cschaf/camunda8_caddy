@@ -120,7 +120,7 @@ main() {
     done
 
     log "Starting orchestration..."
-    $cmd start orchestration || true
+    $cmd up -d --no-deps orchestration
     sleep 2
   fi
 
