@@ -312,7 +312,7 @@ main() {
 
     # Close all indices before restore to avoid conflicts
     log "Closing Elasticsearch indices before restore..."
-    curl -s -X POST "http://localhost:9200/_all/_close" > /dev/null || true
+    curl -s -X POST "http://localhost:9200/_all/_close?expand_wildcards=all&ignore_unavailable=true" > /dev/null || true
 
     # Restore snapshot
     log "Restoring snapshot: $snapshot_name"
@@ -329,15 +329,12 @@ try:
     if 'error' in d:
         reason = d['error'].get('reason', str(d['error']))
         print('ERROR:' + reason)
-        sys.exit(1)
-    if 'snapshot' in d:
+    elif 'snapshot' in d:
         print(d['snapshot'].get('state', 'UNKNOWN'))
     else:
         print('UNKNOWN')
-        sys.exit(1)
 except Exception as e:
     print('UNKNOWN')
-    sys.exit(1)
 " "$restore_response" 2>/dev/null || echo "UNKNOWN")"
 
     if [[ "$restore_status" == "SUCCESS" ]]; then
