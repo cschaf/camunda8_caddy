@@ -203,7 +203,12 @@ function Main {
         Log "[DRY-RUN] Would keep volume: keycloak-theme"
     }
     else {
-        $volumes = @("orchestration", "elastic", "postgres", "postgres-web")
+        $volumes = @(
+            (Get-ComposeVolumeName "orchestration"),
+            (Get-ComposeVolumeName "elastic"),
+            (Get-ComposeVolumeName "postgres"),
+            (Get-ComposeVolumeName "postgres-web")
+        )
         foreach ($vol in $volumes) {
             try {
                 docker volume rm $vol 2>$null | Out-Null
@@ -378,8 +383,9 @@ function Main {
     }
     else {
         if (Test-Path $orchBackup) {
+            $zeebeVol = Get-ComposeVolumeName 'orchestration'
             docker run --rm `
-                -v orchestration:/data `
+                -v "${zeebeVol}:/data" `
                 -v "${BackupDir}:/backup" `
                 alpine sh -c "cd /data && tar xzf /backup/orchestration.tar.gz"
             Log "Zeebe state restored."

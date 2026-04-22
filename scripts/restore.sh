@@ -228,7 +228,9 @@ main() {
     log "[DRY-RUN] Would remove volumes: orchestration, elastic, postgres, postgres-web"
     log "[DRY-RUN] Would keep volume: keycloak-theme"
   else
-    docker volume rm orchestration elastic postgres postgres-web 2>/dev/null || true
+    local proj
+    proj="$(get_compose_project_name)"
+    docker volume rm "${proj}_orchestration" "${proj}_elastic" "${proj}_postgres" "${proj}_postgres-web" 2>/dev/null || true
     log "Volumes removed."
   fi
 
@@ -387,8 +389,10 @@ except Exception as e:
     log "[DRY-RUN] Would restore Zeebe state from: $BACKUP_DIR/orchestration.tar.gz"
   else
     if [[ -f "$BACKUP_DIR/orchestration.tar.gz" ]]; then
+      local zeebe_vol
+      zeebe_vol="$(compose_volume_name orchestration)"
       docker run --rm \
-        -v orchestration:/data \
+        -v "${zeebe_vol}:/data" \
         -v "$BACKUP_DIR:/backup" \
         alpine sh -c "cd /data && tar xzf /backup/orchestration.tar.gz"
       log "Zeebe state restored."

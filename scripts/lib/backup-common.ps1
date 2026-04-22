@@ -207,6 +207,19 @@ function Release-Lock {
     }
 }
 
+function Get-ComposeProjectName {
+    if ($env:COMPOSE_PROJECT_NAME) {
+        return $env:COMPOSE_PROJECT_NAME.ToLower()
+    }
+    $raw = (Split-Path -Leaf $ProjectDir).ToLower()
+    return ($raw -replace '[^a-z0-9_-]', '')
+}
+
+function Get-ComposeVolumeName {
+    param([string]$VolumeKey)
+    return "$(Get-ComposeProjectName)_$VolumeKey"
+}
+
 function Cleanup-OnError {
     if ($?) { return }
     Log "ERROR: Script failed."

@@ -110,8 +110,9 @@ function Main {
         $zeebeMaxRetries = 3
         while ($zeebeRetry -lt $zeebeMaxRetries) {
             try {
+                $zeebeVol = Get-ComposeVolumeName 'orchestration'
                 docker run --rm `
-                    -v orchestration:/data `
+                    -v "${zeebeVol}:/data" `
                     -v "${backupDir}:/backup" `
                     alpine tar czf /backup/orchestration.tar.gz -C /data . | Out-Null
                 Log "Zeebe state backed up."

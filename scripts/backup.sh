@@ -106,8 +106,10 @@ main() {
     local zeebe_retry=0
     local zeebe_max_retries=3
     while true; do
+      local zeebe_vol
+      zeebe_vol="$(compose_volume_name orchestration)"
       if docker run --rm \
-        -v orchestration:/data \
+        -v "${zeebe_vol}:/data" \
         -v "$backup_dir:/backup" \
         alpine tar czf /backup/orchestration.tar.gz -C /data . 2>/dev/null; then
         log "Zeebe state backed up."

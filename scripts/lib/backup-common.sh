@@ -244,4 +244,17 @@ cleanup_on_error() {
   exit $exit_code
 }
 
+get_compose_project_name() {
+  if [[ -n "${COMPOSE_PROJECT_NAME:-}" ]]; then
+    printf '%s' "$COMPOSE_PROJECT_NAME" | tr '[:upper:]' '[:lower:]'
+  else
+    basename "$PROJECT_DIR" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9_-'
+  fi
+}
+
+compose_volume_name() {
+  local volume_key="$1"
+  echo "$(get_compose_project_name)_${volume_key}"
+}
+
 trap cleanup_on_error EXIT
