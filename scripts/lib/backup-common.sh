@@ -122,9 +122,10 @@ manifest = {
     'files': []
 }
 
+SKIP_FILES = {'manifest.json', 'backup.log', 'restore.log'}
 for f in os.listdir(backup_dir):
     fpath = os.path.join(backup_dir, f)
-    if os.path.isfile(fpath) and f != 'manifest.json':
+    if os.path.isfile(fpath) and f not in SKIP_FILES:
         with open(fpath, 'rb') as fh:
             sha256 = hashlib.sha256(fh.read()).hexdigest()
         manifest['files'].append({'name': f, 'sha256': sha256})
