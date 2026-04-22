@@ -91,11 +91,14 @@ function Main {
         Log "Configs backed up: $configArchive"
     }
 
-    # Orchestration stop + Zeebe state backup + start
+    # Orchestration stop + all backups while stopped + restart
     Log "Stopping orchestration for cold backup..."
     if ($TestMode) {
         Log "[TEST] Would stop orchestration"
         Log "[TEST] Would backup Zeebe state from volume 'orchestration'"
+        Log "[TEST] Would pg_dump Keycloak DB: $env:POSTGRES_DB"
+        Log "[TEST] Would pg_dump Web Modeler DB: $env:WEBMODELER_DB_NAME"
+        Log "[TEST] Would create Elasticsearch snapshot"
         Log "[TEST] Would start orchestration"
     }
     else {
@@ -126,42 +129,19 @@ function Main {
             }
         }
 
-        Log "Starting orchestration..."
-        Invoke-Expression "$cmd up -d --no-deps orchestration" | Out-Null
-        Start-Sleep -Seconds 2
-    }
-
-    # Keycloak DB backup
-    Log "Backing up Keycloak database..."
-    if ($TestMode) {
-        Log "[TEST] Would pg_dump Keycloak DB: $env:POSTGRES_DB"
-    }
-    else {
+        Log "Backing up Keycloak database..."
         $pgDumpCmd = "docker exec postgres pg_dump -Fc -U `"$env:POSTGRES_USER`" `"$env:POSTGRES_DB`""
         $outputFile = Join-Path $backupDir "keycloak.sql.gz"
         Invoke-Expression "$pgDumpCmd | gzip > `"$outputFile`""
         Log "Keycloak DB backed up: $outputFile"
-    }
 
-    # Web Modeler DB backup
-    Log "Backing up Web Modeler database..."
-    if ($TestMode) {
-        Log "[TEST] Would pg_dump Web Modeler DB: $env:WEBMODELER_DB_NAME"
-    }
-    else {
+        Log "Backing up Web Modeler database..."
         $pgDumpCmd = "docker exec web-modeler-db pg_dump -Fc -U `"$env:WEBMODELER_DB_USER`" `"$env:WEBMODELER_DB_NAME`""
         $outputFile = Join-Path $backupDir "webmodeler.sql.gz"
         Invoke-Expression "$pgDumpCmd | gzip > `"$outputFile`""
         Log "Web Modeler DB backed up: $outputFile"
-    }
 
-    # Elasticsearch snapshot
-    Log "Creating Elasticsearch snapshot..."
-    if ($TestMode) {
-        Log "[TEST] Would register snapshot repo 'backup-repo'"
-        Log "[TEST] Would create snapshot 'snapshot_$timestamp'"
-    }
-    else {
+        Log "Creating Elasticsearch snapshot..."
         # Ensure the Docker volume has open permissions for the elasticsearch user
         try {
             docker run --rm -v "elastic-backup:/backup" alpine sh -c "chmod -R 777 /backup 2>/dev/null || true" | Out-Null
@@ -217,6 +197,10 @@ function Main {
                 Log "WARNING: Could not copy snapshot data from volume: $_"
             }
         }
+
+        Log "Starting orchestration..."
+        Invoke-Expression "$cmd start orchestration" | Out-Null
+        Start-Sleep -Seconds 2
     }
 
     # Create manifest

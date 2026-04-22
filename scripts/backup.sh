@@ -89,11 +89,14 @@ main() {
     log "Configs backed up: $config_archive"
   fi
 
-  # Step 5-7: Orchestration stop + Zeebe state backup + start
+  # Step 5-9: Orchestration stop + all backups while stopped + restart
   log "Stopping orchestration for cold backup..."
   if [[ "$TEST_MODE" == true ]]; then
     log "[TEST] Would stop orchestration"
     log "[TEST] Would backup Zeebe state from volume 'orchestration'"
+    log "[TEST] Would pg_dump Keycloak DB: ${POSTGRES_DB:-}"
+    log "[TEST] Would pg_dump Web Modeler DB: ${WEBMODELER_DB_NAME:-}"
+    log "[TEST] Would create Elasticsearch snapshot"
     log "[TEST] Would start orchestration"
   else
     $cmd stop --timeout 60 orchestration || true
@@ -119,61 +122,21 @@ main() {
       sleep 5
     done
 
-    log "Starting orchestration..."
-    $cmd up -d --no-deps orchestration
-    sleep 2
-  fi
+    log "Backing up Keycloak database..."
+    if docker exec postgres pg_dump -Fc -U "${POSTGRES_USER}" "${POSTGRES_DB}" | gzip > "$backup_dir/keycloak.sql.gz" 2>/dev/null; then
+      log "Keycloak DB backed up: $backup_dir/keycloak.sql.gz"
+    else
+      log "ERROR: Keycloak DB backup failed"
+    fi
 
-  # Step 8: Keycloak DB backup
-  log "Backing up Keycloak database..."
-  if [[ "$TEST_MODE" == true ]]; then
-    log "[TEST] Would pg_dump Keycloak DB: ${POSTGRES_DB:-}"
-  else
-    local pg_retry=0
-    local pg_max_retries=5
-    while true; do
-      if docker exec postgres pg_dump -Fc -U "${POSTGRES_USER}" "${POSTGRES_DB}" | gzip > "$backup_dir/keycloak.sql.gz" 2>/dev/null; then
-        log "Keycloak DB backed up: $backup_dir/keycloak.sql.gz"
-        break
-      fi
-      pg_retry=$((pg_retry + 1))
-      if [[ $pg_retry -eq $pg_max_retries ]]; then
-        log "ERROR: Keycloak DB backup failed after $pg_max_retries attempts"
-        break
-      fi
-      log "WARNING: Keycloak DB backup failed, retrying in 3s... (attempt $pg_retry/$pg_max_retries)"
-      sleep 3
-    done
-  fi
+    log "Backing up Web Modeler database..."
+    if docker exec web-modeler-db pg_dump -Fc -U "${WEBMODELER_DB_USER}" "${WEBMODELER_DB_NAME}" | gzip > "$backup_dir/webmodeler.sql.gz" 2>/dev/null; then
+      log "Web Modeler DB backed up: $backup_dir/webmodeler.sql.gz"
+    else
+      log "ERROR: Web Modeler DB backup failed"
+    fi
 
-  # Step 9: Web Modeler DB backup
-  log "Backing up Web Modeler database..."
-  if [[ "$TEST_MODE" == true ]]; then
-    log "[TEST] Would pg_dump Web Modeler DB: ${WEBMODELER_DB_NAME:-}"
-  else
-    local wm_retry=0
-    local wm_max_retries=5
-    while true; do
-      if docker exec web-modeler-db pg_dump -Fc -U "${WEBMODELER_DB_USER}" "${WEBMODELER_DB_NAME}" | gzip > "$backup_dir/webmodeler.sql.gz" 2>/dev/null; then
-        log "Web Modeler DB backed up: $backup_dir/webmodeler.sql.gz"
-        break
-      fi
-      wm_retry=$((wm_retry + 1))
-      if [[ $wm_retry -eq $wm_max_retries ]]; then
-        log "ERROR: Web Modeler DB backup failed after $wm_max_retries attempts"
-        break
-      fi
-      log "WARNING: Web Modeler DB backup failed, retrying in 3s... (attempt $wm_retry/$wm_max_retries)"
-      sleep 3
-    done
-  fi
-
-  # Step 10: Elasticsearch snapshot
-  log "Creating Elasticsearch snapshot..."
-  if [[ "$TEST_MODE" == true ]]; then
-    log "[TEST] Would register snapshot repo 'backup-repo'"
-    log "[TEST] Would create snapshot 'snapshot_$timestamp'"
-  else
+    log "Creating Elasticsearch snapshot..."
     # Ensure the Docker volume has open permissions for the elasticsearch user
     docker run --rm -v "elastic-backup:/backup" alpine sh -c "chmod -R 777 /backup 2>/dev/null || true" > /dev/null 2>&1 || true
 
@@ -221,6 +184,10 @@ main() {
         }
       log "Snapshot data copied to: $es_backup_dir"
     fi
+
+    log "Starting orchestration..."
+    $cmd start orchestration || true
+    sleep 2
   fi
 
   # Step 11: Create manifest
