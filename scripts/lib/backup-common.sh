@@ -98,44 +98,58 @@ create_manifest() {
   local backup_dir="$1"
   local manifest_file="$backup_dir/manifest.json"
 
-  load_env
-
   local timestamp
   timestamp="$(basename "$backup_dir")"
 
-  python3 -c "
-import json, os, hashlib
+  if ! python3 - "$backup_dir" "$manifest_file" <<'PYEOF'
+import json, os, hashlib, sys
 
-backup_dir = '$backup_dir'
-timestamp = '$timestamp'
-manifest_file = '$manifest_file'
+backup_dir = sys.argv[1]
+manifest_file = sys.argv[2]
 
-manifest = {
-    'timestamp': timestamp,
-    'versions': {
+try:
+    with open(manifest_file) as fh:
+        existing = json.load(fh)
+    timestamp = existing.get('timestamp', os.path.basename(backup_dir))
+    versions = existing.get('versions', {})
+    source_host = existing.get('source_host', '')
+except Exception:
+    timestamp = os.path.basename(backup_dir)
+    versions = {
         'camunda': os.environ.get('CAMUNDA_VERSION', ''),
         'elasticsearch': os.environ.get('ELASTIC_VERSION', ''),
         'keycloak': os.environ.get('KEYCLOAK_SERVER_VERSION', ''),
         'postgres': os.environ.get('POSTGRES_VERSION', ''),
-    },
-    'source_host': os.environ.get('HOST', ''),
+    }
+    source_host = os.environ.get('HOST', '')
+
+manifest = {
+    'timestamp': timestamp,
+    'versions': versions,
+    'source_host': source_host,
     'files': []
 }
 
-SKIP_FILES = {'manifest.json', 'backup.log', 'restore.log'}
-for f in os.listdir(backup_dir):
-    fpath = os.path.join(backup_dir, f)
-    if os.path.isfile(fpath) and f not in SKIP_FILES:
+SKIP_NAMES = {'manifest.json', 'backup.log', 'restore.log'}
+
+for root, dirs, files in os.walk(backup_dir):
+    dirs.sort()
+    for f in sorted(files):
+        fpath = os.path.join(root, f)
+        rel = os.path.relpath(fpath, backup_dir).replace(os.sep, '/')
+        if rel in SKIP_NAMES:
+            continue
         with open(fpath, 'rb') as fh:
             sha256 = hashlib.sha256(fh.read()).hexdigest()
-        manifest['files'].append({'name': f, 'sha256': sha256})
+        manifest['files'].append({'name': rel, 'sha256': sha256})
 
 with open(manifest_file, 'w') as fh:
     json.dump(manifest, fh, indent=2)
-" || {
+PYEOF
+  then
     log "ERROR: Failed to create manifest"
     exit 1
-  }
+  fi
   log "Manifest created: $manifest_file"
 }
 

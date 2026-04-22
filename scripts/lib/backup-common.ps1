@@ -109,9 +109,13 @@ function Create-Manifest {
         files = @()
     }
 
-    Get-ChildItem -Path $BackupDir -File | Where-Object { $_.Name -ne "manifest.json" } | ForEach-Object {
+    $skipNames = @('manifest.json', 'backup.log', 'restore.log')
+    Get-ChildItem -Path $BackupDir -Recurse -File | Where-Object {
+        $_.Name -notin $skipNames
+    } | Sort-Object FullName | ForEach-Object {
+        $rel = $_.FullName.Substring($BackupDir.ToString().TrimEnd('\', '/').Length + 1).Replace('\', '/')
         $manifest.files += @{
-            name = $_.Name
+            name   = $rel
             sha256 = (Compute-Checksum -File $_.FullName)
         }
     }
@@ -133,7 +137,8 @@ function Verify-Manifest {
     $errors = 0
 
     foreach ($fileEntry in $manifest.files) {
-        $fpath = Join-Path $BackupDir $fileEntry.name
+        $normalizedName = $fileEntry.name.Replace('/', [System.IO.Path]::DirectorySeparatorChar)
+        $fpath = Join-Path $BackupDir $normalizedName
         if (-not (Test-Path $fpath)) {
             Log "ERROR: Missing file: $($fileEntry.name)"
             $errors++
