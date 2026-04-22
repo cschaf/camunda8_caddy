@@ -320,7 +320,8 @@ function Main {
 
         Log "Restoring snapshot: $snapshotName"
         try {
-            $restoreResponse = Invoke-RestMethod -Uri "http://localhost:9200/_snapshot/backup-repo/$snapshotName/_restore?wait_for_completion=true" -Method Post -ContentType "application/json" -Body '{"include_global_state":true}'
+            $restoreBody = '{"indices":"*,-.logs-*,-ilm-history-*","ignore_unavailable":true,"include_global_state":true}'
+            $restoreResponse = Invoke-RestMethod -Uri "http://localhost:9200/_snapshot/backup-repo/$snapshotName/_restore?wait_for_completion=true" -Method Post -ContentType "application/json" -Body $restoreBody
             Log "Elasticsearch snapshot restored successfully."
         }
         catch {

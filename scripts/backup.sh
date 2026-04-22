@@ -153,9 +153,10 @@ main() {
     local snapshot_name="snapshot_$timestamp"
     local snapshot_info_file="$backup_dir/snapshot-info.json"
     local es_success=false
+    local snapshot_body='{"indices":"*,-.logs-*,-ilm-history-*","ignore_unavailable":true,"include_global_state":true}'
     curl -s -X PUT "http://localhost:9200/_snapshot/backup-repo/${snapshot_name}?wait_for_completion=true" \
       -H 'Content-Type: application/json' \
-      -d '{"indices":"*","ignore_unavailable":true,"include_global_state":true}' > "$snapshot_info_file" 2>/dev/null || true
+      -d "$snapshot_body" > "$snapshot_info_file" 2>/dev/null || true
 
     local snapshot_state
     snapshot_state="$(python3 -c "

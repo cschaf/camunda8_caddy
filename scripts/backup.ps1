@@ -160,7 +160,7 @@ function Main {
         }
 
         $snapshotName = "snapshot_$timestamp"
-        $snapshotBody = '{"indices":"*","ignore_unavailable":true,"include_global_state":true}'
+        $snapshotBody = '{"indices":"*,-.logs-*,-ilm-history-*","ignore_unavailable":true,"include_global_state":true}'
         $snapshotInfoFile = Join-Path $backupDir "snapshot-info.json"
         $esSuccess = $false
         try {

@@ -319,9 +319,10 @@ main() {
     # Restore snapshot
     log "Restoring snapshot: $snapshot_name"
     local restore_response
+    local restore_body='{"indices":"*,-.logs-*,-ilm-history-*","ignore_unavailable":true,"include_global_state":true}'
     restore_response="$(curl -s -X POST "http://localhost:9200/_snapshot/backup-repo/${snapshot_name}/_restore?wait_for_completion=true" \
       -H 'Content-Type: application/json' \
-      -d '{"include_global_state":true}' 2>/dev/null || true)"
+      -d "$restore_body" 2>/dev/null || true)"
 
     local restore_status
     restore_status="$(python3 -c "
