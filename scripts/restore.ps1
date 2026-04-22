@@ -303,13 +303,20 @@ function Main {
             Log "WARNING: Could not register snapshot repo: $_"
         }
 
-        Log "Closing Elasticsearch indices before restore..."
+        Log "Clearing existing Elasticsearch data..."
         try {
-            Invoke-RestMethod -Uri "http://localhost:9200/_all/_close" -Method Post | Out-Null
+            Invoke-RestMethod -Uri "http://localhost:9200/_data_stream/*" -Method Delete | Out-Null
         }
         catch {
-            Log "WARNING: Could not close indices (may already be closed)"
+            # Ignore errors if no data streams exist
         }
+        try {
+            Invoke-RestMethod -Uri "http://localhost:9200/_all?expand_wildcards=all" -Method Delete | Out-Null
+        }
+        catch {
+            # Ignore errors if indices are already gone
+        }
+        Start-Sleep -Seconds 2
 
         Log "Restoring snapshot: $snapshotName"
         try {

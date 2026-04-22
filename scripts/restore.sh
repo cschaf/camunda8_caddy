@@ -310,9 +310,11 @@ main() {
       log "WARNING: Could not register snapshot repo: $repo_response"
     fi
 
-    # Close all indices before restore to avoid conflicts
-    log "Closing Elasticsearch indices before restore..."
-    curl -s -X POST "http://localhost:9200/_all/_close?expand_wildcards=all&ignore_unavailable=true" > /dev/null || true
+    # Remove existing indices and data streams to avoid restore conflicts
+    log "Clearing existing Elasticsearch data..."
+    curl -s -X DELETE "http://localhost:9200/_data_stream/*" > /dev/null || true
+    curl -s -X DELETE "http://localhost:9200/_all?expand_wildcards=all&ignore_unavailable=true" > /dev/null || true
+    sleep 2
 
     # Restore snapshot
     log "Restoring snapshot: $snapshot_name"
