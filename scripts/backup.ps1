@@ -121,6 +121,7 @@ function Main {
                 $zeebeRetry++
                 if ($zeebeRetry -eq $zeebeMaxRetries) {
                     Log "ERROR: Zeebe state backup failed after $zeebeMaxRetries attempts: $_"
+                    exit 1
                 }
                 else {
                     Log "WARNING: Zeebe backup failed, retrying in 5s... (attempt $zeebeRetry/$zeebeMaxRetries)"

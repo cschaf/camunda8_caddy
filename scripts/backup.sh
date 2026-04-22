@@ -116,7 +116,7 @@ main() {
       zeebe_retry=$((zeebe_retry + 1))
       if [[ $zeebe_retry -eq $zeebe_max_retries ]]; then
         log "ERROR: Zeebe state backup failed after $zeebe_max_retries attempts"
-        break
+        exit 1
       fi
       log "WARNING: Zeebe backup failed, retrying in 5s... (attempt $zeebe_retry/$zeebe_max_retries)"
       sleep 5
