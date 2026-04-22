@@ -120,7 +120,7 @@ main() {
     done
 
     log "Starting orchestration..."
-    $cmd start orchestration
+    $cmd start orchestration || true
     sleep 2
   fi
 
