@@ -85,13 +85,22 @@ function Main {
                 (Join-Path $ProjectDir ".optimize\environment-config.yaml"),
                 (Join-Path $ProjectDir ".identity\application.yaml"),
                 (Join-Path $ProjectDir ".console\application.yaml")
-            )
-            $existingItems = $configItems | Where-Object { Test-Path $_ }
-            if ($existingItems) {
-                tar czf $configArchive -C $ProjectDir ($existingItems | ForEach-Object { $_ -replace [regex]::Escape("$ProjectDir\"), "" })
-            }
-            Log "Configs backed up: $configArchive"
+        )
+        $existingItems = $configItems | Where-Object { Test-Path $_ }
+        if (-not $existingItems) {
+            Log "WARNING: No config files found to back up"
         }
+        else {
+            $relPaths = $existingItems | ForEach-Object { $_ -replace [regex]::Escape("$ProjectDir\"), "" }
+            $tarResult = tar czf $configArchive -C $ProjectDir $relPaths 2>&1
+            if ($LASTEXITCODE -ne 0) {
+                Log "WARNING: Config archive may be incomplete: $tarResult"
+            }
+            else {
+                Log "Configs backed up: $configArchive ($($existingItems.Count) files)"
+            }
+        }
+    }
 
         # Orchestration stop + all backups while stopped + restart
         Log "Stopping orchestration for cold backup..."

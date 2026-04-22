@@ -95,15 +95,30 @@ main() {
     log "[TEST] Would create config archive: $config_archive"
     log "[TEST] Including: .env, connector-secrets.txt, Caddyfile, .*/application.yaml"
   else
-    tar czf "$config_archive" \
-      -C "$PROJECT_DIR" \
-      .env connector-secrets.txt Caddyfile \
-      .orchestration/application.yaml \
-      .connectors/application.yaml \
-      .optimize/environment-config.yaml \
-      .identity/application.yaml \
-      .console/application.yaml 2>/dev/null || true
-    log "Configs backed up: $config_archive"
+    local config_files=()
+    local all_config_paths=(
+      ".env"
+      "connector-secrets.txt"
+      "Caddyfile"
+      ".orchestration/application.yaml"
+      ".connectors/application.yaml"
+      ".optimize/environment-config.yaml"
+      ".identity/application.yaml"
+      ".console/application.yaml"
+    )
+    for f in "${all_config_paths[@]}"; do
+      [[ -f "$PROJECT_DIR/$f" ]] && config_files+=("$f")
+    done
+
+    if [[ ${#config_files[@]} -eq 0 ]]; then
+      log "WARNING: No config files found to back up"
+    else
+      if tar czf "$config_archive" -C "$PROJECT_DIR" "${config_files[@]}" 2>/dev/null; then
+        log "Configs backed up: $config_archive (${#config_files[@]} files)"
+      else
+        log "WARNING: Config archive may be incomplete"
+      fi
+    fi
   fi
 
   # Step 5-9: Orchestration stop + all backups while stopped + restart
