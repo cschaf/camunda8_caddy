@@ -179,20 +179,23 @@ main() {
       -d "$snapshot_body" > "$snapshot_info_file" 2>/dev/null || true
 
     local snapshot_state
-    snapshot_state="$(python3 -c "
+    snapshot_state="$(python3 - "$snapshot_info_file" <<'PYEOF' 2>/dev/null || echo "UNKNOWN"
 import json, sys
+
+snapshot_info_file = sys.argv[1]
 try:
-    with open('$snapshot_info_file') as f:
+    with open(snapshot_info_file) as f:
         d = json.load(f)
     if 'error' in d:
         reason = d['error'].get('reason', str(d['error']))
         print('ERROR:' + reason)
         sys.exit(1)
     print(d.get('snapshot', {}).get('state', 'UNKNOWN'))
-except Exception as e:
+except Exception:
     print('UNKNOWN')
     sys.exit(1)
-" 2>/dev/null || echo "UNKNOWN")"
+PYEOF
+)"
 
     if [[ "$snapshot_state" == "SUCCESS" ]]; then
       log "Elasticsearch snapshot created successfully: $snapshot_name"

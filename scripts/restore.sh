@@ -153,11 +153,33 @@ main() {
 
   # Load manifest for version/host checks
   local source_host
-  source_host="$(python3 -c "import json; d=json.load(open('$BACKUP_DIR/manifest.json')); print(d.get('source_host',''))" 2>/dev/null || echo "")"
+  local manifest_file="$BACKUP_DIR/manifest.json"
+  source_host="$(python3 - "$manifest_file" <<'PYEOF' 2>/dev/null || echo ""
+import json, sys
+try:
+    with open(sys.argv[1]) as f: d = json.load(f)
+    print(d.get('source_host', ''))
+except Exception: pass
+PYEOF
+)"
   local manifest_elastic_version
-  manifest_elastic_version="$(python3 -c "import json; d=json.load(open('$BACKUP_DIR/manifest.json')); print(d.get('versions',{}).get('elasticsearch',''))" 2>/dev/null || echo "")"
+  manifest_elastic_version="$(python3 - "$manifest_file" <<'PYEOF' 2>/dev/null || echo ""
+import json, sys
+try:
+    with open(sys.argv[1]) as f: d = json.load(f)
+    print(d.get('versions', {}).get('elasticsearch', ''))
+except Exception: pass
+PYEOF
+)"
   local manifest_camunda_version
-  manifest_camunda_version="$(python3 -c "import json; d=json.load(open('$BACKUP_DIR/manifest.json')); print(d.get('versions',{}).get('camunda',''))" 2>/dev/null || echo "")"
+  manifest_camunda_version="$(python3 - "$manifest_file" <<'PYEOF' 2>/dev/null || echo ""
+import json, sys
+try:
+    with open(sys.argv[1]) as f: d = json.load(f)
+    print(d.get('versions', {}).get('camunda', ''))
+except Exception: pass
+PYEOF
+)"
 
   # Cross-cluster checks
   if [[ "$CROSS_CLUSTER" == true ]]; then
@@ -299,7 +321,17 @@ main() {
     log "[DRY-RUN] Would restore Elasticsearch snapshot"
   else
     local snapshot_name
-    snapshot_name="$(python3 -c "import json; d=json.load(open('$BACKUP_DIR/snapshot-info.json')); print(d.get('snapshot',{}).get('name',''))" 2>/dev/null || echo "")"
+    local snapshot_info_file="$BACKUP_DIR/snapshot-info.json"
+    snapshot_name="$(python3 - "$snapshot_info_file" <<'PYEOF' 2>/dev/null || echo ""
+import json, sys
+try:
+    with open(sys.argv[1]) as f:
+        d = json.load(f)
+    print(d.get('snapshot', {}).get('name', ''))
+except Exception:
+    pass
+PYEOF
+)"
 
     if [[ -z "$snapshot_name" ]]; then
       # Fallback: try to determine from backup dir timestamp

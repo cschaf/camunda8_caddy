@@ -162,11 +162,11 @@ verify_manifest() {
     exit 1
   fi
 
-  python3 -c "
+  if ! python3 - "$backup_dir" "$manifest_file" <<'PYEOF'
 import json, os, hashlib, sys
 
-backup_dir = '$backup_dir'
-manifest_file = '$manifest_file'
+backup_dir = sys.argv[1]
+manifest_file = sys.argv[2]
 
 try:
     with open(manifest_file) as f:
@@ -179,7 +179,8 @@ errors = 0
 for entry in manifest.get('files', []):
     fname = entry['name']
     expected = entry['sha256']
-    fpath = os.path.join(backup_dir, fname)
+    norm = fname.replace('/', os.sep)
+    fpath = os.path.join(backup_dir, norm)
 
     if not os.path.isfile(fpath):
         print(f'ERROR: Missing file: {fname}')
@@ -198,10 +199,11 @@ if errors > 0:
     sys.exit(1)
 else:
     print('Manifest verification passed.')
-" || {
+PYEOF
+  then
     log "ERROR: Manifest verification failed"
     exit 1
-  }
+  fi
 }
 
 cleanup_old_backups() {
