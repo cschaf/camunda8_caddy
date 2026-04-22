@@ -7,6 +7,8 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 # shellcheck source=/dev/null
 source "$SCRIPT_DIR/lib/backup-common.sh"
 
+ORCHESTRATION_STOPPED=false
+BACKUP_COMPOSE_CMD=""
 TEST_MODE=false
 
 usage() {
@@ -36,6 +38,20 @@ parse_args() {
   done
 }
 
+backup_cleanup_on_error() {
+  local exit_code=$?
+  if [[ $exit_code -ne 0 ]]; then
+    log "ERROR: Backup script failed with exit code $exit_code"
+    if [[ "$ORCHESTRATION_STOPPED" == true && -n "$BACKUP_COMPOSE_CMD" ]]; then
+      log "Attempting to restart orchestration after failure..."
+      $BACKUP_COMPOSE_CMD start orchestration 2>/dev/null || true
+    fi
+  fi
+  release_lock
+  exit $exit_code
+}
+trap backup_cleanup_on_error EXIT
+
 main() {
   parse_args "$@"
 
@@ -44,6 +60,7 @@ main() {
   stage="$(get_stage)"
   local cmd
   cmd="$(docker_compose_cmd)"
+  BACKUP_COMPOSE_CMD="$cmd"
 
   mkdir -p "$BACKUP_BASE_DIR"
   local timestamp
@@ -100,6 +117,7 @@ main() {
     log "[TEST] Would start orchestration"
   else
     $cmd stop --timeout 60 orchestration || true
+    ORCHESTRATION_STOPPED=true
     sleep 2
 
     log "Backing up Zeebe state (volume: orchestration)..."
@@ -201,6 +219,7 @@ except Exception as e:
 
     log "Starting orchestration..."
     $cmd start orchestration || true
+    ORCHESTRATION_STOPPED=false
     sleep 2
   fi
 
