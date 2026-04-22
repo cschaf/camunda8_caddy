@@ -302,11 +302,13 @@ main() {
     # Register snapshot repo
     local es_repo_body
     es_repo_body='{"type":"fs","settings":{"location":"/usr/share/elasticsearch/backup","compress":true}}'
-    curl -s -X PUT "http://localhost:9200/_snapshot/backup-repo" \
+    local repo_response
+    repo_response="$(curl -s -X PUT "http://localhost:9200/_snapshot/backup-repo" \
       -H 'Content-Type: application/json' \
-      -d "$es_repo_body" > /dev/null || {
-        log "WARNING: Could not register snapshot repo"
-      }
+      -d "$es_repo_body" 2>/dev/null || true)"
+    if ! python3 -c "import json,sys; d=json.loads(sys.argv[1]); sys.exit(0 if d.get('acknowledged') else 1)" "$repo_response" > /dev/null 2>&1; then
+      log "WARNING: Could not register snapshot repo: $repo_response"
+    fi
 
     # Close all indices before restore to avoid conflicts
     log "Closing Elasticsearch indices before restore..."
@@ -317,12 +319,33 @@ main() {
     local restore_response
     restore_response="$(curl -s -X POST "http://localhost:9200/_snapshot/backup-repo/${snapshot_name}/_restore?wait_for_completion=true" \
       -H 'Content-Type: application/json' \
-      -d '{"include_global_state":true}')"
+      -d '{"include_global_state":true}' 2>/dev/null || true)"
 
-    if python3 -c "import json,sys; data=json.loads(sys.argv[1]); sys.exit(0 if 'snapshot' in data else 1)" "$restore_response" > /dev/null 2>&1; then
+    local restore_status
+    restore_status="$(python3 -c "
+import json, sys
+try:
+    d = json.loads(sys.argv[1])
+    if 'error' in d:
+        reason = d['error'].get('reason', str(d['error']))
+        print('ERROR:' + reason)
+        sys.exit(1)
+    if 'snapshot' in d:
+        print(d['snapshot'].get('state', 'UNKNOWN'))
+    else:
+        print('UNKNOWN')
+        sys.exit(1)
+except Exception as e:
+    print('UNKNOWN')
+    sys.exit(1)
+" "$restore_response" 2>/dev/null || echo "UNKNOWN")"
+
+    if [[ "$restore_status" == "SUCCESS" ]]; then
       log "Elasticsearch snapshot restored successfully."
+    elif [[ "$restore_status" == ERROR* ]]; then
+      log "WARNING: Elasticsearch restore failed: $restore_status"
     else
-      log "WARNING: Elasticsearch restore response: $restore_response"
+      log "WARNING: Elasticsearch restore state: $restore_status"
     fi
   fi
 

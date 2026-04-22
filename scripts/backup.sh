@@ -153,22 +153,33 @@ main() {
     local snapshot_name="snapshot_$timestamp"
     local snapshot_info_file="$backup_dir/snapshot-info.json"
     local es_success=false
-    if curl -s -X PUT "http://localhost:9200/_snapshot/backup-repo/${snapshot_name}?wait_for_completion=true" \
+    curl -s -X PUT "http://localhost:9200/_snapshot/backup-repo/${snapshot_name}?wait_for_completion=true" \
       -H 'Content-Type: application/json' \
-      -d '{"indices":"*","ignore_unavailable":true,"include_global_state":true}' > "$snapshot_info_file"; then
+      -d '{"indices":"*","ignore_unavailable":true,"include_global_state":true}' > "$snapshot_info_file" 2>/dev/null || true
 
-      local snapshot_state
-      snapshot_state="$(python3 -c "import json; d=json.load(open('$snapshot_info_file')); print(d.get('snapshot',{}).get('state','UNKNOWN'))" 2>/dev/null || echo "UNKNOWN")"
+    local snapshot_state
+    snapshot_state="$(python3 -c "
+import json, sys
+try:
+    with open('$snapshot_info_file') as f:
+        d = json.load(f)
+    if 'error' in d:
+        reason = d['error'].get('reason', str(d['error']))
+        print('ERROR:' + reason)
+        sys.exit(1)
+    print(d.get('snapshot', {}).get('state', 'UNKNOWN'))
+except Exception as e:
+    print('UNKNOWN')
+    sys.exit(1)
+" 2>/dev/null || echo "UNKNOWN")"
 
-      if [[ "$snapshot_state" == "SUCCESS" ]]; then
-        log "Elasticsearch snapshot created successfully: $snapshot_name"
-        es_success=true
-      else
-        log "WARNING: Elasticsearch snapshot state: $snapshot_state"
-      fi
+    if [[ "$snapshot_state" == "SUCCESS" ]]; then
+      log "Elasticsearch snapshot created successfully: $snapshot_name"
+      es_success=true
+    elif [[ "$snapshot_state" == ERROR* ]]; then
+      log "WARNING: Elasticsearch snapshot failed: $snapshot_state"
     else
-      log "WARNING: Elasticsearch snapshot creation failed"
-      echo '{"error":"Snapshot creation failed"}' > "$snapshot_info_file"
+      log "WARNING: Elasticsearch snapshot state: $snapshot_state"
     fi
 
     # Copy snapshot data from the Docker volume to the host backup directory
