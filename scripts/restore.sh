@@ -334,8 +334,11 @@ main() {
       log "WARNING: Could not register snapshot repo: $repo_response"
     fi
 
-    # Remove existing indices and data streams to avoid restore conflicts
+    # Temporarily allow wildcard deletion, then clear all indices
     log "Clearing existing Elasticsearch data..."
+    curl -s -X PUT "http://localhost:9200/_cluster/settings" \
+      -H 'Content-Type: application/json' \
+      -d '{"persistent":{"action.destructive_requires_name":false}}' > /dev/null || true
     curl -s -X DELETE "http://localhost:9200/_data_stream/*" > /dev/null || true
     curl -s -X DELETE "http://localhost:9200/_all?expand_wildcards=all&ignore_unavailable=true" > /dev/null || true
     sleep 2
@@ -371,6 +374,11 @@ except Exception as e:
     else
       log "WARNING: Elasticsearch restore state: $restore_status"
     fi
+
+    # Re-enable destructive_requires_name protection
+    curl -s -X PUT "http://localhost:9200/_cluster/settings" \
+      -H 'Content-Type: application/json' \
+      -d '{"persistent":{"action.destructive_requires_name":true}}' > /dev/null || true
   fi
 
   # Step 9: Restore Zeebe state

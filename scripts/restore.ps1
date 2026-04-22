@@ -333,6 +333,16 @@ function Main {
         try {
             Invoke-RestMethod -Uri "http://localhost:9200/_data_stream/*" -Method Delete | Out-Null
         }
+        # Temporarily allow wildcard deletion
+        try {
+            Invoke-RestMethod -Uri "http://localhost:9200/_cluster/settings" -Method Put -ContentType "application/json" -Body '{"persistent":{"action.destructive_requires_name":false}}' | Out-Null
+        }
+        catch {
+            # Ignore errors
+        }
+        try {
+            Invoke-RestMethod -Uri "http://localhost:9200/_data_stream/*" -Method Delete | Out-Null
+        }
         catch {
             # Ignore errors if no data streams exist
         }
@@ -352,6 +362,14 @@ function Main {
         }
         catch {
             Log "WARNING: Elasticsearch restore failed: $_"
+        }
+
+        # Re-enable destructive_requires_name protection
+        try {
+            Invoke-RestMethod -Uri "http://localhost:9200/_cluster/settings" -Method Put -ContentType "application/json" -Body '{"persistent":{"action.destructive_requires_name":true}}' | Out-Null
+        }
+        catch {
+            # Ignore errors
         }
     }
 
