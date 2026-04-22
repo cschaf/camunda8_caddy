@@ -124,33 +124,26 @@ main() {
     sleep 2
   fi
 
-  # Wait for core database containers to be available after orchestration start
-  if [[ "$TEST_MODE" != true ]]; then
-    local wait_retries=30
-    local wait_delay=2
-    local db_ready=false
-    log "Waiting for database containers to be ready..."
-    for ((i=1; i<=wait_retries; i++)); do
-      if $cmd exec -T postgres pg_isready -U "${POSTGRES_USER}" > /dev/null 2>&1; then
-        db_ready=true
-        break
-      fi
-      sleep "$wait_delay"
-    done
-    if [[ "$db_ready" != true ]]; then
-      log "WARNING: postgres container not ready after $((wait_retries * wait_delay))s, attempting backup anyway"
-    else
-      log "Database containers ready."
-    fi
-  fi
-
   # Step 8: Keycloak DB backup
   log "Backing up Keycloak database..."
   if [[ "$TEST_MODE" == true ]]; then
     log "[TEST] Would pg_dump Keycloak DB: ${POSTGRES_DB:-}"
   else
-    $cmd exec -T postgres pg_dump -Fc -U "${POSTGRES_USER}" "${POSTGRES_DB}" | gzip > "$backup_dir/keycloak.sql.gz"
-    log "Keycloak DB backed up: $backup_dir/keycloak.sql.gz"
+    local pg_retry=0
+    local pg_max_retries=5
+    while true; do
+      if docker exec postgres pg_dump -Fc -U "${POSTGRES_USER}" "${POSTGRES_DB}" | gzip > "$backup_dir/keycloak.sql.gz" 2>/dev/null; then
+        log "Keycloak DB backed up: $backup_dir/keycloak.sql.gz"
+        break
+      fi
+      pg_retry=$((pg_retry + 1))
+      if [[ $pg_retry -eq $pg_max_retries ]]; then
+        log "ERROR: Keycloak DB backup failed after $pg_max_retries attempts"
+        break
+      fi
+      log "WARNING: Keycloak DB backup failed, retrying in 3s... (attempt $pg_retry/$pg_max_retries)"
+      sleep 3
+    done
   fi
 
   # Step 9: Web Modeler DB backup
@@ -158,8 +151,21 @@ main() {
   if [[ "$TEST_MODE" == true ]]; then
     log "[TEST] Would pg_dump Web Modeler DB: ${WEBMODELER_DB_NAME:-}"
   else
-    $cmd exec -T web-modeler-db pg_dump -Fc -U "${WEBMODELER_DB_USER}" "${WEBMODELER_DB_NAME}" | gzip > "$backup_dir/webmodeler.sql.gz"
-    log "Web Modeler DB backed up: $backup_dir/webmodeler.sql.gz"
+    local wm_retry=0
+    local wm_max_retries=5
+    while true; do
+      if docker exec web-modeler-db pg_dump -Fc -U "${WEBMODELER_DB_USER}" "${WEBMODELER_DB_NAME}" | gzip > "$backup_dir/webmodeler.sql.gz" 2>/dev/null; then
+        log "Web Modeler DB backed up: $backup_dir/webmodeler.sql.gz"
+        break
+      fi
+      wm_retry=$((wm_retry + 1))
+      if [[ $wm_retry -eq $wm_max_retries ]]; then
+        log "ERROR: Web Modeler DB backup failed after $wm_max_retries attempts"
+        break
+      fi
+      log "WARNING: Web Modeler DB backup failed, retrying in 3s... (attempt $wm_retry/$wm_max_retries)"
+      sleep 3
+    done
   fi
 
   # Step 10: Elasticsearch snapshot
