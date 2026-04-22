@@ -12,6 +12,7 @@ FORCE=false
 DRY_RUN=false
 CROSS_CLUSTER=false
 TEST_MODE=false
+CREATE_BACKUP=false
 
 usage() {
   echo "Usage: $(basename "$0") [OPTIONS] <backup-directory>"
@@ -23,6 +24,7 @@ usage() {
   echo "  --force           Skip all prompts"
   echo "  --dry-run         Show what would be done without executing"
   echo "  --cross-cluster   Enable cross-cluster restore (skips config overwrite)"
+  echo "  --createBackup    Create a fresh backup before restoring"
   echo "  --test            Verify backup integrity without restoring"
   echo "  -h, --help        Show this help message"
   exit 0
@@ -41,6 +43,10 @@ parse_args() {
         ;;
       --cross-cluster)
         CROSS_CLUSTER=true
+        shift
+        ;;
+      --createBackup)
+        CREATE_BACKUP=true
         shift
         ;;
       --test)
@@ -223,7 +229,7 @@ PYEOF
   fi
 
   # Step 2b: Pre-restore backup
-  if [[ "$DRY_RUN" == false && "$TEST_MODE" == false ]]; then
+  if [[ "$CREATE_BACKUP" == true && "$DRY_RUN" == false && "$TEST_MODE" == false ]]; then
     release_lock
     log "Creating pre-restore backup of current state..."
     local pre_restore_log

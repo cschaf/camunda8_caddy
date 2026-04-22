@@ -10,6 +10,7 @@ $Force = $false
 $DryRun = $false
 $CrossCluster = $false
 $TestMode = $false
+$CreateBackup = $false
 
 function Show-Usage {
     Write-Host "Usage: $(Split-Path -Leaf $PSCommandPath) [OPTIONS] <backup-directory>"
@@ -21,6 +22,7 @@ function Show-Usage {
     Write-Host "  --force           Skip all prompts"
     Write-Host "  --dry-run         Show what would be done without executing"
     Write-Host "  --cross-cluster   Enable cross-cluster restore (skips config overwrite)"
+    Write-Host "  --createBackup    Create a fresh backup before restoring"
     Write-Host "  --test            Verify backup integrity without restoring"
     Write-Host "  -h, --help        Show this help message"
     exit 0
@@ -34,6 +36,7 @@ function Parse-Args {
             "--force" { $script:Force = $true }
             "--dry-run" { $script:DryRun = $true }
             "--cross-cluster" { $script:CrossCluster = $true }
+            "--createBackup" { $script:CreateBackup = $true }
             "--test" { $script:TestMode = $true }
             { $_ -in "-h","--help" } { Show-Usage }
             { $_.StartsWith("-") } {
@@ -171,7 +174,7 @@ function Main {
         }
 
         # Pre-restore backup
-        if (-not $DryRun -and -not $TestMode) {
+        if ($CreateBackup -and -not $DryRun -and -not $TestMode) {
             Release-Lock
             Log "Creating pre-restore backup of current state..."
             $preRestoreLog = Join-Path $BackupBaseDir "pre-restore-backup.log"

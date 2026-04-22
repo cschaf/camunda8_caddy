@@ -118,7 +118,7 @@ Restores all data on the same host, including configuration files:
 
 **Warning:** This overwrites all current data! The script asks for confirmation.
 
-Before an in-place restore, the restore scripts attempt a pre-restore backup of the current state and log the result to `backups/pre-restore-backup.log`. If that pre-backup fails, restore continues with a warning.
+By default, restore does **not** create a fresh backup first. To trigger one with the existing backup script before restore starts, add `--createBackup`. The pre-restore backup log is written to `backups/pre-restore-backup.log`. If that pre-backup fails, restore continues with a warning.
 
 ### Cross-Cluster Restore
 
@@ -178,6 +178,7 @@ zcat backups/20240115_120000/keycloak.sql.gz | docker exec -i postgres pg_restor
 | `--force` | Skips all confirmation prompts |
 | `--dry-run` | Shows what would be done without executing |
 | `--cross-cluster` | Enables cross-cluster restore (no config overwrite) |
+| `--createBackup` | Runs the existing backup script before restore starts |
 | `--test` | Checks backup integrity without restoring |
 | `-h, --help` | Shows help |
 
@@ -192,6 +193,9 @@ zcat backups/20240115_120000/keycloak.sql.gz | docker exec -i postgres pg_restor
 
 # Restore on same cluster
 ./scripts/restore.sh backups/20240115_120000
+
+# Restore on same cluster after creating a fresh backup first
+./scripts/restore.sh --createBackup backups/20240115_120000
 
 # Restore with automatic confirmation
 ./scripts/restore.sh --force backups/20240115_120000
