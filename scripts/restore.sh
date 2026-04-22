@@ -281,6 +281,16 @@ main() {
     fi
   fi
 
+  # Pause services that write to Elasticsearch before restoring
+  log "Pausing Camunda services to prevent index creation during restore..."
+  if [[ "$DRY_RUN" == false ]]; then
+    $cmd stop orchestration identity connectors optimize console web-modeler-webapp web-modeler-restapi web-modeler-websockets keycloak mailpit autoheal reverse-proxy > /dev/null 2>&1 || true
+    sleep 3
+    log "Services paused."
+  else
+    log "[DRY-RUN] Would pause Camunda services"
+  fi
+
   # Step 8: Restore Elasticsearch
   log "Restoring Elasticsearch snapshot..."
   if [[ "$DRY_RUN" == true ]]; then
@@ -405,9 +415,9 @@ except Exception as e:
   # Step 11: Restart stack
   log "Restarting stack..."
   if [[ "$DRY_RUN" == true ]]; then
-    log "[DRY-RUN] Would run: $cmd restart"
+    log "[DRY-RUN] Would run: $cmd up -d"
   else
-    $cmd restart
+    $cmd up -d
     sleep 5
   fi
 

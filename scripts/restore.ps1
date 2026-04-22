@@ -269,6 +269,17 @@ function Main {
         }
     }
 
+    # Pause services that write to Elasticsearch before restoring
+    Log "Pausing Camunda services to prevent index creation during restore..."
+    if (-not $DryRun) {
+        Invoke-Expression "$cmd stop orchestration identity connectors optimize console web-modeler-webapp web-modeler-restapi web-modeler-websockets keycloak mailpit autoheal reverse-proxy" | Out-Null
+        Start-Sleep -Seconds 3
+        Log "Services paused."
+    }
+    else {
+        Log "[DRY-RUN] Would pause Camunda services"
+    }
+
     # Restore Elasticsearch
     Log "Restoring Elasticsearch snapshot..."
     if ($DryRun) {
@@ -395,10 +406,10 @@ function Main {
     # Restart stack
     Log "Restarting stack..."
     if ($DryRun) {
-        Log "[DRY-RUN] Would run: $cmd restart"
+        Log "[DRY-RUN] Would run: $cmd up -d"
     }
     else {
-        Invoke-Expression "$cmd restart" | Out-Null
+        Invoke-Expression "$cmd up -d" | Out-Null
         Start-Sleep -Seconds 5
     }
 
