@@ -81,10 +81,13 @@ main() {
 
   # Step 3: Check stack status
   log "Checking stack status..."
-  if ! $cmd ps &>/dev/null; then
-    log "ERROR: Stack is not running. Start it first with scripts/start.sh"
+  local running_count
+  running_count="$($cmd ps --filter status=running --format '{{.Name}}' 2>/dev/null | wc -l | tr -d ' ')"
+  if [[ "$running_count" -eq 0 ]]; then
+    log "ERROR: Stack is not running (0 containers running). Start it first with scripts/start.sh"
     exit 1
   fi
+  log "Stack has $running_count running container(s)."
 
   check_services_health || true
 

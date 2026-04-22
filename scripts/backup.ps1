@@ -56,17 +56,16 @@ function Main {
         Log "Starting backup to $backupDir"
         Log "Stage: $stage"
 
-        # Check stack status
-        Log "Checking stack status..."
-        try {
-            Invoke-Expression "$cmd ps" | Out-Null
-        }
-        catch {
-            Log "ERROR: Stack is not running. Start it first with scripts/start.ps1"
-            exit 1
-        }
+    # Check stack status
+    Log "Checking stack status..."
+    $runningContainers = @(Invoke-Expression "$cmd ps --filter status=running --format '{{.Name}}'" 2>$null) | Where-Object { $_ -ne "" }
+    if ($runningContainers.Count -eq 0) {
+        Log "ERROR: Stack is not running (0 containers running). Start it first with scripts/start.ps1"
+        exit 1
+    }
+    Log "Stack has $($runningContainers.Count) running container(s)."
 
-        Check-ServicesHealth | Out-Null
+    Check-ServicesHealth | Out-Null
 
         # Backup configs
         Log "Backing up configuration files..."
