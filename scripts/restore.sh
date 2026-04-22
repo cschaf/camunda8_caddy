@@ -200,6 +200,20 @@ main() {
     log "=== DRY RUN MODE: Showing what would be done ==="
   fi
 
+  # Step 2b: Pre-restore backup
+  if [[ "$DRY_RUN" == false && "$TEST_MODE" == false ]]; then
+    release_lock
+    log "Creating pre-restore backup of current state..."
+    local pre_restore_log
+    pre_restore_log="$BACKUP_BASE_DIR/pre-restore-backup.log"
+    if bash "$SCRIPT_DIR/backup.sh" > "$pre_restore_log" 2>&1; then
+      log "Pre-restore backup completed. Log: $pre_restore_log"
+    else
+      log "WARNING: Pre-restore backup failed, continuing with restore. Log: $pre_restore_log"
+    fi
+    acquire_lock
+  fi
+
   # Step 3: Stop stack
   log "Stopping Camunda stack..."
   if [[ "$DRY_RUN" == true ]]; then
@@ -319,7 +333,7 @@ main() {
     # Restore snapshot
     log "Restoring snapshot: $snapshot_name"
     local restore_response
-    local restore_body='{"indices":"*,-.logs-*,-ilm-history-*","ignore_unavailable":true,"include_global_state":true}'
+    local restore_body='{"indices":"*,-.logs-*,-.ds-.logs-*,-ilm-history-*,-.ds-ilm-history-*","ignore_unavailable":true,"include_global_state":true}'
     restore_response="$(curl -s -X POST "http://localhost:9200/_snapshot/backup-repo/${snapshot_name}/_restore?wait_for_completion=true" \
       -H 'Content-Type: application/json' \
       -d "$restore_body" 2>/dev/null || true)"
