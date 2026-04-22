@@ -49,17 +49,16 @@ main() {
   local timestamp
   timestamp="$(date +%Y%m%d_%H%M%S)"
   local backup_dir="$BACKUP_BASE_DIR/$timestamp"
-  LOG_FILE="$backup_dir/backup.log"
 
   if [[ "$TEST_MODE" == true ]]; then
-    log "=== TEST MODE: Simulating backup without modifying data ==="
     backup_dir="$BACKUP_BASE_DIR/TEST_${timestamp}"
-    LOG_FILE="$backup_dir/backup.log"
   fi
+
+  mkdir -p "$backup_dir"
+  LOG_FILE="$backup_dir/backup.log"
 
   acquire_lock
 
-  mkdir -p "$backup_dir"
   log "Starting backup to $backup_dir"
   log "Stage: $stage"
 
@@ -101,10 +100,24 @@ main() {
     sleep 2
 
     log "Backing up Zeebe state (volume: orchestration)..."
-    docker run --rm \
-      -v orchestration:/data \
-      -v "$backup_dir:/backup" \
-      alpine tar czf /backup/orchestration.tar.gz -C /data .
+    local zeebe_retry=0
+    local zeebe_max_retries=3
+    while true; do
+      if docker run --rm \
+        -v orchestration:/data \
+        -v "$backup_dir:/backup" \
+        alpine tar czf /backup/orchestration.tar.gz -C /data . 2>/dev/null; then
+        log "Zeebe state backed up."
+        break
+      fi
+      zeebe_retry=$((zeebe_retry + 1))
+      if [[ $zeebe_retry -eq $zeebe_max_retries ]]; then
+        log "ERROR: Zeebe state backup failed after $zeebe_max_retries attempts"
+        break
+      fi
+      log "WARNING: Zeebe backup failed, retrying in 5s... (attempt $zeebe_retry/$zeebe_max_retries)"
+      sleep 5
+    done
 
     log "Starting orchestration..."
     $cmd start orchestration
@@ -135,8 +148,8 @@ main() {
     log "[TEST] Would register snapshot repo 'backup-repo'"
     log "[TEST] Would create snapshot 'snapshot_$timestamp'"
   else
-    # Ensure ES backup directory exists on host (mounted into ES container)
-    mkdir -p "$PROJECT_DIR/backups/elasticsearch"
+    # Ensure the Docker volume has open permissions for the elasticsearch user
+    docker run --rm -v "elastic-backup:/backup" alpine sh -c "chmod -R 777 /backup 2>/dev/null || true" > /dev/null 2>&1 || true
 
     # Register snapshot repository
     local es_repo_body
@@ -144,23 +157,43 @@ main() {
     curl -s -X PUT "http://localhost:9200/_snapshot/backup-repo" \
       -H 'Content-Type: application/json' \
       -d "$es_repo_body" > /dev/null || {
-        log "WARNING: Could not register snapshot repo (may already exist)"
+        log "WARNING: Could not register snapshot repo"
       }
 
     # Create snapshot
     local snapshot_name="snapshot_$timestamp"
-    curl -s -X PUT "http://localhost:9200/_snapshot/backup-repo/${snapshot_name}?wait_for_completion=true" \
+    local snapshot_info_file="$backup_dir/snapshot-info.json"
+    local es_success=false
+    if curl -s -X PUT "http://localhost:9200/_snapshot/backup-repo/${snapshot_name}?wait_for_completion=true" \
       -H 'Content-Type: application/json' \
-      -d '{"indices":"*","ignore_unavailable":true,"include_global_state":true}' > "$backup_dir/snapshot-info.json"
+      -d '{"indices":"*","ignore_unavailable":true,"include_global_state":true}' > "$snapshot_info_file"; then
 
-    local snapshot_state
-    snapshot_state="$(jq -r '.snapshot.state' "$backup_dir/snapshot-info.json" 2>/dev/null || echo "UNKNOWN")"
+      local snapshot_state
+      snapshot_state="$(jq -r '.snapshot.state' "$snapshot_info_file" 2>/dev/null || echo "UNKNOWN")"
 
-    if [[ "$snapshot_state" != "SUCCESS" ]]; then
-      log "WARNING: Elasticsearch snapshot state: $snapshot_state"
-      log "Snapshot info saved to: $backup_dir/snapshot-info.json"
+      if [[ "$snapshot_state" == "SUCCESS" ]]; then
+        log "Elasticsearch snapshot created successfully: $snapshot_name"
+        es_success=true
+      else
+        log "WARNING: Elasticsearch snapshot state: $snapshot_state"
+      fi
     else
-      log "Elasticsearch snapshot created successfully: $snapshot_name"
+      log "WARNING: Elasticsearch snapshot creation failed"
+      echo '{"error":"Snapshot creation failed"}' > "$snapshot_info_file"
+    fi
+
+    # Copy snapshot data from the Docker volume to the host backup directory
+    if [[ "$es_success" == true ]]; then
+      log "Copying snapshot data from Docker volume to backup directory..."
+      local es_backup_dir="$backup_dir/elasticsearch"
+      mkdir -p "$es_backup_dir"
+      docker run --rm \
+        -v "elastic-backup:/source:ro" \
+        -v "$es_backup_dir:/dest" \
+        alpine sh -c 'cp -r /source/. /dest/' > /dev/null 2>&1 || {
+          log "WARNING: Could not copy snapshot data from volume"
+        }
+      log "Snapshot data copied to: $es_backup_dir"
     fi
   fi
 

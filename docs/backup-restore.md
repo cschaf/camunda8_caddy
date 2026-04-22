@@ -1,51 +1,69 @@
 # Backup & Restore
 
-Dieses Dokument beschreibt das Backup- und Restore-System für das Camunda 8 Self-Managed Docker Compose Projekt.
+This document describes the backup and restore system for the Camunda 8 Self-Managed Docker Compose project.
 
-## Inhalt
+## Contents
 
-- [Datenquellen](#datenquellen)
-- [Backup-Szenarien](#backup-szenarien)
-- [Restore-Szenarien](#restore-szenarien)
-- [CLI-Referenz](#cli-referenz)
+- [Data Sources](#data-sources)
+- [Backup Scenarios](#backup-scenarios)
+- [Restore Scenarios](#restore-scenarios)
+- [CLI Reference](#cli-reference)
 - [Troubleshooting](#troubleshooting)
-- [Automatisierung](#automatisierung)
+- [Automation](#automation)
 
-## Datenquellen
+## Data Sources
 
-Das Backup-System sichert folgende Daten:
+The backup system secures the following data:
 
-| Datenquelle | Methode | Bemerkung |
-|-------------|---------|-----------|
-| Zeebe State | Volume-Dump (`orchestration.tar.gz`) | Cold-Backup (Orchestration wird gestoppt) |
-| Elasticsearch | Snapshot API | FS-Repository in `./backups/elasticsearch` |
-| Keycloak DB | `pg_dump -Fc` | GZIP-komprimiert (`keycloak.sql.gz`) |
-| Web Modeler DB | `pg_dump -Fc` | GZIP-komprimiert (`webmodeler.sql.gz`) |
-| Konfigurationen | `tar.gz` | `.env`, `connector-secrets.txt`, `Caddyfile`, `application.yaml` |
+| Data Source | Method | Notes |
+|-------------|--------|-------|
+| Zeebe State | Volume dump (`orchestration.tar.gz`) | Cold backup (orchestration is stopped) |
+| Elasticsearch | Snapshot API | FS repository via Docker volume `elastic-backup`, copied to host after snapshot |
+| Keycloak DB | `pg_dump -Fc` | GZIP-compressed (`keycloak.sql.gz`) |
+| Web Modeler DB | `pg_dump -Fc` | GZIP-compressed (`webmodeler.sql.gz`) |
+| Configurations | `tar.gz` | `.env`, `connector-secrets.txt`, `Caddyfile`, `application.yaml` files |
 
-**Nicht gesichert:** `keycloak-theme` Volume (wird von Identity automatisch initialisiert).
+**Not backed up:** `keycloak-theme` volume (initialized automatically by Identity).
 
-## Backup-Szenarien
+## Backup Structure
 
-### Tägliches Backup (empfohlen)
+Each backup creates a timestamped directory under `backups/YYYYMMDD_HHMMSS/`:
 
-Führe das Backup-Skript regelmäßig aus, z.B. über einen Cronjob:
+```
+backups/20240115_120000/
+├── backup.log              # Execution log
+├── configs.tar.gz          # Configuration files
+├── elasticsearch/          # Elasticsearch snapshot data
+├── keycloak.sql.gz         # Keycloak database dump
+├── manifest.json           # SHA256 checksums and metadata
+├── orchestration.tar.gz    # Zeebe state volume dump
+├── snapshot-info.json      # Elasticsearch snapshot metadata
+└── webmodeler.sql.gz       # Web Modeler database dump
+```
+
+**Cross-platform compatibility:** Both `backup.sh` / `restore.sh` (Linux/macOS/WSL) and `backup.ps1` / `restore.ps1` (Windows) produce the **same directory structure and file formats**. Backups created on one platform can be restored on the other.
+
+## Backup Scenarios
+
+### Daily Backup (recommended)
+
+Run the backup script regularly, e.g. via a cronjob:
 
 ```bash
 ./scripts/backup.sh
 ```
 
-Das Skript erzeugt einen Backup-Ordner unter `backups/YYYYMMDD_HHMMSS/` und erstellt automatisch ein JSON-Manifest mit Prüfsummen.
+The script creates a backup folder under `backups/YYYYMMDD_HHMMSS/` and automatically generates a JSON manifest with checksums.
 
-### Testlauf (Simulation)
+### Test Run (simulation)
 
-Um den Backup-Ablauf zu testen, ohne Daten zu verändern:
+To test the backup flow without modifying data:
 
 ```bash
 ./scripts/backup.sh --test
 ```
 
-### Manuelles Backup
+### Manual Backup
 
 ```bash
 # Linux/macOS/WSL
@@ -55,33 +73,59 @@ Um den Backup-Ablauf zu testen, ohne Daten zu verändern:
 .\scripts\backup.ps1
 ```
 
-## Restore-Szenarien
+### Prerequisites
 
-### In-Place Restore (gleicher Cluster)
+- The Camunda stack must be running
+- `gzip` / `gunzip` must be available in your PATH:
+  - **Linux/macOS**: Usually pre-installed
+  - **Windows**: Install via Git for Windows, MSYS2, or Chocolatey (`choco install gzip`)
+- **Windows only**: PowerShell 7+ (`pwsh`)
 
-Stellt alle Daten auf dem gleichen Host wieder her, einschließlich der Konfigurationsdateien:
+### Platform Notes
+
+**Linux/macOS/WSL:** Use the `.sh` scripts
+```bash
+./scripts/backup.sh
+./scripts/restore.sh backups/20240115_120000
+```
+
+**Windows:** Use the `.ps1` scripts
+```powershell
+.\scripts\backup.ps1
+.\scripts\restore.ps1 backups\20240115_120000
+```
+
+### Elasticsearch Snapshot Architecture
+
+Elasticsearch snapshots are stored in a dedicated Docker volume (`elastic-backup`) rather than a host bind-mount. This avoids permission issues on Windows Docker Desktop. After a successful snapshot, the data is copied from the volume to the host backup directory (`backups/YYYYMMDD_HHMMSS/elasticsearch/`). During restore, the data is copied back from the host into the Docker volume before the snapshot is restored.
+
+## Restore Scenarios
+
+### In-Place Restore (same cluster)
+
+Restores all data on the same host, including configuration files:
 
 ```bash
 ./scripts/restore.sh backups/20240115_120000
 ```
 
-**Achtung:** Dies überschreibt alle aktuellen Daten! Das Skript fragt zur Sicherheit nach.
+**Warning:** This overwrites all current data! The script asks for confirmation.
 
 ### Cross-Cluster Restore
 
-Stellt Daten auf einem anderen Cluster wieder her. Konfigurationsdateien werden **nicht** überschrieben, sondern in `restored-configs/` extrahiert:
+Restores data on a different cluster. Configuration files are **not** overwritten; instead they are extracted to `restored-configs/`:
 
 ```bash
 ./scripts/restore.sh --cross-cluster backups/20240115_120000
 ```
 
-Voraussetzungen:
-- Elasticsearch-Version im Backup muss mit `.env` übereinstimmen
-- Camunda-Version im Backup muss mit `.env` übereinstimmen
+Requirements:
+- Elasticsearch version in the backup must match `.env`
+- Camunda version in the backup must match `.env`
 
-### Test-Restore (Integritätsprüfung)
+### Test Restore (integrity check)
 
-Prüft die Backup-Integrität ohne Daten wiederherzustellen:
+Checks backup integrity without restoring data:
 
 ```bash
 ./scripts/restore.sh --test backups/20240115_120000
@@ -89,62 +133,62 @@ Prüft die Backup-Integrität ohne Daten wiederherzustellen:
 
 ### Dry-Run
 
-Zeigt alle Schritte an, die ausgeführt würden, ohne sie tatsächlich auszuführen:
+Shows all steps that would be executed without actually running them:
 
 ```bash
 ./scripts/restore.sh --dry-run backups/20240115_120000
 ```
 
-### Granulares Restore
+### Granular Restore
 
-Für ein granulares Restore (z.B. nur eine Datenbank) kannst du die Skripte als Vorlage verwenden und einzelne Schritte manuell ausführen:
+For granular restore (e.g. only one database), use the scripts as a template and execute individual steps manually:
 
 ```bash
-# Nur Keycloak DB
+# Keycloak DB only
 zcat backups/20240115_120000/keycloak.sql.gz | docker exec -i postgres pg_restore -U bn_keycloak -d bitnami_keycloak
 
-# Nur Elasticsearch
-# Snapshot-Repo registrieren und restore (siehe restore.sh)
+# Elasticsearch only
+# Register snapshot repo and restore (see restore.sh)
 ```
 
-## CLI-Referenz
+## CLI Reference
 
 ### backup.sh / backup.ps1
 
-| Option | Beschreibung |
+| Option | Description |
 |--------|-------------|
-| `--test` | Simuliert den Backup-Ablauf ohne Daten zu verändern |
-| `-h, --help` | Zeigt die Hilfe an |
+| `--test` | Simulates the backup flow without modifying data |
+| `-h, --help` | Shows help |
 
 ### restore.sh / restore.ps1
 
-| Option | Beschreibung |
+| Option | Description |
 |--------|-------------|
-| `--force` | Überspringt alle Sicherheitsabfragen |
-| `--dry-run` | Zeigt an, was gemacht würde, ohne es auszuführen |
-| `--cross-cluster` | Aktiviert Cross-Cluster-Restore (keine Config-Überschreibung) |
-| `--test` | Prüft die Backup-Integrität ohne Restore |
-| `-h, --help` | Zeigt die Hilfe an |
+| `--force` | Skips all confirmation prompts |
+| `--dry-run` | Shows what would be done without executing |
+| `--cross-cluster` | Enables cross-cluster restore (no config overwrite) |
+| `--test` | Checks backup integrity without restoring |
+| `-h, --help` | Shows help |
 
-### Beispiele
+### Examples
 
 ```bash
-# Backup erstellen
+# Create backup
 ./scripts/backup.sh
 
-# Backup testen
+# Test backup
 ./scripts/backup.sh --test
 
-# Restore auf gleichem Cluster
+# Restore on same cluster
 ./scripts/restore.sh backups/20240115_120000
 
-# Restore mit automatischer Bestätigung
+# Restore with automatic confirmation
 ./scripts/restore.sh --force backups/20240115_120000
 
-# Cross-Cluster-Restore
+# Cross-cluster restore
 ./scripts/restore.sh --cross-cluster backups/20240115_120000
 
-# Dry-Run eines Restores
+# Dry-run of a restore
 ./scripts/restore.sh --dry-run --force backups/20240115_120000
 ```
 
@@ -152,71 +196,80 @@ zcat backups/20240115_120000/keycloak.sql.gz | docker exec -i postgres pg_restor
 
 ### "Another backup/restore process is already running"
 
-Ein Lock-File (`backups/.backup.lock`) verhindert parallele Ausführungen. Falls ein vorheriger Abbruch das Lock hinterlassen hat:
+A lock file (`backups/.backup.lock`) prevents parallel execution. If a previous crash left the lock behind:
 
 ```bash
 rm backups/.backup.lock
 ```
 
-### Elasticsearch Snapshot fehlschlägt
+### Elasticsearch snapshot fails
 
-- Prüfe, ob Elasticsearch läuft: `curl http://localhost:9200/_cluster/health`
-- Prüfe, ob das Backup-Verzeichnis existiert und beschreibbar ist: `ls -la backups/elasticsearch/`
-- Prüfe die Elasticsearch-Logs: `docker compose logs elasticsearch`
+- Check if Elasticsearch is running: `curl http://localhost:9200/_cluster/health`
+- Check if the Docker volume `elastic-backup` exists: `docker volume ls | grep elastic-backup`
+- Check Elasticsearch logs: `docker compose logs elasticsearch`
 
-### pg_restore Warnungen
+**Note:** The backup system uses a Docker volume (`elastic-backup`) instead of a host bind-mount to avoid permission issues on Windows Docker Desktop. Snapshot data is copied from the volume to the host backup directory after a successful snapshot. During restore, data is copied back from the host into the volume before registration.
 
-`pg_restore` gibt oft Warnungen wegen bereits existierender Objekte aus. Das ist normal und beeinträchtigt den Restore nicht, solange keine Fehler auftreten.
+### Zeebe state backup fails with Docker EOF
 
-### Orchestration startet nicht nach Restore
+The backup script retries the Zeebe volume backup up to 3 times with 5-second delays. If it still fails:
+- Check Docker Desktop is running
+- Check the `orchestration` volume exists: `docker volume ls | grep orchestration`
+- Try manually: `docker run --rm -v orchestration:/data -v "$(pwd)/backups:/backup" alpine tar czf /backup/orchestration.tar.gz -C /data .`
 
-- Prüfe, ob das Zeebe-State-Archiv korrekt ist: `tar tzf backups/.../orchestration.tar.gz`
-- Prüfe die Berechtigungen im Volume nach dem Restore
+### pg_restore warnings
 
-### Version mismatch bei Cross-Cluster-Restore
+`pg_restore` often emits warnings about existing objects. This is normal and does not affect the restore as long as no errors occur.
 
-Stelle sicher, dass die Versionen in `.env` mit dem Backup übereinstimmen:
+### Orchestration does not start after restore
+
+- Check if the Zeebe state archive is valid: `tar tzf backups/.../orchestration.tar.gz`
+- Check permissions in the volume after restore
+
+### Version mismatch on cross-cluster restore
+
+Ensure that versions in `.env` match the backup:
 
 ```bash
-# Version im Backup anzeigen
+# Show version from backup
 cat backups/20240115_120000/manifest.json | jq '.versions'
 ```
 
 ### Manifest verification failed
 
-Das Manifest enthält SHA256-Prüfsummen aller Backup-Dateien. Bei einem Fehler:
-- Prüfe, ob Dateien im Backup-Ordner fehlen oder beschädigt sind
-- Prüfe den verfügbaren Speicherplatz
+The manifest contains SHA256 checksums of all backup files. On failure:
+- Check if files are missing or corrupted in the backup folder
+- Check available disk space
 
-## Automatisierung
+## Automation
 
-### Cronjob für tägliche Backups
+### Cronjob for daily backups
 
-Füge folgende Zeile zu deinem Crontab hinzu (`crontab -e`):
+Add the following line to your crontab (`crontab -e`):
 
 ```cron
-# Tägliches Camunda-Backup um 2:00 Uhr
-0 2 * * * cd /pfad/zu/camunda8_caddy && ./scripts/backup.sh >> backups/cron.log 2>&1
+# Daily Camunda backup at 2:00 AM
+0 2 * * * cd /path/to/camunda8_caddy && ./scripts/backup.sh >> backups/cron.log 2>&1
 ```
 
 ### Windows Task Scheduler (PowerShell)
 
-Erstelle eine Aufgabe, die täglich `scripts/backup.ps1` ausführt:
+Create a task that runs `scripts/backup.ps1` daily:
 
 ```powershell
-$action = New-ScheduledTaskAction -Execute "pwsh.exe" -Argument "-File C:\pfad\zu\scripts\backup.ps1" -WorkingDirectory "C:\pfad\zu\camunda8_caddy"
+$action = New-ScheduledTaskAction -Execute "pwsh.exe" -Argument "-File C:\path\to\scripts\backup.ps1" -WorkingDirectory "C:\path\to\camunda8_caddy"
 $trigger = New-ScheduledTaskTrigger -Daily -At "02:00"
-Register-ScheduledTask -Action $action -Trigger $trigger -TaskName "CamundaBackup" -Description "Tägliches Camunda 8 Backup"
+Register-ScheduledTask -Action $action -Trigger $trigger -TaskName "CamundaBackup" -Description "Daily Camunda 8 Backup"
 ```
 
-### Backup-Aufbewahrung
+### Backup Retention
 
-Standardmäßig werden Backups älter als 7 Tage automatisch gelöscht. Das lässt sich im Skript `scripts/lib/backup-common.sh` (bzw. `.ps1`) über den Parameter `cleanup_old_backups` anpassen.
+By default, backups older than 7 days are automatically deleted. This can be adjusted in the script `scripts/lib/backup-common.sh` (or `.ps1`) via the `Cleanup-OldBackups` / `cleanup_old_backups` parameter.
 
-### Exit-Codes
+### Exit Codes
 
-| Code | Bedeutung |
-|------|-----------|
-| 0 | Erfolg |
-| 1 | Fehler |
-| 2 | Bereits laufend (Lock-Konflikt) |
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+| 1 | Error |
+| 2 | Already running (lock conflict) |

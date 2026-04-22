@@ -331,7 +331,7 @@ services:
       start_period: 60s
     volumes:
       - elastic:/usr/share/elasticsearch/data
-      - ./backups/elasticsearch:/usr/share/elasticsearch/backup
+      - elastic-backup:/usr/share/elasticsearch/backup
     networks:
       - camunda-platform
     extra_hosts:
@@ -641,6 +641,8 @@ services:
 volumes:
   orchestration:
   elastic:
+  elastic-backup:
+    name: elastic-backup
   postgres:
   keycloak-theme:
   postgres-web:

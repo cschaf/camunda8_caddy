@@ -273,13 +273,30 @@ main() {
       snapshot_name="snapshot_$timestamp"
     fi
 
+    # Copy snapshot data from host backup into the Docker volume before restoring
+    local es_backup_dir="$BACKUP_DIR/elasticsearch"
+    if [[ -d "$es_backup_dir" ]]; then
+      log "Copying snapshot data into Docker volume 'elastic-backup'..."
+      docker run --rm \
+        -v "$es_backup_dir:/source:ro" \
+        -v "elastic-backup:/dest" \
+        alpine sh -c 'rm -rf /dest/* && cp -r /source/. /dest/' > /dev/null 2>&1 || {
+          log "WARNING: Could not copy snapshot data to volume"
+        }
+      log "Snapshot data copied to volume 'elastic-backup'."
+    else
+      log "WARNING: Elasticsearch backup directory not found at $es_backup_dir, skipping snapshot copy."
+    fi
+
+    sleep 2
+
     # Register snapshot repo
     local es_repo_body
     es_repo_body='{"type":"fs","settings":{"location":"/usr/share/elasticsearch/backup","compress":true}}'
     curl -s -X PUT "http://localhost:9200/_snapshot/backup-repo" \
       -H 'Content-Type: application/json' \
       -d "$es_repo_body" > /dev/null || {
-        log "WARNING: Could not register snapshot repo (may already exist)"
+        log "WARNING: Could not register snapshot repo"
       }
 
     # Close all indices before restore to avoid conflicts

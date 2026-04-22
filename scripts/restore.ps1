@@ -264,19 +264,43 @@ function Main {
         $snapshotName = $null
         if (Test-Path $snapshotInfoFile) {
             $snapshotInfo = Get-Content $snapshotInfoFile | ConvertFrom-Json
-            $snapshotName = $snapshotInfo.snapshot.name
+            if ($snapshotInfo.snapshot) {
+                $snapshotName = $snapshotInfo.snapshot.name
+            }
         }
         if (-not $snapshotName) {
             $timestamp = Split-Path -Leaf $BackupDir
             $snapshotName = "snapshot_$timestamp"
         }
 
+        # Copy snapshot data from host backup into the Docker volume before restoring
+        $esBackupDir = Join-Path $BackupDir "elasticsearch"
+        if (Test-Path $esBackupDir) {
+            Log "Copying snapshot data into Docker volume 'elastic-backup'..."
+            try {
+                docker run --rm `
+                    -v "${esBackupDir}:/source:ro" `
+                    -v "elastic-backup:/dest" `
+                    alpine sh -c 'rm -rf /dest/* && cp -r /source/. /dest/' | Out-Null
+                Log "Snapshot data copied to volume 'elastic-backup'."
+            }
+            catch {
+                Log "WARNING: Could not copy snapshot data to volume: $_"
+            }
+        }
+        else {
+            Log "WARNING: Elasticsearch backup directory not found at $esBackupDir, skipping snapshot copy."
+        }
+
+        Start-Sleep -Seconds 2
+
         $esRepoBody = '{"type":"fs","settings":{"location":"/usr/share/elasticsearch/backup","compress":true}}'
         try {
             Invoke-RestMethod -Uri "http://localhost:9200/_snapshot/backup-repo" -Method Put -ContentType "application/json" -Body $esRepoBody | Out-Null
+            Log "Elasticsearch snapshot repo registered."
         }
         catch {
-            Log "WARNING: Could not register snapshot repo (may already exist)"
+            Log "WARNING: Could not register snapshot repo: $_"
         }
 
         Log "Closing Elasticsearch indices before restore..."
