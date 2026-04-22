@@ -131,7 +131,7 @@ main() {
     local db_ready=false
     log "Waiting for database containers to be ready..."
     for ((i=1; i<=wait_retries; i++)); do
-      if docker exec postgres pg_isready -U "${POSTGRES_USER}" > /dev/null 2>&1; then
+      if $cmd exec -T postgres pg_isready -U "${POSTGRES_USER}" > /dev/null 2>&1; then
         db_ready=true
         break
       fi
@@ -149,7 +149,7 @@ main() {
   if [[ "$TEST_MODE" == true ]]; then
     log "[TEST] Would pg_dump Keycloak DB: ${POSTGRES_DB:-}"
   else
-    docker exec postgres pg_dump -Fc -U "${POSTGRES_USER}" "${POSTGRES_DB}" | gzip > "$backup_dir/keycloak.sql.gz"
+    $cmd exec -T postgres pg_dump -Fc -U "${POSTGRES_USER}" "${POSTGRES_DB}" | gzip > "$backup_dir/keycloak.sql.gz"
     log "Keycloak DB backed up: $backup_dir/keycloak.sql.gz"
   fi
 
@@ -158,7 +158,7 @@ main() {
   if [[ "$TEST_MODE" == true ]]; then
     log "[TEST] Would pg_dump Web Modeler DB: ${WEBMODELER_DB_NAME:-}"
   else
-    docker exec web-modeler-db pg_dump -Fc -U "${WEBMODELER_DB_USER}" "${WEBMODELER_DB_NAME}" | gzip > "$backup_dir/webmodeler.sql.gz"
+    $cmd exec -T web-modeler-db pg_dump -Fc -U "${WEBMODELER_DB_USER}" "${WEBMODELER_DB_NAME}" | gzip > "$backup_dir/webmodeler.sql.gz"
     log "Web Modeler DB backed up: $backup_dir/webmodeler.sql.gz"
   fi
 

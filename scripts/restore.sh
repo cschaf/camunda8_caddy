@@ -231,7 +231,7 @@ main() {
     log "[DRY-RUN] Would restore Keycloak DB from: $BACKUP_DIR/keycloak.sql.gz"
   else
     if [[ -f "$BACKUP_DIR/keycloak.sql.gz" ]]; then
-      gunzip -c "$BACKUP_DIR/keycloak.sql.gz" | docker exec -i postgres pg_restore \
+      gunzip -c "$BACKUP_DIR/keycloak.sql.gz" | $cmd exec -iT postgres pg_restore \
         -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" --clean --if-exists 2>/dev/null || {
         log "WARNING: pg_restore exited with non-zero status (may be normal for existing objects)"
       }
@@ -246,7 +246,7 @@ main() {
     log "[DRY-RUN] Would restore Web Modeler DB from: $BACKUP_DIR/webmodeler.sql.gz"
   else
     if [[ -f "$BACKUP_DIR/webmodeler.sql.gz" ]]; then
-      gunzip -c "$BACKUP_DIR/webmodeler.sql.gz" | docker exec -i web-modeler-db pg_restore \
+      gunzip -c "$BACKUP_DIR/webmodeler.sql.gz" | $cmd exec -iT web-modeler-db pg_restore \
         -U "${WEBMODELER_DB_USER}" -d "${WEBMODELER_DB_NAME}" --clean --if-exists 2>/dev/null || {
         log "WARNING: pg_restore exited with non-zero status (may be normal for existing objects)"
       }
