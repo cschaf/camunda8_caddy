@@ -330,10 +330,7 @@ function Main {
         }
 
         Log "Clearing existing Elasticsearch data..."
-        try {
-            Invoke-RestMethod -Uri "http://localhost:9200/_data_stream/*" -Method Delete | Out-Null
-        }
-        # Temporarily allow wildcard deletion
+        # Temporarily allow wildcard deletion so _all and _data_stream/* work
         try {
             Invoke-RestMethod -Uri "http://localhost:9200/_cluster/settings" -Method Put -ContentType "application/json" -Body '{"persistent":{"action.destructive_requires_name":false}}' | Out-Null
         }
