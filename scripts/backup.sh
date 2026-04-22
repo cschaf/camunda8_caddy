@@ -120,7 +120,7 @@ main() {
     done
 
     log "Starting orchestration..."
-    docker start orchestration || true
+    $cmd start orchestration || true
     sleep 2
   fi
 
