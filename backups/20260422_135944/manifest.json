@@ -1,0 +1,36 @@
+{
+  "timestamp": "20260422_135944",
+  "versions": {
+    "elasticsearch": "8.17.10",
+    "camunda": "8.8.21",
+    "postgres": "15-alpine3.22",
+    "keycloak": "26.3.2"
+  },
+  "source_host": "camunda.dev.local",
+  "files": [
+    {
+      "sha256": "c2725076a8ef97afa2373cef64bb84488fa11802e226b960dd2af733b5eece1e",
+      "name": "backup.log"
+    },
+    {
+      "sha256": "ecbeb5036601d9100ef39fd201ccdb9d72840571f2cf9940d17bbf371dc5f28e",
+      "name": "configs.tar.gz"
+    },
+    {
+      "sha256": "2bd5392639468b05e1f4cc037f7c1a25cdb8e1e7429eaf5a3809a9323d2b49b6",
+      "name": "keycloak.sql.gz"
+    },
+    {
+      "sha256": "7a0490057dba740678a632a6b56635a05b881d64143154c79ee2a3eca734eb62",
+      "name": "orchestration.tar.gz"
+    },
+    {
+      "sha256": "4217e962bc4219e90a5ab94fb97b504acef6103f86e8517dca3e3662823aa6ac",
+      "name": "snapshot-info.json"
+    },
+    {
+      "sha256": "a6eb8409ae8f2d4ff0b5d2b83e283e9b2b82b00925559bd20aee13e5ec213ea2",
+      "name": "webmodeler.sql.gz"
+    }
+  ]
+}

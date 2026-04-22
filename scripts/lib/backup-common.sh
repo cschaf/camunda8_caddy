@@ -60,7 +60,18 @@ check_services_health() {
 
   log "Checking services health..."
   local unhealthy
-  unhealthy="$($cmd ps --format json 2>/dev/null | jq -r '.[] | select(.Health == "unhealthy" or (.State != "running" and .State != "")) | .Service' 2>/dev/null || true)"
+  unhealthy="$($cmd ps --format json 2>/dev/null | python3 -c '
+import json, sys
+try:
+    data = json.load(sys.stdin)
+    if isinstance(data, dict): data = [data]
+    for item in data:
+        health = item.get("Health", "")
+        state = item.get("State", "")
+        if health == "unhealthy" or (state not in ("running", "")):
+            print(item.get("Service", ""))
+except: pass
+' 2>/dev/null || true)"
 
   if [[ -n "$unhealthy" ]]; then
     log "WARNING: The following services are unhealthy or not running:"
@@ -92,35 +103,38 @@ create_manifest() {
   local timestamp
   timestamp="$(basename "$backup_dir")"
 
-  local json='{}'
-  json="$(echo "$json" | jq \
-    --arg timestamp "$timestamp" \
-    --arg camunda_version "${CAMUNDA_VERSION:-}" \
-    --arg elastic_version "${ELASTIC_VERSION:-}" \
-    --arg keycloak_version "${KEYCLOAK_SERVER_VERSION:-}" \
-    --arg postgres_version "${POSTGRES_VERSION:-}" \
-    --arg host "${HOST:-}" \
-    '.timestamp = $timestamp | .versions.camunda = $camunda_version | .versions.elasticsearch = $elastic_version | .versions.keycloak = $keycloak_version | .versions.postgres = $postgres_version | .source_host = $host' \
-  )"
+  python3 -c "
+import json, os, hashlib
 
-  local files_json="[]"
-  for f in "$backup_dir"/*; do
-    [[ -f "$f" ]] || continue
-    local fname
-    fname="$(basename "$f")"
-    [[ "$fname" == "manifest.json" ]] && continue
+backup_dir = '$backup_dir'
+timestamp = '$timestamp'
+manifest_file = '$manifest_file'
 
-    local checksum
-    checksum="$(compute_checksum "$f")"
-    files_json="$(echo "$files_json" | jq \
-      --arg name "$fname" \
-      --arg checksum "$checksum" \
-      '. + [{name: $name, sha256: $checksum}]' \
-    )"
-  done
+manifest = {
+    'timestamp': timestamp,
+    'versions': {
+        'camunda': os.environ.get('CAMUNDA_VERSION', ''),
+        'elasticsearch': os.environ.get('ELASTIC_VERSION', ''),
+        'keycloak': os.environ.get('KEYCLOAK_SERVER_VERSION', ''),
+        'postgres': os.environ.get('POSTGRES_VERSION', ''),
+    },
+    'source_host': os.environ.get('HOST', ''),
+    'files': []
+}
 
-  json="$(echo "$json" | jq --argjson files "$files_json" '.files = $files')"
-  echo "$json" > "$manifest_file"
+for f in os.listdir(backup_dir):
+    fpath = os.path.join(backup_dir, f)
+    if os.path.isfile(fpath) and f != 'manifest.json':
+        with open(fpath, 'rb') as fh:
+            sha256 = hashlib.sha256(fh.read()).hexdigest()
+        manifest['files'].append({'name': f, 'sha256': sha256})
+
+with open(manifest_file, 'w') as fh:
+    json.dump(manifest, fh, indent=2)
+" || {
+    log "ERROR: Failed to create manifest"
+    exit 1
+  }
   log "Manifest created: $manifest_file"
 }
 
@@ -133,43 +147,46 @@ verify_manifest() {
     exit 1
   fi
 
-  local manifest
-  manifest="$(cat "$manifest_file")"
+  python3 -c "
+import json, os, hashlib, sys
 
-  if ! echo "$manifest" | jq -e . > /dev/null 2>&1; then
-    log "ERROR: Manifest is not valid JSON"
+backup_dir = '$backup_dir'
+manifest_file = '$manifest_file'
+
+try:
+    with open(manifest_file) as f:
+        manifest = json.load(f)
+except json.JSONDecodeError:
+    print('ERROR: Manifest is not valid JSON')
+    sys.exit(1)
+
+errors = 0
+for entry in manifest.get('files', []):
+    fname = entry['name']
+    expected = entry['sha256']
+    fpath = os.path.join(backup_dir, fname)
+
+    if not os.path.isfile(fpath):
+        print(f'ERROR: Missing file: {fname}')
+        errors += 1
+        continue
+
+    with open(fpath, 'rb') as fh:
+        actual = hashlib.sha256(fh.read()).hexdigest()
+
+    if expected != actual:
+        print(f'ERROR: Checksum mismatch for {fname}')
+        errors += 1
+
+if errors > 0:
+    print(f'ERROR: Manifest verification failed with {errors} error(s)')
+    sys.exit(1)
+else:
+    print('Manifest verification passed.')
+" || {
+    log "ERROR: Manifest verification failed"
     exit 1
-  fi
-
-  local errors=0
-  local file_count
-  file_count="$(echo "$manifest" | jq '.files | length')"
-
-  for ((i=0; i<file_count; i++)); do
-    local fname expected actual fpath
-    fname="$(echo "$manifest" | jq -r ".files[$i].name")"
-    expected="$(echo "$manifest" | jq -r ".files[$i].sha256")"
-    fpath="$backup_dir/$fname"
-
-    if [[ ! -f "$fpath" ]]; then
-      log "ERROR: Missing file: $fname"
-      errors=$((errors + 1))
-      continue
-    fi
-
-    actual="$(compute_checksum "$fpath")"
-    if [[ "$expected" != "$actual" ]]; then
-      log "ERROR: Checksum mismatch for $fname (expected: $expected, actual: $actual)"
-      errors=$((errors + 1))
-    fi
-  done
-
-  if [[ $errors -gt 0 ]]; then
-    log "ERROR: Manifest verification failed with $errors error(s)"
-    exit 1
-  fi
-
-  log "Manifest verification passed."
+  }
 }
 
 cleanup_old_backups() {

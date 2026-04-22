@@ -158,7 +158,7 @@ main() {
       -d '{"indices":"*","ignore_unavailable":true,"include_global_state":true}' > "$snapshot_info_file"; then
 
       local snapshot_state
-      snapshot_state="$(jq -r '.snapshot.state' "$snapshot_info_file" 2>/dev/null || echo "UNKNOWN")"
+      snapshot_state="$(python3 -c "import json; d=json.load(open('$snapshot_info_file')); print(d.get('snapshot',{}).get('state','UNKNOWN'))" 2>/dev/null || echo "UNKNOWN")"
 
       if [[ "$snapshot_state" == "SUCCESS" ]]; then
         log "Elasticsearch snapshot created successfully: $snapshot_name"

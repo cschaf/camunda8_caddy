@@ -79,7 +79,8 @@ To test the backup flow without modifying data:
 - `gzip` / `gunzip` must be available in your PATH:
   - **Linux/macOS**: Usually pre-installed
   - **Windows**: Install via Git for Windows, MSYS2, or Chocolatey (`choco install gzip`)
-- **Windows only**: PowerShell 7+ (`pwsh`)
+- **Linux/macOS only** (`.sh` scripts): Python 3 (usually pre-installed on Debian/Ubuntu and macOS)
+- **Windows only** (`.ps1` scripts): PowerShell 7+ (`pwsh`)
 
 ### Platform Notes
 
@@ -232,7 +233,7 @@ Ensure that versions in `.env` match the backup:
 
 ```bash
 # Show version from backup
-cat backups/20240115_120000/manifest.json | jq '.versions'
+python3 -c "import json; d=json.load(open('backups/20240115_120000/manifest.json')); print(d.get('versions',{}))"
 ```
 
 ### Manifest verification failed

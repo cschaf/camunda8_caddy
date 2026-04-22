@@ -77,7 +77,20 @@ wait_for_service() {
   log "Waiting for $service to be healthy..."
   for ((i=1; i<=retries; i++)); do
     local status
-    status="$($cmd ps "$service" --format json 2>/dev/null | jq -r '.[0].Health // .[0].State' 2>/dev/null || echo "unknown")"
+    status="$($cmd ps "$service" --format json 2>/dev/null | python3 -c '
+import json, sys
+try:
+    data = json.load(sys.stdin)
+    if isinstance(data, list) and len(data) > 0:
+        item = data[0]
+    elif isinstance(data, dict):
+        item = data
+    else:
+        item = {}
+    print(item.get("Health", item.get("State", "unknown")))
+except:
+    print("unknown")
+' 2>/dev/null || echo "unknown")"
     if [[ "$status" == "healthy" ]]; then
       log "$service is healthy."
       return 0
@@ -139,14 +152,12 @@ main() {
   verify_manifest "$BACKUP_DIR"
 
   # Load manifest for version/host checks
-  local manifest
-  manifest="$(cat "$BACKUP_DIR/manifest.json")"
   local source_host
-  source_host="$(echo "$manifest" | jq -r '.source_host // ""')"
+  source_host="$(python3 -c "import json; d=json.load(open('$BACKUP_DIR/manifest.json')); print(d.get('source_host',''))" 2>/dev/null || echo "")"
   local manifest_elastic_version
-  manifest_elastic_version="$(echo "$manifest" | jq -r '.versions.elasticsearch // ""')"
+  manifest_elastic_version="$(python3 -c "import json; d=json.load(open('$BACKUP_DIR/manifest.json')); print(d.get('versions',{}).get('elasticsearch',''))" 2>/dev/null || echo "")"
   local manifest_camunda_version
-  manifest_camunda_version="$(echo "$manifest" | jq -r '.versions.camunda // ""')"
+  manifest_camunda_version="$(python3 -c "import json; d=json.load(open('$BACKUP_DIR/manifest.json')); print(d.get('versions',{}).get('camunda',''))" 2>/dev/null || echo "")"
 
   # Cross-cluster checks
   if [[ "$CROSS_CLUSTER" == true ]]; then
@@ -261,10 +272,8 @@ main() {
   if [[ "$DRY_RUN" == true ]]; then
     log "[DRY-RUN] Would restore Elasticsearch snapshot"
   else
-    local snapshot_info
-    snapshot_info="$(cat "$BACKUP_DIR/snapshot-info.json" 2>/dev/null || echo "{}")"
     local snapshot_name
-    snapshot_name="$(echo "$snapshot_info" | jq -r '.snapshot.name // empty')"
+    snapshot_name="$(python3 -c "import json; d=json.load(open('$BACKUP_DIR/snapshot-info.json')); print(d.get('snapshot',{}).get('name',''))" 2>/dev/null || echo "")"
 
     if [[ -z "$snapshot_name" ]]; then
       # Fallback: try to determine from backup dir timestamp
@@ -310,7 +319,7 @@ main() {
       -H 'Content-Type: application/json' \
       -d '{"include_global_state":true}')"
 
-    if echo "$restore_response" | jq -e '.snapshot' > /dev/null 2>&1; then
+    if python3 -c "import json,sys; data=json.loads(sys.argv[1]); sys.exit(0 if 'snapshot' in data else 1)" "$restore_response" > /dev/null 2>&1; then
       log "Elasticsearch snapshot restored successfully."
     else
       log "WARNING: Elasticsearch restore response: $restore_response"
