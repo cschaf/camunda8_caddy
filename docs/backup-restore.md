@@ -25,6 +25,8 @@ The backup system secures the following data:
 
 **Not backed up:** `keycloak-theme` volume (initialized automatically by Identity).
 
+**Volume naming:** Docker Compose prefixes managed volume names with the compose project name (for example `camundacomposenvl_orchestration`). The scripts derive the correct prefixed volume names automatically. The Elasticsearch snapshot repository volume is exempt because it is explicitly named `elastic-backup`.
+
 ## Backup Structure
 
 Each backup creates a timestamped directory under `backups/YYYYMMDD_HHMMSS/`:
@@ -55,6 +57,8 @@ Run the backup script regularly, e.g. via a cronjob:
 
 The script creates a backup folder under `backups/YYYYMMDD_HHMMSS/` and automatically generates a JSON manifest with checksums.
 
+The manifest is recursive. It covers both top-level backup files and nested files under `elasticsearch/`, so `--test` restore mode validates copied snapshot data as well.
+
 ### Test Run (simulation)
 
 To test the backup flow without modifying data:
@@ -62,6 +66,8 @@ To test the backup flow without modifying data:
 ```bash
 ./scripts/backup.sh --test
 ```
+
+`--test` verifies prerequisites and logs the steps that would run, but it does not stop orchestration, dump volumes, create a manifest, or write a retained backup.
 
 ### Manual Backup
 
@@ -112,6 +118,8 @@ Restores all data on the same host, including configuration files:
 
 **Warning:** This overwrites all current data! The script asks for confirmation.
 
+Before an in-place restore, the restore scripts attempt a pre-restore backup of the current state and log the result to `backups/pre-restore-backup.log`. If that pre-backup fails, restore continues with a warning.
+
 ### Cross-Cluster Restore
 
 Restores data on a different cluster. Configuration files are **not** overwritten; instead they are extracted to `restored-configs/`:
@@ -131,6 +139,8 @@ Checks backup integrity without restoring data:
 ```bash
 ./scripts/restore.sh --test backups/20240115_120000
 ```
+
+`--test` validates the manifest and checksum set only. It does not stop the stack or modify data.
 
 ### Dry-Run
 
@@ -203,6 +213,8 @@ A lock file (`backups/.backup.lock`) prevents parallel execution. If a previous 
 rm backups/.backup.lock
 ```
 
+Current scripts also release the lock reliably on PowerShell via `try/finally`, and the bash backup script restarts `orchestration` from its EXIT trap if a failure happens after the cold-backup stop.
+
 ### Elasticsearch snapshot fails
 
 - Check if Elasticsearch is running: `curl http://localhost:9200/_cluster/health`
@@ -215,8 +227,30 @@ rm backups/.backup.lock
 
 The backup script retries the Zeebe volume backup up to 3 times with 5-second delays. If it still fails:
 - Check Docker Desktop is running
-- Check the `orchestration` volume exists: `docker volume ls | grep orchestration`
-- Try manually: `docker run --rm -v orchestration:/data -v "$(pwd)/backups:/backup" alpine tar czf /backup/orchestration.tar.gz -C /data .`
+- Check the compose-prefixed orchestration volume exists: `docker volume ls | grep orchestration`
+- Try manually with the actual volume name from `docker volume ls`, for example: `docker run --rm -v camundacomposenvl_orchestration:/data -v "$(pwd)/backups:/backup" alpine tar czf /backup/orchestration.tar.gz -C /data .`
+
+If all 3 retries fail, the backup exits with status `1`. It no longer falls through as a partial success.
+
+### Backup says the stack is not running
+
+The backup scripts now count running containers instead of trusting `docker compose ps` exit status. If you see:
+
+`Stack is not running (0 containers running).`
+
+start the stack first and verify at least one service is in `running` state:
+
+```bash
+docker compose ps --filter status=running
+```
+
+### Config archive warnings
+
+Configuration backup now distinguishes between:
+- No matching config files found: the backup logs a warning and skips `configs.tar.gz`
+- `tar` returned a non-zero exit code: the backup logs that the archive may be incomplete
+
+Do not treat `Configs backed up ... (N files)` and `WARNING: Config archive may be incomplete` as equivalent outcomes.
 
 ### pg_restore warnings
 
@@ -238,7 +272,7 @@ python3 -c "import json; d=json.load(open('backups/20240115_120000/manifest.json
 
 ### Manifest verification failed
 
-The manifest contains SHA256 checksums of all backup files. On failure:
+The manifest contains SHA256 checksums of all backup files, including nested files under `elasticsearch/`. On failure:
 - Check if files are missing or corrupted in the backup folder
 - Check available disk space
 
