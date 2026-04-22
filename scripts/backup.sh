@@ -124,6 +124,26 @@ main() {
     sleep 2
   fi
 
+  # Wait for core database containers to be available after orchestration start
+  if [[ "$TEST_MODE" != true ]]; then
+    local wait_retries=30
+    local wait_delay=2
+    local db_ready=false
+    log "Waiting for database containers to be ready..."
+    for ((i=1; i<=wait_retries; i++)); do
+      if docker exec postgres pg_isready -U "${POSTGRES_USER}" > /dev/null 2>&1; then
+        db_ready=true
+        break
+      fi
+      sleep "$wait_delay"
+    done
+    if [[ "$db_ready" != true ]]; then
+      log "WARNING: postgres container not ready after $((wait_retries * wait_delay))s, attempting backup anyway"
+    else
+      log "Database containers ready."
+    fi
+  fi
+
   # Step 8: Keycloak DB backup
   log "Backing up Keycloak database..."
   if [[ "$TEST_MODE" == true ]]; then
