@@ -225,6 +225,201 @@ function Get-ComposeVolumeName {
     return "$(Get-ComposeProjectName)_$VolumeKey"
 }
 
+function Collect-ESState {
+    param(
+        [string]$Phase,
+        [string]$OutputFile
+    )
+
+    Log "Collecting Elasticsearch state ($Phase)..."
+
+    $health = $null
+    try {
+        $health = Invoke-RestMethod -Uri "http://localhost:9200/_cluster/health" -TimeoutSec 10 -ErrorAction Stop
+    }
+    catch {
+        @{ phase = $Phase; reachable = $false } | ConvertTo-Json -Depth 10 | Set-Content -Path $OutputFile
+        Log "  Elasticsearch not reachable."
+        return
+    }
+
+    $pattern = '^(operate|tasklist|optimize|zeebe|camunda-|\.camunda|\.tasks)'
+
+    $indicesRaw = @()
+    try {
+        $indicesRaw = @(Invoke-RestMethod -Uri "http://localhost:9200/_cat/indices?h=index,docs.count,store.size&format=json&expand_wildcards=all" -TimeoutSec 15)
+    }
+    catch { }
+
+    $dataStreamsRaw = $null
+    try {
+        $dataStreamsRaw = Invoke-RestMethod -Uri "http://localhost:9200/_data_stream?expand_wildcards=all" -TimeoutSec 10
+    }
+    catch { }
+
+    $componentCounts = @{ operate = 0; tasklist = 0; optimize = 0; zeebe = 0; camunda = 0; other = 0 }
+    $totalDocs = 0
+    $indexList = @()
+    foreach ($row in $indicesRaw) {
+        $name = $row.index
+        if (-not $name -or ($name -notmatch $pattern)) { continue }
+        $docs = 0
+        if ($row.'docs.count') {
+            try { $docs = [int]$row.'docs.count' } catch { $docs = 0 }
+        }
+        $size = $row.'store.size'
+        $indexList += @{ name = $name; docs = $docs; size = $size }
+        $totalDocs += $docs
+        if ($name -like 'operate*') { $componentCounts.operate++ }
+        elseif ($name -like 'tasklist*') { $componentCounts.tasklist++ }
+        elseif ($name -like 'optimize*') { $componentCounts.optimize++ }
+        elseif ($name -like 'zeebe*') { $componentCounts.zeebe++ }
+        elseif ($name -like 'camunda-*' -or $name -like '.camunda*') { $componentCounts.camunda++ }
+        else { $componentCounts.other++ }
+    }
+    $indexList = @($indexList | Sort-Object { $_.name })
+
+    $dataStreams = @()
+    if ($dataStreamsRaw -and $dataStreamsRaw.data_streams) {
+        foreach ($ds in $dataStreamsRaw.data_streams) {
+            if ($ds.name -match $pattern) { $dataStreams += $ds.name }
+        }
+    }
+    $dataStreams = @($dataStreams | Sort-Object)
+
+    $state = @{
+        phase = $Phase
+        reachable = $true
+        cluster = @{
+            name = $health.cluster_name
+            status = $health.status
+            number_of_nodes = $health.number_of_nodes
+            active_shards = $health.active_shards
+        }
+        indices = $indexList
+        data_streams = $dataStreams
+        component_counts = $componentCounts
+        total_camunda_indices = $indexList.Count
+        total_camunda_docs = $totalDocs
+    }
+
+    $state | ConvertTo-Json -Depth 10 | Set-Content -Path $OutputFile
+
+    Log "  Cluster: $($health.cluster_name) ($($health.status), $($health.number_of_nodes) node(s))"
+    Log "  Camunda indices: $($indexList.Count) ($totalDocs total docs)"
+    Log "    operate=$($componentCounts.operate), tasklist=$($componentCounts.tasklist), optimize=$($componentCounts.optimize), zeebe=$($componentCounts.zeebe), camunda=$($componentCounts.camunda), other=$($componentCounts.other)"
+    Log "  Data streams: $($dataStreams.Count)"
+}
+
+function Compare-ESState {
+    param(
+        [string]$BeforeFile,
+        [string]$AfterFile
+    )
+
+    if (-not (Test-Path $BeforeFile) -or -not (Test-Path $AfterFile)) {
+        Log "WARNING: ES state comparison skipped (missing state files)."
+        return
+    }
+
+    try {
+        $before = Get-Content $BeforeFile -Raw | ConvertFrom-Json
+        $after  = Get-Content $AfterFile -Raw | ConvertFrom-Json
+    }
+    catch {
+        Log "WARNING: Could not read state files for comparison: $_"
+        return
+    }
+
+    Log "=== Elasticsearch state comparison (before -> after) ==="
+
+    $beforeReach = if ($before.reachable) { "reachable" } else { "UNREACHABLE" }
+    $afterReach  = if ($after.reachable)  { "reachable" } else { "UNREACHABLE" }
+    Log "  Connectivity: $beforeReach -> $afterReach"
+
+    if (-not $before.reachable -or -not $after.reachable) {
+        Log "  (Skipping detailed comparison due to unreachable state)"
+        Log "========================================================"
+        return
+    }
+
+    Log "  Cluster status: $($before.cluster.status) -> $($after.cluster.status)"
+    Log "  Nodes:          $($before.cluster.number_of_nodes) -> $($after.cluster.number_of_nodes)"
+    Log "  Active shards:  $($before.cluster.active_shards) -> $($after.cluster.active_shards)"
+    Log "  Camunda indices: $($before.total_camunda_indices) -> $($after.total_camunda_indices)"
+    Log "  Camunda docs:    $($before.total_camunda_docs) -> $($after.total_camunda_docs)"
+
+    foreach ($k in 'operate','tasklist','optimize','zeebe','camunda','other') {
+        $bv = $before.component_counts.$k
+        $av = $after.component_counts.$k
+        Log ("    {0,-9} {1} -> {2}" -f $k, $bv, $av)
+    }
+
+    $beforeDsCount = 0
+    if ($before.data_streams) { $beforeDsCount = @($before.data_streams).Count }
+    $afterDsCount = 0
+    if ($after.data_streams) { $afterDsCount = @($after.data_streams).Count }
+    Log "  Data streams:    $beforeDsCount -> $afterDsCount"
+
+    $beforeIdx = @{}
+    foreach ($i in @($before.indices)) { if ($i.name) { $beforeIdx[$i.name] = $i } }
+    $afterIdx = @{}
+    foreach ($i in @($after.indices))  { if ($i.name) { $afterIdx[$i.name]  = $i } }
+
+    $onlyBefore = @($beforeIdx.Keys | Where-Object { -not $afterIdx.ContainsKey($_) } | Sort-Object)
+    $onlyAfter  = @($afterIdx.Keys  | Where-Object { -not $beforeIdx.ContainsKey($_) } | Sort-Object)
+    $max = 20
+
+    if ($onlyBefore.Count -gt 0) {
+        Log "  Indices removed ($($onlyBefore.Count)):"
+        $show = [Math]::Min($max, $onlyBefore.Count)
+        for ($i = 0; $i -lt $show; $i++) {
+            $n = $onlyBefore[$i]
+            Log "    - $n ($($beforeIdx[$n].docs) docs)"
+        }
+        if ($onlyBefore.Count -gt $max) {
+            Log "    ... and $($onlyBefore.Count - $max) more"
+        }
+    }
+
+    if ($onlyAfter.Count -gt 0) {
+        Log "  Indices added ($($onlyAfter.Count)):"
+        $show = [Math]::Min($max, $onlyAfter.Count)
+        for ($i = 0; $i -lt $show; $i++) {
+            $n = $onlyAfter[$i]
+            Log "    + $n ($($afterIdx[$n].docs) docs)"
+        }
+        if ($onlyAfter.Count -gt $max) {
+            Log "    ... and $($onlyAfter.Count - $max) more"
+        }
+    }
+
+    $common = @($beforeIdx.Keys | Where-Object { $afterIdx.ContainsKey($_) } | Sort-Object)
+    $changed = @()
+    foreach ($n in $common) {
+        $bd = $beforeIdx[$n].docs
+        $ad = $afterIdx[$n].docs
+        if ($bd -ne $ad) {
+            $changed += @{ name = $n; before = $bd; after = $ad }
+        }
+    }
+    if ($changed.Count -gt 0) {
+        Log "  Indices with doc count changes ($($changed.Count)):"
+        $show = [Math]::Min($max, $changed.Count)
+        for ($i = 0; $i -lt $show; $i++) {
+            $c = $changed[$i]
+            $delta = $c.after - $c.before
+            $sign = if ($delta -ge 0) { '+' } else { '' }
+            Log "    ~ $($c.name): $($c.before) -> $($c.after) ($sign$delta)"
+        }
+        if ($changed.Count -gt $max) {
+            Log "    ... and $($changed.Count - $max) more"
+        }
+    }
+
+    Log "========================================================"
+}
+
 function Cleanup-OnError {
     if ($?) { return }
     Log "ERROR: Script failed."

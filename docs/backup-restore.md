@@ -5,8 +5,11 @@ This document describes the backup and restore system for the Camunda 8 Self-Man
 ## Contents
 
 - [Data Sources](#data-sources)
+- [Relation to Official Procedure](#relation-to-official-procedure)
+- [Users and Permissions](#users-and-permissions)
 - [Backup Scenarios](#backup-scenarios)
 - [Restore Scenarios](#restore-scenarios)
+- [Pre/Post-Restore State Comparison](#prepost-restore-state-comparison)
 - [CLI Reference](#cli-reference)
 - [Troubleshooting](#troubleshooting)
 - [Automation](#automation)
@@ -26,6 +29,58 @@ The backup system secures the following data:
 **Not backed up:** `keycloak-theme` volume (initialized automatically by Identity).
 
 **Volume naming:** Docker Compose prefixes managed volume names with the compose project name (for example `camundacomposenvl_orchestration`). The scripts derive the correct prefixed volume names automatically. The Elasticsearch snapshot repository volume is exempt because it is explicitly named `elastic-backup`.
+
+## Relation to Official Procedure
+
+These scripts implement a **cold backup** tailored to the local Docker Compose stack: the `orchestration` container is stopped, then Elasticsearch is snapshotted, PostgreSQL databases are dumped, and the Zeebe state volume is archived. This yields consistent backups without orchestrating Camunda's backup APIs, at the cost of a short downtime window for the duration of the backup.
+
+They do **not** implement the official Camunda 8 Self-Managed hot-backup procedure, which:
+
+- Keeps Zeebe running under a soft export pause
+- Uses Camunda actuator endpoints (`/actuator/backupHistory`, `/actuator/backupRuntime`, `/actuator/backups`) to coordinate component backups
+- Snapshots only `zeebe-record*` at the Elasticsearch layer (with `"feature_states": ["none"]`)
+- Requires each component (Operate, Tasklist, Optimize, Zeebe broker) to be configured with a backup repository
+
+For zero-downtime production backups, follow the official guides:
+
+- Backup: https://docs.camunda.io/docs/self-managed/operational-guides/backup-restore/elasticsearch/es-backup/
+- Restore: https://docs.camunda.io/docs/self-managed/operational-guides/backup-restore/elasticsearch/es-restore/
+
+The default `.orchestration/application.yaml` in this project does not expose the backup actuator endpoints and does not configure backup storage for Operate/Tasklist/Optimize/Zeebe. Adopting the official procedure requires those configuration changes first.
+
+Alignment notes:
+
+- The Elasticsearch snapshot repository registration and the `path.repo` mount in `docker-compose.yaml` match the official procedure and can be reused if you switch approaches later.
+- The snapshot `PUT` body uses `"feature_states": ["none"]`, matching the official recommendation for Elasticsearch 8.x.
+- On restore, the scripts delete only Camunda-related indices and data streams (`operate*`, `tasklist*`, `optimize*`, `zeebe*`, `camunda-*`, `.camunda*`, `.tasks*`) rather than wiping the whole cluster, which matches the index filter example in the official restore docs.
+- Before deleting anything on restore, the scripts verify the named snapshot exists in the repository and abort otherwise. A wrong or incomplete backup directory cannot destroy live data.
+
+## Users and Permissions
+
+Users and authorizations created via `scripts/add-camunda-user.sh` / `scripts/add-camunda-user.ps1` are fully covered by backup and restore. The script writes to two stores, and both are captured:
+
+| What the user script creates | Where it's stored | Captured by |
+|---|---|---|
+| Keycloak user (credentials, email, first/last name) | `postgres` container, database `bitnami_keycloak` | `pg_dump` → `keycloak.sql.gz` |
+| Realm role mappings (`Default user role`, `Orchestration`, `Optimize`, `Web Modeler`, `Console`, `ManagementIdentity`, `Web Modeler Admin`) | Same Keycloak database | Same `pg_dump` |
+| Camunda internal role assignment (`admin` or `readonly-admin`, via `PUT /v2/roles/{role}/users/{user}`) | Zeebe log → Elasticsearch `camunda-*` indices (via `CamundaExporter` configured in `.orchestration/application.yaml`) | `orchestration.tar.gz` volume dump + Elasticsearch snapshot |
+
+On restore, the Keycloak database is restored via `pg_restore --clean --if-exists`, the Zeebe state is restored from the volume archive, and the Elasticsearch snapshot restore recreates the `camunda-*` indices that hold the authorization records (the restore's targeted delete includes the `camunda-` prefix so stale records are wiped before the snapshot is restored).
+
+**Important timing caveat:** a backup reflects state at the moment it was taken. If you run `add-camunda-user.sh` *after* a backup and then restore that backup, the new user is lost. If you want new users preserved, take a fresh backup immediately after creating them.
+
+**Quick verification after creating a new admin:**
+
+```bash
+# Confirm Camunda authorization indices exist
+curl -s http://localhost:9200/_cat/indices?h=index | grep -E '^(camunda-|operate-|tasklist-)'
+
+# Take a backup
+./scripts/backup.sh
+
+# Confirm the camunda-* indices are in the snapshot
+jq -r '.snapshots[0].indices[]' backups/<timestamp>/snapshot-info.json | grep camunda
+```
 
 ## Backup Structure
 
@@ -179,6 +234,44 @@ zcat backups/20240115_120000/keycloak.sql.gz | docker exec -i postgres pg_restor
 # Elasticsearch only
 # Register snapshot repo and restore (see restore.sh)
 ```
+
+## Pre/Post-Restore State Comparison
+
+Every real restore (not `--dry-run`, not `--test`) captures a snapshot of the current Elasticsearch state **before** any destructive step, runs the restore, and then captures the state **again** after the stack is healthy. A comparison is logged and both snapshots are written next to the backup:
+
+```
+backups/20240115_120000/
+├── restore-state-before.json   # pre-restore Elasticsearch state
+└── restore-state-after.json    # post-restore Elasticsearch state
+```
+
+Each state file contains:
+
+- `reachable` — whether Elasticsearch answered at `http://localhost:9200` within the timeout
+- `cluster` — cluster name, status (`green`/`yellow`/`red`), node count, active shard count
+- `indices` — Camunda-related indices only (matching `^(operate|tasklist|optimize|zeebe|camunda-|\.camunda|\.tasks)`), each with name, doc count, and on-disk size
+- `data_streams` — Camunda-related data streams
+- `component_counts` — per-component index count (`operate`, `tasklist`, `optimize`, `zeebe`, `camunda`, `other`)
+- `total_camunda_indices`, `total_camunda_docs` — aggregated totals
+
+The comparison emitted to `restore.log` and stdout looks like:
+
+```
+=== Elasticsearch state comparison (before -> after) ===
+  Connectivity:    reachable -> reachable
+  Cluster status:  green -> green
+  Camunda indices: 42 -> 42
+  Camunda docs:    15387 -> 15387
+    operate   12 -> 12
+    tasklist  8  -> 8
+    ...
+  Indices removed (0):
+  Indices added (0):
+  Indices with doc count changes (0):
+========================================================
+```
+
+Use this as a quick sanity check that the restore landed the expected data. Non-Camunda indices are intentionally excluded — the restore itself only touches Camunda-scoped data, so noise from other indices would drown out the signal. State files are skipped by the manifest and do not affect backup integrity checks.
 
 ## CLI Reference
 

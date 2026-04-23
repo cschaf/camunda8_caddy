@@ -195,6 +195,16 @@ function Main {
             Acquire-Lock
         }
 
+        # Collect pre-restore Elasticsearch state for later comparison
+        $stateBefore = Join-Path $BackupDir "restore-state-before.json"
+        $stateAfter  = Join-Path $BackupDir "restore-state-after.json"
+        if ($DryRun) {
+            Log "[DRY-RUN] Would collect Elasticsearch state (before)"
+        }
+        else {
+            try { Collect-ESState -Phase "before" -OutputFile $stateBefore } catch { Log "WARNING: Pre-restore state collection failed: $_" }
+        }
+
         # Stop stack
         Log "Stopping Camunda stack..."
         if ($DryRun) {
@@ -340,25 +350,64 @@ function Main {
                 Log "WARNING: Could not register snapshot repo: $_"
             }
 
-            Log "Clearing existing Elasticsearch data..."
-            # Temporarily allow wildcard deletion so _all and _data_stream/* work
+            # Verify the snapshot exists BEFORE deleting any indices, so a wrong
+            # or incomplete backup directory cannot wipe the live cluster.
+            $snapshotExists = $false
             try {
-                Invoke-RestMethod -Uri "http://localhost:9200/_cluster/settings" -Method Put -ContentType "application/json" -Body '{"persistent":{"action.destructive_requires_name":false}}' | Out-Null
+                Invoke-RestMethod -Uri "http://localhost:9200/_snapshot/backup-repo/$snapshotName" -Method Get | Out-Null
+                $snapshotExists = $true
             }
             catch {
-                # Ignore errors
+                $snapshotExists = $false
             }
+            if (-not $snapshotExists) {
+                Log "ERROR: Snapshot '$snapshotName' not found in repository. Aborting before deleting any indices."
+                exit 1
+            }
+            Log "Snapshot '$snapshotName' verified in repository."
+
+            # Delete only Camunda-related indices and data streams, matching the
+            # scope of what the snapshot restore will recreate. Using explicit
+            # per-item deletes avoids needing to relax action.destructive_requires_name.
+            $camundaPattern = '^(operate|tasklist|optimize|zeebe|camunda-|\.camunda|\.tasks)'
+
+            Log "Clearing Camunda-related Elasticsearch indices..."
             try {
-                Invoke-RestMethod -Uri "http://localhost:9200/_data_stream/*" -Method Delete | Out-Null
+                $catIndices = Invoke-RestMethod -Uri "http://localhost:9200/_cat/indices?h=index&expand_wildcards=all&format=json"
+                foreach ($row in $catIndices) {
+                    $idx = $row.index
+                    if ($idx -match $camundaPattern) {
+                        try {
+                            Invoke-RestMethod -Uri "http://localhost:9200/$idx" -Method Delete | Out-Null
+                        }
+                        catch {
+                            # Already gone; ignore
+                        }
+                    }
+                }
             }
             catch {
-                # Ignore errors if no data streams exist
+                # If listing fails, continue; restore will surface a clearer error
             }
+
+            Log "Clearing Camunda-related Elasticsearch data streams..."
             try {
-                Invoke-RestMethod -Uri "http://localhost:9200/_all?expand_wildcards=all" -Method Delete | Out-Null
+                $dsResponse = Invoke-RestMethod -Uri "http://localhost:9200/_data_stream?expand_wildcards=all"
+                if ($dsResponse.data_streams) {
+                    foreach ($ds in $dsResponse.data_streams) {
+                        if ($ds.name -match $camundaPattern) {
+                            try {
+                                Invoke-RestMethod -Uri "http://localhost:9200/_data_stream/$($ds.name)" -Method Delete | Out-Null
+                            }
+                            catch {
+                                # Already gone; ignore
+                            }
+                        }
+                    }
+                }
             }
             catch {
-                # Ignore errors if indices are already gone
+                # No data streams endpoint or nothing to delete
             }
             Start-Sleep -Seconds 2
 
@@ -370,14 +419,6 @@ function Main {
             }
             catch {
                 Log "WARNING: Elasticsearch restore failed: $_"
-            }
-
-            # Re-enable destructive_requires_name protection
-            try {
-                Invoke-RestMethod -Uri "http://localhost:9200/_cluster/settings" -Method Put -ContentType "application/json" -Body '{"persistent":{"action.destructive_requires_name":true}}' | Out-Null
-            }
-            catch {
-                # Ignore errors
             }
         }
 
@@ -451,6 +492,11 @@ function Main {
         else {
             Start-Sleep -Seconds 10
             Check-ServicesHealth | Out-Null
+
+            # Collect post-restore state and compare to pre-restore state
+            try { Collect-ESState -Phase "after" -OutputFile $stateAfter } catch { Log "WARNING: Post-restore state collection failed: $_" }
+            try { Compare-ESState -BeforeFile $stateBefore -AfterFile $stateAfter } catch { Log "WARNING: State comparison failed: $_" }
+
             Log "Restore completed successfully."
         }
     }

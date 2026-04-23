@@ -242,6 +242,15 @@ PYEOF
     acquire_lock
   fi
 
+  # Step 2c: Collect pre-restore Elasticsearch state for later comparison
+  local state_before="$BACKUP_DIR/restore-state-before.json"
+  local state_after="$BACKUP_DIR/restore-state-after.json"
+  if [[ "$DRY_RUN" == true ]]; then
+    log "[DRY-RUN] Would collect Elasticsearch state (before)"
+  else
+    collect_es_state "before" "$state_before" || true
+  fi
+
   # Step 3: Stop stack
   log "Stopping Camunda stack..."
   if [[ "$DRY_RUN" == true ]]; then
@@ -373,13 +382,52 @@ PYEOF
       log "WARNING: Could not register snapshot repo: $repo_response"
     fi
 
-    # Temporarily allow wildcard deletion, then clear all indices
-    log "Clearing existing Elasticsearch data..."
-    curl -s -X PUT "http://localhost:9200/_cluster/settings" \
-      -H 'Content-Type: application/json' \
-      -d '{"persistent":{"action.destructive_requires_name":false}}' > /dev/null || true
-    curl -s -X DELETE "http://localhost:9200/_data_stream/*" > /dev/null || true
-    curl -s -X DELETE "http://localhost:9200/_all?expand_wildcards=all&ignore_unavailable=true" > /dev/null || true
+    # Verify the snapshot exists BEFORE deleting any indices, so a wrong or
+    # incomplete backup directory cannot wipe the live cluster.
+    local snapshot_check_code
+    snapshot_check_code="$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:9200/_snapshot/backup-repo/${snapshot_name}" 2>/dev/null || echo "000")"
+    if [[ "$snapshot_check_code" != "200" ]]; then
+      log "ERROR: Snapshot '$snapshot_name' not found in repository (HTTP $snapshot_check_code). Aborting before deleting any indices."
+      exit 1
+    fi
+    log "Snapshot '$snapshot_name' verified in repository."
+
+    # Delete only Camunda-related indices and data streams, matching the
+    # scope of what the snapshot restore will recreate. Using explicit per-item
+    # deletes avoids needing to relax action.destructive_requires_name.
+    log "Clearing Camunda-related Elasticsearch indices..."
+    local camunda_regex='^(operate|tasklist|optimize|zeebe|camunda-|\.camunda|\.tasks)'
+    local idx
+    while IFS= read -r idx; do
+      [[ -z "$idx" ]] && continue
+      curl -s -X DELETE "http://localhost:9200/${idx}" > /dev/null || true
+    done < <(curl -s "http://localhost:9200/_cat/indices?h=index&expand_wildcards=all" 2>/dev/null | grep -E "$camunda_regex" || true)
+
+    log "Clearing Camunda-related Elasticsearch data streams..."
+    local ds_tmp
+    ds_tmp="$(mktemp)"
+    curl -s "http://localhost:9200/_data_stream?expand_wildcards=all" > "$ds_tmp" 2>/dev/null || true
+    local data_streams
+    data_streams="$(python3 - "$ds_tmp" <<'PYEOF' 2>/dev/null || true
+import json, re, sys
+pattern = re.compile(r'^(operate|tasklist|optimize|zeebe|camunda-|\.camunda|\.tasks)')
+try:
+    with open(sys.argv[1]) as f: d = json.load(f)
+    for ds in d.get('data_streams', []):
+        name = ds.get('name', '')
+        if pattern.match(name):
+            print(name)
+except Exception:
+    pass
+PYEOF
+)"
+    rm -f "$ds_tmp"
+    if [[ -n "$data_streams" ]]; then
+      while IFS= read -r ds; do
+        [[ -z "$ds" ]] && continue
+        curl -s -X DELETE "http://localhost:9200/_data_stream/${ds}" > /dev/null || true
+      done <<< "$data_streams"
+    fi
     sleep 2
 
     # Restore snapshot
@@ -413,11 +461,6 @@ except Exception as e:
     else
       log "WARNING: Elasticsearch restore state: $restore_status"
     fi
-
-    # Re-enable destructive_requires_name protection
-    curl -s -X PUT "http://localhost:9200/_cluster/settings" \
-      -H 'Content-Type: application/json' \
-      -d '{"persistent":{"action.destructive_requires_name":true}}' > /dev/null || true
   fi
 
   # Step 9: Restore Zeebe state
@@ -482,6 +525,11 @@ except Exception as e:
     check_services_health || {
       log "WARNING: Some services are not healthy yet. Check with: docker compose ps"
     }
+
+    # Collect post-restore state and compare to pre-restore state
+    collect_es_state "after" "$state_after" || true
+    compare_es_state "$state_before" "$state_after" || true
+
     log "Restore completed successfully."
   fi
 
