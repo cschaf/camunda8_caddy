@@ -82,11 +82,13 @@ To test the backup flow without modifying data:
 ### Prerequisites
 
 - The Camunda stack must be running
-- `gzip` / `gunzip` must be available in your PATH:
-  - **Linux/macOS**: Usually pre-installed
-  - **Windows**: Install via Git for Windows, MSYS2, or Chocolatey (`choco install gzip`)
-- **Linux/macOS only** (`.sh` scripts): Python 3 (usually pre-installed on Debian/Ubuntu and macOS)
-- **Windows only** (`.ps1` scripts): PowerShell 7+ (`pwsh`)
+- **Linux/macOS/WSL** (`.sh` scripts):
+  - `gunzip`, `python3`, `curl`, `tar`, and `docker compose` must be available in your PATH
+  - `gunzip` and `tar` are usually pre-installed
+- **Windows only** (`.ps1` scripts):
+  - PowerShell 7+ (`pwsh`)
+  - `gzip` must be available in your PATH
+  - install via Git for Windows, MSYS2, or Chocolatey (`choco install gzip`)
 
 ### Platform Notes
 
@@ -149,6 +151,22 @@ Shows all steps that would be executed without actually running them:
 ```bash
 ./scripts/restore.sh --dry-run backups/20240115_120000
 ```
+
+### Restore Order
+
+The restore scripts intentionally do **not** start the full Camunda stack immediately.
+
+Current restore flow:
+
+1. Stop the stack and remove the data volumes (`orchestration`, `elastic`, `postgres`, `postgres-web`)
+2. Start only the core services needed for restore: `postgres`, `web-modeler-db`, `elasticsearch`
+3. Restore the PostgreSQL databases
+4. Restore the Elasticsearch snapshot while Camunda application services are still stopped
+5. Create the `orchestration` container via Docker Compose and restore Zeebe state into the compose-managed volume
+6. Restore configuration files
+7. Start the full stack and wait for service health checks
+
+This ordering prevents Camunda services from recreating Elasticsearch indices before the snapshot restore runs.
 
 ### Granular Restore
 
@@ -227,6 +245,8 @@ Current scripts also release the lock reliably on PowerShell via `try/finally`, 
 
 **Note:** The backup system uses a Docker volume (`elastic-backup`) instead of a host bind-mount to avoid permission issues on Windows Docker Desktop. Snapshot data is copied from the volume to the host backup directory after a successful snapshot. During restore, data is copied back from the host into the volume before registration.
 
+If restore fails with a message like `cannot restore index ... because an open index with same name already exists in the cluster`, it usually means application services recreated indices before the snapshot restore. Current scripts avoid this by restoring Elasticsearch before starting the full Camunda stack.
+
 ### Zeebe state backup fails with Docker EOF
 
 The backup script retries the Zeebe volume backup up to 3 times with 5-second delays. If it still fails:
@@ -264,6 +284,16 @@ Do not treat `Configs backed up ... (N files)` and `WARNING: Config archive may 
 
 - Check if the Zeebe state archive is valid: `tar tzf backups/.../orchestration.tar.gz`
 - Check permissions in the volume after restore
+
+### "volume ... already exists but was not created by Docker Compose"
+
+This warning is about Docker Compose ownership metadata, not necessarily broken data.
+
+It appears when a named volume exists but was created by plain `docker run` instead of `docker compose`, so Compose sees a usable volume without its usual labels.
+
+Current restore scripts avoid this for the `orchestration` volume by explicitly creating the container with Compose before restoring Zeebe state into the volume.
+
+If you still see the warning for an old restored stack but the services are healthy, it is usually safe to leave it alone until the next restore or planned maintenance window.
 
 ### Version mismatch on cross-cluster restore
 

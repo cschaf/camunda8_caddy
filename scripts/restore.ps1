@@ -1,3 +1,8 @@
+param(
+    [Parameter(ValueFromRemainingArguments = $true)]
+    [string[]]$CliArgs
+)
+
 $ErrorActionPreference = "Stop"
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -29,15 +34,15 @@ function Show-Usage {
 }
 
 function Parse-Args {
-    param([string[]]$Args)
-    for ($i = 0; $i -lt $Args.Count; $i++) {
-        $arg = $Args[$i]
+    param([string[]]$CliArgs)
+    for ($i = 0; $i -lt $CliArgs.Count; $i++) {
+        $arg = $CliArgs[$i]
         switch ($arg) {
-            "--force" { $script:Force = $true }
-            "--dry-run" { $script:DryRun = $true }
-            "--cross-cluster" { $script:CrossCluster = $true }
-            "--createBackup" { $script:CreateBackup = $true }
-            "--test" { $script:TestMode = $true }
+            "--force" { $script:Force = $true; break }
+            "--dry-run" { $script:DryRun = $true; break }
+            "--cross-cluster" { $script:CrossCluster = $true; break }
+            "--createBackup" { $script:CreateBackup = $true; break }
+            "--test" { $script:TestMode = $true; break }
             { $_ -in "-h","--help" } { Show-Usage }
             { $_.StartsWith("-") } {
                 Write-Host "Unknown option: $arg"
@@ -81,7 +86,9 @@ function Wait-ForService {
 }
 
 function Main {
-    Parse-Args -Args $args
+    param([string[]]$CliArgs)
+
+    Parse-Args -CliArgs $CliArgs
 
     if (-not $BackupDir) {
         Write-Host "ERROR: Backup directory is required."
@@ -221,13 +228,15 @@ function Main {
             Log "Volumes removed."
         }
 
-        # Start stack
-        Log "Starting stack with fresh volumes..."
+        # Start only the services needed for data restore.
+        # Starting the full stack here allows Camunda apps to recreate indices
+        # before the Elasticsearch snapshot restore runs.
+        Log "Starting core services with fresh volumes..."
         if ($DryRun) {
-            Log "[DRY-RUN] Would run: $cmd up -d"
+            Log "[DRY-RUN] Would run: $cmd up -d postgres web-modeler-db elasticsearch"
         }
         else {
-            Invoke-Expression "$cmd up -d" | Out-Null
+            Invoke-Expression "$cmd up -d postgres web-modeler-db elasticsearch" | Out-Null
         }
 
         # Wait for core services
@@ -249,7 +258,7 @@ function Main {
         }
         else {
             if (Test-Path $keycloakBackup) {
-                $pgRestoreCmd = "gunzip -c `"$keycloakBackup`" | docker exec -i postgres pg_restore -U `"$env:POSTGRES_USER`" -d `"$env:POSTGRES_DB`" --clean --if-exists"
+                $pgRestoreCmd = "gzip -d -c `"$keycloakBackup`" | docker exec -i postgres pg_restore -U `"$env:POSTGRES_USER`" -d `"$env:POSTGRES_DB`" --clean --if-exists"
                 Invoke-Expression "$pgRestoreCmd 2>`$null" | Out-Null
                 Log "Keycloak database restored."
             }
@@ -266,7 +275,7 @@ function Main {
         }
         else {
             if (Test-Path $webmodelerBackup) {
-                $pgRestoreCmd = "gunzip -c `"$webmodelerBackup`" | docker exec -i web-modeler-db pg_restore -U `"$env:WEBMODELER_DB_USER`" -d `"$env:WEBMODELER_DB_NAME`" --clean --if-exists"
+                $pgRestoreCmd = "gzip -d -c `"$webmodelerBackup`" | docker exec -i web-modeler-db pg_restore -U `"$env:WEBMODELER_DB_USER`" -d `"$env:WEBMODELER_DB_NAME`" --clean --if-exists"
                 Invoke-Expression "$pgRestoreCmd 2>`$null" | Out-Null
                 Log "Web Modeler database restored."
             }
@@ -275,15 +284,11 @@ function Main {
             }
         }
 
-        # Pause services that write to Elasticsearch before restoring
-        Log "Pausing Camunda services to prevent index creation during restore..."
-        if (-not $DryRun) {
-            Invoke-Expression "$cmd stop orchestration identity connectors optimize console web-modeler-webapp web-modeler-restapi web-modeler-websockets keycloak mailpit autoheal reverse-proxy" | Out-Null
-            Start-Sleep -Seconds 3
-            Log "Services paused."
-        }
-        else {
-            Log "[DRY-RUN] Would pause Camunda services"
+        # Only core services are running at this point, so no Camunda apps can
+        # recreate Elasticsearch indices before the snapshot restore.
+        Log "Camunda application services remain stopped until restore is complete."
+        if ($DryRun) {
+            Log "[DRY-RUN] Would keep orchestration, identity, optimize, console, keycloak, and web-modeler app services stopped"
         }
 
         # Restore Elasticsearch
@@ -380,11 +385,13 @@ function Main {
         Log "Restoring Zeebe state..."
         $orchBackup = Join-Path $BackupDir "orchestration.tar.gz"
         if ($DryRun) {
+            Log "[DRY-RUN] Would run: $cmd create orchestration"
             Log "[DRY-RUN] Would restore Zeebe state from: $orchBackup"
         }
         else {
             if (Test-Path $orchBackup) {
                 $zeebeVol = Get-ComposeVolumeName 'orchestration'
+                Invoke-Expression "$cmd create orchestration" | Out-Null
                 docker run --rm `
                     -v "${zeebeVol}:/data" `
                     -v "${BackupDir}:/backup" `
@@ -452,4 +459,4 @@ function Main {
     }
 }
 
-Main
+Main -CliArgs $CliArgs

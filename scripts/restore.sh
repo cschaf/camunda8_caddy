@@ -262,12 +262,14 @@ PYEOF
     log "Volumes removed."
   fi
 
-  # Step 5: Start stack (creates fresh volumes)
-  log "Starting stack with fresh volumes..."
+  # Step 5: Start only the services needed for data restore.
+  # Starting the full stack here allows Camunda apps to recreate indices
+  # before the Elasticsearch snapshot restore runs.
+  log "Starting core services with fresh volumes..."
   if [[ "$DRY_RUN" == true ]]; then
-    log "[DRY-RUN] Would run: $cmd up -d"
+    log "[DRY-RUN] Would run: $cmd up -d postgres web-modeler-db elasticsearch"
   else
-    $cmd up -d
+    $cmd up -d postgres web-modeler-db elasticsearch
   fi
 
   # Step 6: Wait for Postgres and Elasticsearch
@@ -311,14 +313,11 @@ PYEOF
     fi
   fi
 
-  # Pause services that write to Elasticsearch before restoring
-  log "Pausing Camunda services to prevent index creation during restore..."
-  if [[ "$DRY_RUN" == false ]]; then
-    $cmd stop orchestration identity connectors optimize console web-modeler-webapp web-modeler-restapi web-modeler-websockets keycloak mailpit autoheal reverse-proxy > /dev/null 2>&1 || true
-    sleep 3
-    log "Services paused."
-  else
-    log "[DRY-RUN] Would pause Camunda services"
+  # Only core services are running at this point, so no Camunda apps can
+  # recreate Elasticsearch indices before the snapshot restore.
+  log "Camunda application services remain stopped until restore is complete."
+  if [[ "$DRY_RUN" == true ]]; then
+    log "[DRY-RUN] Would keep orchestration, identity, optimize, console, keycloak, and web-modeler app services stopped"
   fi
 
   # Step 8: Restore Elasticsearch
@@ -424,11 +423,13 @@ except Exception as e:
   # Step 9: Restore Zeebe state
   log "Restoring Zeebe state..."
   if [[ "$DRY_RUN" == true ]]; then
+    log "[DRY-RUN] Would run: $cmd create orchestration"
     log "[DRY-RUN] Would restore Zeebe state from: $BACKUP_DIR/orchestration.tar.gz"
   else
     if [[ -f "$BACKUP_DIR/orchestration.tar.gz" ]]; then
       local zeebe_vol
       zeebe_vol="$(compose_volume_name orchestration)"
+      $cmd create orchestration > /dev/null 2>&1 || true
       docker run --rm \
         -v "${zeebe_vol}:/data" \
         -v "$BACKUP_DIR:/backup" \
