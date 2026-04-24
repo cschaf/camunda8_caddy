@@ -772,18 +772,36 @@ PYEOF
     # deletes avoids needing to relax action.destructive_requires_name.
     log "Clearing Camunda-related Elasticsearch indices..."
     local camunda_regex='^(operate|tasklist|optimize|zeebe|camunda-|\.camunda|\.tasks)'
-    local idx
+    local idx index_delete_failures
+    index_delete_failures=0
     while IFS= read -r idx; do
       [[ -z "$idx" ]] && continue
-      curl -s -X DELETE "${es_url}/${idx}" > /dev/null || true
-    done < <(curl -s "${es_url}/_cat/indices?h=index&expand_wildcards=all" 2>/dev/null | grep -E "$camunda_regex" || true)
+      if ! curl -s -X DELETE "${es_url}/${idx}" > /dev/null 2>>"$LOG_FILE"; then
+        index_delete_failures=$((index_delete_failures + 1))
+      fi
+    done < <(curl -s "${es_url}/_cat/indices?h=index&expand_wildcards=all" 2>>"$LOG_FILE" | grep -E "$camunda_regex" || true)
+    if [[ "$index_delete_failures" -gt 0 ]]; then
+      log "WARNING: $index_delete_failures Camunda-related Elasticsearch index delete request(s) failed; verifying remaining indices."
+    fi
+
+    log "Verifying deletion of Camunda-related Elasticsearch indices..."
+    local remaining_indices
+    remaining_indices="$(curl -s "${es_url}/_cat/indices?h=index&expand_wildcards=all" 2>>"$LOG_FILE" | grep -E "$camunda_regex" || true)"
+    if [[ -n "$remaining_indices" ]]; then
+      log "ERROR: Camunda-related Elasticsearch indices remain after delete:"
+      while IFS= read -r idx; do
+        [[ -n "$idx" ]] && log "  - $idx"
+      done <<< "$remaining_indices"
+      exit 1
+    fi
+    log "All target indices cleared."
 
     log "Clearing Camunda-related Elasticsearch data streams..."
     local ds_tmp
     ds_tmp="$(mktemp)"
-    curl -s "${es_url}/_data_stream?expand_wildcards=all" > "$ds_tmp" 2>/dev/null || true
+    curl -s "${es_url}/_data_stream?expand_wildcards=all" > "$ds_tmp" 2>>"$LOG_FILE" || true
     local data_streams
-    data_streams="$(python3 - "$ds_tmp" <<'PYEOF' 2>/dev/null || true
+    data_streams="$(python3 - "$ds_tmp" <<'PYEOF' 2>>"$LOG_FILE" || true
 import json, re, sys
 pattern = re.compile(r'^(operate|tasklist|optimize|zeebe|camunda-|\.camunda|\.tasks)')
 try:
@@ -798,11 +816,45 @@ PYEOF
 )"
     rm -f "$ds_tmp"
     if [[ -n "$data_streams" ]]; then
+      local data_stream_delete_failures
+      data_stream_delete_failures=0
       while IFS= read -r ds; do
         [[ -z "$ds" ]] && continue
-        curl -s -X DELETE "${es_url}/_data_stream/${ds}" > /dev/null || true
+        if ! curl -s -X DELETE "${es_url}/_data_stream/${ds}" > /dev/null 2>>"$LOG_FILE"; then
+          data_stream_delete_failures=$((data_stream_delete_failures + 1))
+        fi
       done <<< "$data_streams"
+      if [[ "$data_stream_delete_failures" -gt 0 ]]; then
+        log "WARNING: $data_stream_delete_failures Camunda-related Elasticsearch data stream delete request(s) failed; verifying remaining data streams."
+      fi
     fi
+
+    log "Verifying deletion of Camunda-related Elasticsearch data streams..."
+    ds_tmp="$(mktemp)"
+    curl -s "${es_url}/_data_stream?expand_wildcards=all" > "$ds_tmp" 2>>"$LOG_FILE" || true
+    local remaining_data_streams
+    remaining_data_streams="$(python3 - "$ds_tmp" <<'PYEOF' 2>>"$LOG_FILE" || true
+import json, re, sys
+pattern = re.compile(r'^(operate|tasklist|optimize|zeebe|camunda-|\.camunda|\.tasks)')
+try:
+    with open(sys.argv[1]) as f: d = json.load(f)
+    for ds in d.get('data_streams', []):
+        name = ds.get('name', '')
+        if pattern.match(name):
+            print(name)
+except Exception:
+    pass
+PYEOF
+)"
+    rm -f "$ds_tmp"
+    if [[ -n "$remaining_data_streams" ]]; then
+      log "ERROR: Camunda-related Elasticsearch data streams remain after delete:"
+      while IFS= read -r ds; do
+        [[ -n "$ds" ]] && log "  - $ds"
+      done <<< "$remaining_data_streams"
+      exit 1
+    fi
+    log "All target data streams cleared."
     sleep 2
 
     # Restore snapshot

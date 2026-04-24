@@ -687,6 +687,7 @@ function Main {
             $camundaPattern = '^(operate|tasklist|optimize|zeebe|camunda-|\.camunda|\.tasks)'
 
             Log "Clearing Camunda-related Elasticsearch indices..."
+            $indexDeleteFailures = 0
             try {
                 $catIndices = Invoke-RestMethod -Uri "${esUrl}/_cat/indices?h=index&expand_wildcards=all&format=json"
                 foreach ($row in $catIndices) {
@@ -696,16 +697,41 @@ function Main {
                             Invoke-RestMethod -Uri "${esUrl}/$idx" -Method Delete | Out-Null
                         }
                         catch {
-                            # Already gone; ignore
+                            $indexDeleteFailures++
+                            Log "WARNING: Could not delete Elasticsearch index ${idx}: $_"
                         }
                     }
                 }
             }
             catch {
-                # If listing fails, continue; restore will surface a clearer error
+                Log "ERROR: Could not list Elasticsearch indices before delete: $_"
+                exit 1
+            }
+            if ($indexDeleteFailures -gt 0) {
+                Log "WARNING: $indexDeleteFailures Camunda-related Elasticsearch index delete request(s) failed; verifying remaining indices."
             }
 
+            Log "Verifying deletion of Camunda-related Elasticsearch indices..."
+            try {
+                $remainingIndices = @(
+                    Invoke-RestMethod -Uri "${esUrl}/_cat/indices?h=index&expand_wildcards=all&format=json" |
+                        Where-Object { $_.index -match $camundaPattern } |
+                        ForEach-Object { $_.index }
+                )
+            }
+            catch {
+                Log "ERROR: Could not verify Elasticsearch index deletion: $_"
+                exit 1
+            }
+            if ($remainingIndices.Count -gt 0) {
+                Log "ERROR: Camunda-related Elasticsearch indices remain after delete:"
+                $remainingIndices | ForEach-Object { Log "  - $_" }
+                exit 1
+            }
+            Log "All target indices cleared."
+
             Log "Clearing Camunda-related Elasticsearch data streams..."
+            $dataStreamDeleteFailures = 0
             try {
                 $dsResponse = Invoke-RestMethod -Uri "${esUrl}/_data_stream?expand_wildcards=all"
                 if ($dsResponse.data_streams) {
@@ -715,15 +741,43 @@ function Main {
                                 Invoke-RestMethod -Uri "${esUrl}/_data_stream/$($ds.name)" -Method Delete | Out-Null
                             }
                             catch {
-                                # Already gone; ignore
+                                $dataStreamDeleteFailures++
+                                Log "WARNING: Could not delete Elasticsearch data stream $($ds.name): $_"
                             }
                         }
                     }
                 }
             }
             catch {
-                # No data streams endpoint or nothing to delete
+                Log "ERROR: Could not list Elasticsearch data streams before delete: $_"
+                exit 1
             }
+            if ($dataStreamDeleteFailures -gt 0) {
+                Log "WARNING: $dataStreamDeleteFailures Camunda-related Elasticsearch data stream delete request(s) failed; verifying remaining data streams."
+            }
+
+            Log "Verifying deletion of Camunda-related Elasticsearch data streams..."
+            try {
+                $remainingDataStreams = @()
+                $dsVerifyResponse = Invoke-RestMethod -Uri "${esUrl}/_data_stream?expand_wildcards=all"
+                if ($dsVerifyResponse.data_streams) {
+                    $remainingDataStreams = @(
+                        $dsVerifyResponse.data_streams |
+                            Where-Object { $_.name -match $camundaPattern } |
+                            ForEach-Object { $_.name }
+                    )
+                }
+            }
+            catch {
+                Log "ERROR: Could not verify Elasticsearch data stream deletion: $_"
+                exit 1
+            }
+            if ($remainingDataStreams.Count -gt 0) {
+                Log "ERROR: Camunda-related Elasticsearch data streams remain after delete:"
+                $remainingDataStreams | ForEach-Object { Log "  - $_" }
+                exit 1
+            }
+            Log "All target data streams cleared."
             Start-Sleep -Seconds 2
 
             Log "Restoring snapshot: $snapshotName"
