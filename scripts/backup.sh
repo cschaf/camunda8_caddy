@@ -15,7 +15,7 @@ usage() {
   echo "Usage: $(basename "$0") [OPTIONS]"
   echo ""
   echo "Options:"
-  echo "  --test     Simulate backup without modifying data"
+  echo "  --simulate Simulate backup without modifying data (alias: --test)"
   echo "  -h, --help Show this help message"
   exit 0
 }
@@ -23,6 +23,10 @@ usage() {
 parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
+      --simulate)
+        TEST_MODE=true
+        shift
+        ;;
       --test)
         TEST_MODE=true
         shift

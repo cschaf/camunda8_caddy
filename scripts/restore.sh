@@ -38,8 +38,8 @@ usage() {
   echo "  --force           Skip all prompts"
   echo "  --dry-run         Show what would be done without executing"
   echo "  --cross-cluster   Enable cross-cluster restore (skips config overwrite)"
-  echo "  --createBackup    Create a fresh backup before restoring"
-  echo "  --test            Verify backup integrity without restoring"
+  echo "  --create-backup   Create a fresh backup before restoring"
+  echo "  --verify          Verify backup integrity without restoring"
   echo "  --env-file FILE   Use a custom env file instead of .env"
   echo "  -h, --help        Show this help message"
   exit 0
@@ -60,8 +60,16 @@ parse_args() {
         CROSS_CLUSTER=true
         shift
         ;;
+      --create-backup)
+        CREATE_BACKUP=true
+        shift
+        ;;
       --createBackup)
         CREATE_BACKUP=true
+        shift
+        ;;
+      --verify)
+        TEST_MODE=true
         shift
         ;;
       --test)

@@ -39,8 +39,8 @@ function Show-Usage {
     Write-Host "  --force           Skip all prompts"
     Write-Host "  --dry-run         Show what would be done without executing"
     Write-Host "  --cross-cluster   Enable cross-cluster restore (skips config overwrite)"
-    Write-Host "  --createBackup    Create a fresh backup before restoring"
-    Write-Host "  --test            Verify backup integrity without restoring"
+    Write-Host "  --create-backup   Create a fresh backup before restoring"
+    Write-Host "  --verify          Verify backup integrity without restoring"
     Write-Host "  --env-file FILE   Use a custom env file instead of .env"
     Write-Host "  -h, --help        Show this help message"
     exit 0
@@ -54,7 +54,9 @@ function Parse-Args {
             "--force" { $script:Force = $true; break }
             "--dry-run" { $script:DryRun = $true; break }
             "--cross-cluster" { $script:CrossCluster = $true; break }
+            "--create-backup" { $script:CreateBackup = $true; break }
             "--createBackup" { $script:CreateBackup = $true; break }
+            "--verify" { $script:TestMode = $true; break }
             "--test" { $script:TestMode = $true; break }
             "--env-file" { $i++; break }
             { $_ -in "-h","--help" } { Show-Usage }

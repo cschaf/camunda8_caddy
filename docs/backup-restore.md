@@ -116,17 +116,17 @@ The script creates a backup folder under `backups/YYYYMMDD_HHMMSS/` and automati
 
 Each real backup also writes `backup-state.json` before `orchestration` is stopped. It captures the current Elasticsearch cluster health, Camunda index counts, document totals, and data stream names so later debugging can compare what was present at backup time.
 
-The manifest is recursive. It covers both top-level backup files, `backup-state.json`, and nested files under `elasticsearch/`, so `--test` restore mode validates copied snapshot data as well.
+The manifest is recursive. It covers both top-level backup files, `backup-state.json`, and nested files under `elasticsearch/`, so `--verify` restore mode validates copied snapshot data as well.
 
 ### Test Run (simulation)
 
 To test the backup flow without modifying data:
 
 ```bash
-./scripts/backup.sh --test
+./scripts/backup.sh --simulate
 ```
 
-`--test` verifies prerequisites and logs the steps that would run, but it does not stop orchestration, dump volumes, create a manifest, or write a retained backup.
+`--simulate` verifies prerequisites and logs the steps that would run, but it does not stop orchestration, dump volumes, create a manifest, or write a retained backup.
 
 ### Manual Backup
 
@@ -181,7 +181,7 @@ Restores all data on the same host, including configuration files:
 
 **Warning:** This overwrites all current data! The script asks for confirmation.
 
-By default, restore does **not** create a fresh backup first. To trigger one with the existing backup script before restore starts, add `--createBackup`. The pre-restore backup log is written to `backups/pre-restore-backup.log`. If that pre-backup fails, restore continues with a warning.
+By default, restore does **not** create a fresh backup first. To trigger one with the existing backup script before restore starts, add `--create-backup`. The pre-restore backup log is written to `backups/pre-restore-backup.log`. If that pre-backup fails, restore continues with a warning.
 
 ### Cross-Cluster Restore
 
@@ -200,10 +200,10 @@ Requirements:
 Checks backup integrity without restoring data:
 
 ```bash
-./scripts/restore.sh --test backups/20240115_120000
+./scripts/restore.sh --verify backups/20240115_120000
 ```
 
-`--test` validates the manifest and checksum set only. It does not stop the stack or modify data.
+`--verify` validates the manifest and checksum set only. It does not stop the stack or modify data.
 
 ### Dry-Run
 
@@ -246,7 +246,7 @@ zcat backups/20240115_120000/keycloak.sql.gz | docker exec -i postgres pg_restor
 
 ## Pre/Post-Restore State Comparison
 
-Every real restore (not `--dry-run`, not `--test`) captures a snapshot of the current Elasticsearch state **before** any destructive step, runs the restore, and then captures the state **again** after the stack is healthy. A comparison is logged and both snapshots are written next to the backup:
+Every real restore (not `--dry-run`, not `--verify`) captures a snapshot of the current Elasticsearch state **before** any destructive step, runs the restore, and then captures the state **again** after the stack is healthy. A comparison is logged and both snapshots are written next to the backup:
 
 ```
 backups/20240115_120000/
@@ -309,7 +309,7 @@ The restore script already has a `--test` mode. It is not replaced by the drill 
 | **Runtime** | Seconds | Minutes |
 | **Best for** | Quick post-backup sanity check, verifying a backup before copying offsite | Proving the restore path still works after image or compose changes |
 
-Use `--test` when you want a fast, lightweight verification that the backup files are intact. Use the drill when you need confidence that the entire restore pipeline — scripts, compose configuration, container startup, and application health — still works end to end.
+Use `--verify` (alias `--test`) when you want a fast, lightweight verification that the backup files are intact. Use the drill when you need confidence that the entire restore pipeline — scripts, compose configuration, container startup, and application health — still works end to end.
 
 ### How it works
 
@@ -410,7 +410,7 @@ A passing drill means your backup format, restore logic, and stack health checks
 
 | Option | Description |
 |--------|-------------|
-| `--test` | Simulates the backup flow without modifying data |
+| `--simulate` | Simulates the backup flow without modifying data (alias: `--test`) |
 | `-h, --help` | Shows help |
 
 ### restore.sh / restore.ps1
@@ -420,8 +420,8 @@ A passing drill means your backup format, restore logic, and stack health checks
 | `--force` | Skips all confirmation prompts |
 | `--dry-run` | Shows what would be done without executing |
 | `--cross-cluster` | Enables cross-cluster restore (no config overwrite) |
-| `--createBackup` | Runs the existing backup script before restore starts |
-| `--test` | Checks backup integrity without restoring |
+| `--create-backup` | Runs the existing backup script before restore starts (alias: `--createBackup`) |
+| `--verify` | Checks backup integrity without restoring (alias: `--test`) |
 | `-h, --help` | Shows help |
 
 ### restore-drill.sh / restore-drill.ps1
@@ -439,14 +439,14 @@ The drill also recognizes the environment variables listed in [Restore Drill](#r
 # Create backup
 ./scripts/backup.sh
 
-# Test backup
-./scripts/backup.sh --test
+# Simulate backup (dry run)
+./scripts/backup.sh --simulate
 
 # Restore on same cluster
 ./scripts/restore.sh backups/20240115_120000
 
 # Restore on same cluster after creating a fresh backup first
-./scripts/restore.sh --createBackup backups/20240115_120000
+./scripts/restore.sh --create-backup backups/20240115_120000
 
 # Restore with automatic confirmation
 ./scripts/restore.sh --force backups/20240115_120000

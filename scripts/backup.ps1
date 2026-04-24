@@ -11,7 +11,7 @@ function Show-Usage {
     Write-Host "Usage: $(Split-Path -Leaf $PSCommandPath) [OPTIONS]"
     Write-Host ""
     Write-Host "Options:"
-    Write-Host "  --test     Simulate backup without modifying data"
+    Write-Host "  --simulate Simulate backup without modifying data (alias: --test)"
     Write-Host "  -h, --help Show this help message"
     exit 0
 }
@@ -20,6 +20,7 @@ function Parse-Args {
     param([string[]]$Args)
     foreach ($arg in $Args) {
         switch ($arg) {
+            "--simulate" { $script:TestMode = $true }
             "--test" { $script:TestMode = $true }
             { $_ -in "-h","--help" } { Show-Usage }
             default {
