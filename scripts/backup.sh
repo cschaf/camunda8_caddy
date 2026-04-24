@@ -22,17 +22,8 @@ source "$SCRIPT_DIR/lib/backup-common.sh"
 
 APP_SERVICES_STOPPED=false
 BACKUP_COMPOSE_CMD=""
-BACKUP_APP_SERVICES=(
-  orchestration
-  connectors
-  optimize
-  identity
-  keycloak
-  web-modeler-restapi
-  web-modeler-webapp
-  web-modeler-websockets
-  console
-)
+BACKUP_APP_SERVICES=()
+CORE_SERVICES=(postgres web-modeler-db elasticsearch mailpit reverse-proxy)
 TEST_MODE=false
 RETENTION_DAYS=7
 CUSTOM_BACKUP_DIR=""
@@ -116,6 +107,38 @@ parse_args() {
   done
 }
 
+is_core_service() {
+  local service="$1"
+  local core
+  for core in "${CORE_SERVICES[@]}"; do
+    [[ "$service" == "$core" ]] && return 0
+  done
+  return 1
+}
+
+derive_backup_app_services() {
+  local cmd="$1"
+  local service services
+  BACKUP_APP_SERVICES=()
+
+  if ! services="$($cmd config --services 2>/dev/null)"; then
+    log "ERROR: Could not derive service list from docker compose config"
+    exit 1
+  fi
+  while IFS= read -r service; do
+    [[ -z "$service" ]] && continue
+    if ! is_core_service "$service"; then
+      BACKUP_APP_SERVICES+=("$service")
+    fi
+  done <<< "$services"
+
+  if [[ ${#BACKUP_APP_SERVICES[@]} -eq 0 ]]; then
+    log "Computed application stop list: (none)"
+  else
+    log "Computed application stop list: ${BACKUP_APP_SERVICES[*]}"
+  fi
+}
+
 create_encrypted_backup_archive() {
   local backup_dir="$1"
   local backup_base_dir="$2"
@@ -165,7 +188,7 @@ backup_cleanup_on_error() {
   if [[ $exit_code -ne 0 ]]; then
     log "ERROR: Backup script failed with exit code $exit_code"
     mark_failed_backup_dir || true
-    if [[ "$APP_SERVICES_STOPPED" == true && -n "$BACKUP_COMPOSE_CMD" ]]; then
+    if [[ "$APP_SERVICES_STOPPED" == true && -n "$BACKUP_COMPOSE_CMD" && ${#BACKUP_APP_SERVICES[@]} -gt 0 ]]; then
       log "Attempting to restart application services after failure..."
       $BACKUP_COMPOSE_CMD start "${BACKUP_APP_SERVICES[@]}" >>"$LOG_FILE" 2>&1 || true
     fi
@@ -184,6 +207,7 @@ main() {
   local cmd
   cmd="$(docker_compose_cmd)"
   BACKUP_COMPOSE_CMD="$cmd"
+  derive_backup_app_services "$cmd"
   local backup_stop_timeout
   backup_stop_timeout="${BACKUP_STOP_TIMEOUT:-180}"
   if [[ ! "$backup_stop_timeout" =~ ^[0-9]+$ || "$backup_stop_timeout" -le 0 ]]; then
@@ -266,7 +290,11 @@ main() {
   log "Stopping application services for cold backup..."
   if [[ "$TEST_MODE" == true ]]; then
     log "[TEST] Would collect Elasticsearch state to: $backup_dir/backup-state.json"
-    log "[TEST] Would stop application services with timeout ${backup_stop_timeout}s: ${BACKUP_APP_SERVICES[*]}"
+    if [[ ${#BACKUP_APP_SERVICES[@]} -gt 0 ]]; then
+      log "[TEST] Would stop application services with timeout ${backup_stop_timeout}s: ${BACKUP_APP_SERVICES[*]}"
+    else
+      log "[TEST] No application services would be stopped"
+    fi
     log "[TEST] Would backup Zeebe state from volume 'orchestration'"
     log "[TEST] Would pg_dump Keycloak DB: ${POSTGRES_DB:-}"
     log "[TEST] Would pg_dump Web Modeler DB: ${WEBMODELER_DB_NAME:-}"
@@ -275,8 +303,12 @@ main() {
     collect_es_state "backup" "$backup_dir/backup-state.json" || true
 
     log "Stopping application services for consistent cold backup (timeout: ${backup_stop_timeout}s)..."
-    $cmd stop --timeout "$backup_stop_timeout" "${BACKUP_APP_SERVICES[@]}"
-    APP_SERVICES_STOPPED=true
+    if [[ ${#BACKUP_APP_SERVICES[@]} -gt 0 ]]; then
+      $cmd stop --timeout "$backup_stop_timeout" "${BACKUP_APP_SERVICES[@]}"
+      APP_SERVICES_STOPPED=true
+    else
+      log "No application services to stop."
+    fi
     sleep 2
 
     log "Backing up Zeebe state (volume: orchestration)..."
@@ -395,7 +427,11 @@ PYEOF
   log "Creating manifest..."
   if [[ "$TEST_MODE" == true ]]; then
     log "[TEST] Would create manifest.json"
-    log "[TEST] Would start application services: ${BACKUP_APP_SERVICES[*]}"
+    if [[ ${#BACKUP_APP_SERVICES[@]} -gt 0 ]]; then
+      log "[TEST] Would start application services: ${BACKUP_APP_SERVICES[*]}"
+    else
+      log "[TEST] No application services would be started"
+    fi
   else
     create_manifest "$backup_dir"
     if [[ -n "$ENCRYPT_TO" ]]; then
@@ -404,8 +440,12 @@ PYEOF
     BACKUP_DIR_IN_PROGRESS=""
 
     log "Starting application services..."
-    $cmd start "${BACKUP_APP_SERVICES[@]}"
-    APP_SERVICES_STOPPED=false
+    if [[ ${#BACKUP_APP_SERVICES[@]} -gt 0 ]]; then
+      $cmd start "${BACKUP_APP_SERVICES[@]}"
+      APP_SERVICES_STOPPED=false
+    else
+      log "No application services to start."
+    fi
     sleep 2
   fi
 

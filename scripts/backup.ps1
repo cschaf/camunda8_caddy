@@ -22,17 +22,8 @@ $TestMode = $false
 $RetentionDays = 7
 $CustomBackupDir = ""
 $EncryptTo = ""
-$AppServices = @(
-    "orchestration",
-    "connectors",
-    "optimize",
-    "identity",
-    "keycloak",
-    "web-modeler-restapi",
-    "web-modeler-webapp",
-    "web-modeler-websockets",
-    "console"
-)
+$CoreServices = @("postgres", "web-modeler-db", "elasticsearch", "mailpit", "reverse-proxy")
+$AppServices = @()
 
 function Show-Usage {
     Write-Host "Usage: $(Split-Path -Leaf $PSCommandPath) [OPTIONS]"
@@ -76,6 +67,30 @@ function Parse-Args {
                 Show-Usage
             }
         }
+    }
+}
+
+function Set-AppServicesFromCompose {
+    param([string]$Cmd)
+
+    $script:AppServices = @()
+    $services = @(Invoke-Expression "$Cmd config --services" 2>$null | Where-Object { $_ -and $_.Trim() -ne "" })
+    if ($LASTEXITCODE -ne 0) {
+        Log "ERROR: Could not derive service list from docker compose config"
+        exit 1
+    }
+
+    foreach ($service in $services) {
+        if ($script:CoreServices -notcontains $service) {
+            $script:AppServices += $service
+        }
+    }
+
+    if ($script:AppServices.Count -eq 0) {
+        Log "Computed application stop list: (none)"
+    }
+    else {
+        Log "Computed application stop list: $($script:AppServices -join ', ')"
     }
 }
 
@@ -140,6 +155,7 @@ function Main {
     Load-Env
     $stage = Get-Stage
     $cmd = Get-DockerComposeCmd
+    Set-AppServicesFromCompose -Cmd $cmd
     $backupStopTimeout = 180
     if ($env:BACKUP_STOP_TIMEOUT) {
         if (-not [int]::TryParse($env:BACKUP_STOP_TIMEOUT, [ref]$backupStopTimeout) -or $backupStopTimeout -le 0) {
@@ -230,7 +246,12 @@ function Main {
         Log "Stopping application services for cold backup..."
         if ($TestMode) {
             Log "[TEST] Would collect Elasticsearch state to: $(Join-Path $backupDir 'backup-state.json')"
-            Log "[TEST] Would stop application services with timeout ${backupStopTimeout}s: $($AppServices -join ', ')"
+            if ($AppServices.Count -gt 0) {
+                Log "[TEST] Would stop application services with timeout ${backupStopTimeout}s: $($AppServices -join ', ')"
+            }
+            else {
+                Log "[TEST] No application services would be stopped"
+            }
             Log "[TEST] Would backup Zeebe state from volume 'orchestration'"
             Log "[TEST] Would pg_dump Keycloak DB: $env:POSTGRES_DB"
             Log "[TEST] Would pg_dump Web Modeler DB: $env:WEBMODELER_DB_NAME"
@@ -241,8 +262,13 @@ function Main {
             try { Collect-ESState -Phase "backup" -OutputFile $backupStateFile } catch { Log "WARNING: Backup state collection failed: $_" }
 
             Log "Stopping application services for consistent cold backup (timeout: ${backupStopTimeout}s)..."
-            Invoke-Expression "$cmd stop --timeout $backupStopTimeout $($AppServices -join ' ')" | Out-Null
-            $appServicesStopped = $true
+            if ($AppServices.Count -gt 0) {
+                Invoke-Expression "$cmd stop --timeout $backupStopTimeout $($AppServices -join ' ')" | Out-Null
+                $appServicesStopped = $true
+            }
+            else {
+                Log "No application services to stop."
+            }
             Start-Sleep -Seconds 2
 
             Log "Backing up Zeebe state (volume: orchestration)..."
@@ -385,10 +411,15 @@ function Main {
         }
 
         # Create manifest
-            Log "Creating manifest..."
+        Log "Creating manifest..."
         if ($TestMode) {
             Log "[TEST] Would create manifest.json"
-            Log "[TEST] Would start application services: $($AppServices -join ', ')"
+            if ($AppServices.Count -gt 0) {
+                Log "[TEST] Would start application services: $($AppServices -join ', ')"
+            }
+            else {
+                Log "[TEST] No application services would be started"
+            }
         }
         else {
             Create-Manifest -BackupDir $backupDir
@@ -398,8 +429,13 @@ function Main {
             $backupDirInProgress = ""
 
             Log "Starting application services..."
-            Invoke-Expression "$cmd start $($AppServices -join ' ')" | Out-Null
-            $appServicesStopped = $false
+            if ($AppServices.Count -gt 0) {
+                Invoke-Expression "$cmd start $($AppServices -join ' ')" | Out-Null
+                $appServicesStopped = $false
+            }
+            else {
+                Log "No application services to start."
+            }
             Start-Sleep -Seconds 2
         }
 
@@ -440,7 +476,7 @@ function Main {
                 Log "WARNING: Could not mark incomplete backup directory as failed: $backupDirInProgress"
             }
         }
-        if ($appServicesStopped) {
+        if ($appServicesStopped -and $AppServices.Count -gt 0) {
             Log "Attempting to restart application services after failure..."
             try { Invoke-Expression "$cmd start $($AppServices -join ' ')" *>> $Global:LogFile } catch { }
         }
