@@ -74,7 +74,7 @@ function Set-AppServicesFromCompose {
     param([string]$Cmd)
 
     $script:AppServices = @()
-    $services = @(Invoke-Expression "$Cmd config --services" 2>$null | Where-Object { $_ -and $_.Trim() -ne "" })
+    $services = @(Invoke-Expression "$Cmd config --services" 2>> $Global:LogFile | Where-Object { $_ -and $_.Trim() -ne "" })
     if ($LASTEXITCODE -ne 0) {
         Log "ERROR: Could not derive service list from docker compose config"
         exit 1
@@ -155,7 +155,6 @@ function Main {
     Load-Env
     $stage = Get-Stage
     $cmd = Get-DockerComposeCmd
-    Set-AppServicesFromCompose -Cmd $cmd
     $backupStopTimeout = 180
     if ($env:BACKUP_STOP_TIMEOUT) {
         if (-not [int]::TryParse($env:BACKUP_STOP_TIMEOUT, [ref]$backupStopTimeout) -or $backupStopTimeout -le 0) {
@@ -186,6 +185,7 @@ function Main {
     }
 
     New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
+    Set-AppServicesFromCompose -Cmd $cmd
 
     $appServicesStopped = $false
     $backupDirInProgress = $backupDir
@@ -197,7 +197,7 @@ function Main {
 
     # Check stack status
     Log "Checking stack status..."
-    $runningContainers = @(Invoke-Expression "$cmd ps --filter status=running --format '{{.Name}}'" 2>$null) | Where-Object { $_ -ne "" }
+    $runningContainers = @(Invoke-Expression "$cmd ps --filter status=running --format '{{.Name}}'" 2>> $Global:LogFile) | Where-Object { $_ -ne "" }
     if ($runningContainers.Count -eq 0) {
         Log "ERROR: Stack is not running (0 containers running). Start it first with scripts/start.ps1"
         exit 1
@@ -312,7 +312,7 @@ function Main {
                     Log "ERROR: Keycloak DB gzip failed"
                     exit 1
                 }
-                gunzip -t $outputFile 2>> $Global:LogFile
+                gzip -t $outputFile 2>> $Global:LogFile
                 if ($LASTEXITCODE -ne 0) {
                     Log "ERROR: Keycloak DB backup produced invalid gzip"
                     exit 1
@@ -338,7 +338,7 @@ function Main {
                     Log "ERROR: Web Modeler DB gzip failed"
                     exit 1
                 }
-                gunzip -t $outputFile 2>> $Global:LogFile
+                gzip -t $outputFile 2>> $Global:LogFile
                 if ($LASTEXITCODE -ne 0) {
                     Log "ERROR: Web Modeler DB backup produced invalid gzip"
                     exit 1
@@ -352,15 +352,18 @@ function Main {
             Log "Creating Elasticsearch snapshot..."
             # Ensure the Docker volume has open permissions for the elasticsearch user
             try {
-                docker run --rm -v "elastic-backup:/backup" alpine sh -c "chmod -R 777 /backup 2>/dev/null || true" | Out-Null
+                docker run --rm -v "elastic-backup:/backup" alpine sh -c "chmod -R 777 /backup 2>/dev/null || true" 2>> $Global:LogFile | Out-Null
             }
             catch {
                 Log "WARNING: Could not set volume permissions: $_"
             }
 
             $esRepoBody = '{"type":"fs","settings":{"location":"/usr/share/elasticsearch/backup","compress":true}}'
+            $esHost = if ($env:ES_HOST) { $env:ES_HOST } else { "localhost" }
+            $esPort = if ($env:ES_PORT) { $env:ES_PORT } else { "9200" }
+            $esUrl = "http://${esHost}:${esPort}"
             try {
-                Invoke-RestMethod -Uri "http://localhost:9200/_snapshot/backup-repo" -Method Put -ContentType "application/json" -Body $esRepoBody | Out-Null
+                Invoke-RestMethod -Uri "${esUrl}/_snapshot/backup-repo" -Method Put -ContentType "application/json" -Body $esRepoBody | Out-Null
                 Log "Elasticsearch snapshot repo registered."
             }
             catch {
@@ -373,7 +376,7 @@ function Main {
             $snapshotInfoFile = Join-Path $backupDir "snapshot-info.json"
             $esSuccess = $false
             try {
-                $response = Invoke-RestMethod -Uri "http://localhost:9200/_snapshot/backup-repo/${snapshotName}?wait_for_completion=true" -Method Put -ContentType "application/json" -Body $snapshotBody
+                $response = Invoke-RestMethod -Uri "${esUrl}/_snapshot/backup-repo/${snapshotName}?wait_for_completion=true" -Method Put -ContentType "application/json" -Body $snapshotBody
                 $response | ConvertTo-Json -Depth 10 | Set-Content -Path $snapshotInfoFile
 
                 $state = $response.snapshot.state

@@ -7,6 +7,7 @@ $ErrorActionPreference = "Stop"
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectDir = Resolve-Path (Join-Path $ScriptDir "..")
+$RestoreScriptDir = $ScriptDir
 
 # Pre-parse --env-file so backup-common.ps1 can honor it
 $EnvFile = Join-Path $ProjectDir ".env"
@@ -184,7 +185,7 @@ function Invoke-KeycloakRehost {
         exit 1
     }
 
-    $sqlFile = Join-Path $ScriptDir "rehost-keycloak.sql"
+    $sqlFile = Join-Path $RestoreScriptDir "rehost-keycloak.sql"
     if (-not (Test-Path $sqlFile)) {
         Log "ERROR: Keycloak rehost SQL not found: $sqlFile"
         exit 1
@@ -364,7 +365,7 @@ function Wait-ForService {
 function Test-ArchiveSafePaths {
     param([string]$ArchivePath)
 
-    $entries = tar tzf $ArchivePath 2>$null
+    $entries = tar tzf $ArchivePath 2>> $Global:LogFile
     if ($LASTEXITCODE -ne 0) {
         Log "ERROR: Archive is not readable: $ArchivePath"
         exit 1
@@ -641,7 +642,7 @@ function Main {
             }
             foreach ($vol in $volumes) {
                 try {
-                    docker volume rm $vol 2>$null | Out-Null
+                    docker volume rm $vol 2>> $Global:LogFile | Out-Null
                 }
                 catch {
                     Log "WARNING: Could not remove volume $vol (may not exist)"
@@ -717,7 +718,7 @@ function Main {
                 # first queries after restore use good plans instead of waiting for
                 # autovacuum (see docs/backup-restore.md).
                 Log "Refreshing Keycloak DB planner statistics (ANALYZE)..."
-                docker exec postgres psql -U "$env:POSTGRES_USER" -d "$env:POSTGRES_DB" -c "ANALYZE;" 2>$null | Out-Null
+                docker exec postgres psql -U "$env:POSTGRES_USER" -d "$env:POSTGRES_DB" -c "ANALYZE;" 2>> $Global:LogFile | Out-Null
                 if ($LASTEXITCODE -ne 0) { Log "ERROR: ANALYZE on Keycloak DB failed"; exit 1 }
             }
             else {
@@ -750,7 +751,7 @@ function Main {
                 Remove-Item $pgStderrFile -ErrorAction SilentlyContinue
                 Log "Web Modeler database restored."
                 Log "Refreshing Web Modeler DB planner statistics (ANALYZE)..."
-                docker exec web-modeler-db psql -U "$env:WEBMODELER_DB_USER" -d "$env:WEBMODELER_DB_NAME" -c "ANALYZE;" 2>$null | Out-Null
+                docker exec web-modeler-db psql -U "$env:WEBMODELER_DB_USER" -d "$env:WEBMODELER_DB_NAME" -c "ANALYZE;" 2>> $Global:LogFile | Out-Null
                 if ($LASTEXITCODE -ne 0) { Log "ERROR: ANALYZE on Web Modeler DB failed"; exit 1 }
             }
             else {
@@ -804,6 +805,7 @@ mv "$staging"/* /dest/ 2>/dev/null || true
 mv "$staging"/.[!.]* /dest/ 2>/dev/null || true
 mv "$staging"/..?* /dest/ 2>/dev/null || true
 rmdir "$staging"
+chmod -R 777 /dest
 '@
                 docker run --rm `
                     -v "${esBackupDir}:/source:ro" `
@@ -829,14 +831,27 @@ rmdir "$staging"
             $esUrl = "http://${esHost}:${esPort}"
 
             $esRepoBody = '{"type":"fs","settings":{"location":"/usr/share/elasticsearch/backup","compress":true}}'
-            try {
-                Invoke-RestMethod -Uri "${esUrl}/_snapshot/backup-repo" -Method Put -ContentType "application/json" -Body $esRepoBody | Out-Null
-                Log "Elasticsearch snapshot repo registered."
+            $repoRegistered = $false
+            $repoError = $null
+            for ($attempt = 1; $attempt -le 10; $attempt++) {
+                try {
+                    $repoResponse = Invoke-RestMethod -Uri "${esUrl}/_snapshot/backup-repo" -Method Put -ContentType "application/json" -Body $esRepoBody
+                    if ($repoResponse.acknowledged) {
+                        $repoRegistered = $true
+                        break
+                    }
+                    $repoError = "acknowledged=false"
+                }
+                catch {
+                    $repoError = $_
+                }
+                Start-Sleep -Seconds 3
             }
-            catch {
-                Log "ERROR: Could not register snapshot repo: $_"
+            if (-not $repoRegistered) {
+                Log "ERROR: Could not register snapshot repo: $repoError"
                 exit 1
             }
+            Log "Elasticsearch snapshot repo registered."
 
             # Verify the snapshot exists BEFORE deleting any indices, so a wrong
             # or incomplete backup directory cannot wipe the live cluster.

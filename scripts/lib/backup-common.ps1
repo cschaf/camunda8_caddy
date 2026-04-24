@@ -270,7 +270,7 @@ function Cleanup-DanglingComposeVolumes {
 
     $dangling = @()
     try {
-        $dangling = @(docker volume ls -q -f dangling=true 2>$null | Where-Object { $_ -and $_.Trim() -ne "" })
+        $dangling = @(docker volume ls -q -f dangling=true 2>> $Global:LogFile | Where-Object { $_ -and $_.Trim() -ne "" })
     }
     catch {
         Log "WARNING: Could not list dangling Docker volumes: $_"
@@ -290,7 +290,7 @@ function Cleanup-DanglingComposeVolumes {
 
         $inspectRaw = $null
         try {
-            $inspectRaw = docker volume inspect $volumeName 2>$null
+            $inspectRaw = docker volume inspect $volumeName 2>> $Global:LogFile
         }
         catch {
             continue
@@ -329,7 +329,7 @@ function Cleanup-DanglingComposeVolumes {
         }
 
         try {
-            docker volume rm $volumeName 2>$null | Out-Null
+            docker volume rm $volumeName 2>> $Global:LogFile | Out-Null
             $removed++
             Log "Removed dangling volume: $volumeName"
         }

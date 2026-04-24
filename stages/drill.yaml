@@ -1,3 +1,35 @@
+services:
+  orchestration:
+    container_name: ${COMPOSE_PROJECT_NAME:-camunda-restoredrill}-orchestration
+  connectors:
+    container_name: ${COMPOSE_PROJECT_NAME:-camunda-restoredrill}-connectors
+  optimize:
+    container_name: ${COMPOSE_PROJECT_NAME:-camunda-restoredrill}-optimize
+  identity:
+    container_name: ${COMPOSE_PROJECT_NAME:-camunda-restoredrill}-identity
+  postgres:
+    container_name: ${COMPOSE_PROJECT_NAME:-camunda-restoredrill}-postgres
+  keycloak:
+    container_name: ${COMPOSE_PROJECT_NAME:-camunda-restoredrill}-keycloak
+  elasticsearch:
+    container_name: ${COMPOSE_PROJECT_NAME:-camunda-restoredrill}-elasticsearch
+  web-modeler-db:
+    container_name: ${COMPOSE_PROJECT_NAME:-camunda-restoredrill}-web-modeler-db
+  mailpit:
+    container_name: ${COMPOSE_PROJECT_NAME:-camunda-restoredrill}-mailpit
+  web-modeler-restapi:
+    container_name: ${COMPOSE_PROJECT_NAME:-camunda-restoredrill}-web-modeler-restapi
+  web-modeler-webapp:
+    container_name: ${COMPOSE_PROJECT_NAME:-camunda-restoredrill}-web-modeler-webapp
+  web-modeler-websockets:
+    container_name: ${COMPOSE_PROJECT_NAME:-camunda-restoredrill}-web-modeler-websockets
+  console:
+    container_name: ${COMPOSE_PROJECT_NAME:-camunda-restoredrill}-console
+  autoheal:
+    container_name: ${COMPOSE_PROJECT_NAME:-camunda-restoredrill}-autoheal
+  reverse-proxy:
+    container_name: ${COMPOSE_PROJECT_NAME:-camunda-restoredrill}-reverse-proxy
+
 volumes:
   elastic-backup:
     name: elastic-backup-drill

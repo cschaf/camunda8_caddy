@@ -121,7 +121,7 @@ derive_backup_app_services() {
   local service services
   BACKUP_APP_SERVICES=()
 
-  if ! services="$($cmd config --services 2>/dev/null)"; then
+  if ! services="$($cmd config --services 2>>"$LOG_FILE")"; then
     log "ERROR: Could not derive service list from docker compose config"
     exit 1
   fi
@@ -207,7 +207,6 @@ main() {
   local cmd
   cmd="$(docker_compose_cmd)"
   BACKUP_COMPOSE_CMD="$cmd"
-  derive_backup_app_services "$cmd"
   local backup_stop_timeout
   backup_stop_timeout="${BACKUP_STOP_TIMEOUT:-180}"
   if [[ ! "$backup_stop_timeout" =~ ^[0-9]+$ || "$backup_stop_timeout" -le 0 ]]; then
@@ -232,6 +231,7 @@ main() {
   mkdir -p "$backup_dir"
   LOG_FILE="$backup_dir/backup.log"
   BACKUP_DIR_IN_PROGRESS="$backup_dir"
+  derive_backup_app_services "$cmd"
 
   acquire_lock
 
@@ -242,7 +242,7 @@ main() {
   # Step 3: Check stack status
   log "Checking stack status..."
   local running_count
-  running_count="$($cmd ps --filter status=running --format '{{.Name}}' 2>/dev/null | wc -l | tr -d ' ')"
+  running_count="$($cmd ps --filter status=running --format '{{.Name}}' 2>>"$LOG_FILE" | wc -l | tr -d ' ')"
   if [[ "$running_count" -eq 0 ]]; then
     log "ERROR: Stack is not running (0 containers running). Start it first with scripts/start.sh"
     exit 1
@@ -277,7 +277,7 @@ main() {
       log "ERROR: No config files found to back up"
       exit 1
     else
-      if tar czf "$config_archive" -C "$PROJECT_DIR" "${config_files[@]}" 2>/dev/null; then
+      if tar czf "$config_archive" -C "$PROJECT_DIR" "${config_files[@]}" 2>>"$LOG_FILE"; then
         log "Configs backed up: $config_archive (${#config_files[@]} files)"
       else
         log "ERROR: Config archive failed"
@@ -320,7 +320,7 @@ main() {
       if docker run --rm \
         -v "${zeebe_vol}:/data" \
         -v "$backup_dir:/backup" \
-        alpine tar czf /backup/orchestration.tar.gz -C /data . 2>/dev/null; then
+        alpine tar czf /backup/orchestration.tar.gz -C /data . 2>>"$LOG_FILE"; then
         log "Zeebe state backed up."
         break
       fi
@@ -338,7 +338,7 @@ main() {
       log "ERROR: Keycloak DB backup failed"
       exit 1
     fi
-    if ! gunzip -t "$backup_dir/keycloak.sql.gz" 2>>"$LOG_FILE"; then
+    if ! gzip -t "$backup_dir/keycloak.sql.gz" 2>>"$LOG_FILE"; then
       log "ERROR: Keycloak DB backup produced invalid gzip"
       exit 1
     fi
@@ -349,7 +349,7 @@ main() {
       log "ERROR: Web Modeler DB backup failed"
       exit 1
     fi
-    if ! gunzip -t "$backup_dir/webmodeler.sql.gz" 2>>"$LOG_FILE"; then
+    if ! gzip -t "$backup_dir/webmodeler.sql.gz" 2>>"$LOG_FILE"; then
       log "ERROR: Web Modeler DB backup produced invalid gzip"
       exit 1
     fi
@@ -357,12 +357,17 @@ main() {
 
     log "Creating Elasticsearch snapshot..."
     # Ensure the Docker volume has open permissions for the elasticsearch user
-    docker run --rm -v "elastic-backup:/backup" alpine sh -c "chmod -R 777 /backup 2>/dev/null || true" > /dev/null 2>&1 || true
+    docker run --rm -v "elastic-backup:/backup" alpine sh -c "chmod -R 777 /backup 2>/dev/null || true" >>"$LOG_FILE" 2>&1 || true
+
+    local es_host es_port es_url
+    es_host="${ES_HOST:-localhost}"
+    es_port="${ES_PORT:-9200}"
+    es_url="http://${es_host}:${es_port}"
 
     # Register snapshot repository
     local es_repo_body
     es_repo_body='{"type":"fs","settings":{"location":"/usr/share/elasticsearch/backup","compress":true}}'
-    curl -fsS -X PUT "http://localhost:9200/_snapshot/backup-repo" \
+    curl -fsS -X PUT "${es_url}/_snapshot/backup-repo" \
       -H 'Content-Type: application/json' \
       -d "$es_repo_body" > /dev/null || {
         log "ERROR: Could not register snapshot repo"
@@ -374,12 +379,12 @@ main() {
     local snapshot_info_file="$backup_dir/snapshot-info.json"
     local es_success=false
     local snapshot_body='{"indices":"*,-.logs-*,-.ds-.logs-*,-ilm-history-*,-.ds-ilm-history-*","ignore_unavailable":true,"include_global_state":true,"feature_states":["none"]}'
-    curl -s -X PUT "http://localhost:9200/_snapshot/backup-repo/${snapshot_name}?wait_for_completion=true" \
+    curl -sS -X PUT "${es_url}/_snapshot/backup-repo/${snapshot_name}?wait_for_completion=true" \
       -H 'Content-Type: application/json' \
-      -d "$snapshot_body" > "$snapshot_info_file" 2>/dev/null || true
+      -d "$snapshot_body" > "$snapshot_info_file" 2>>"$LOG_FILE" || true
 
     local snapshot_state
-    snapshot_state="$(python3 - "$snapshot_info_file" <<'PYEOF' 2>/dev/null || echo "UNKNOWN"
+    snapshot_state="$(python3 - "$snapshot_info_file" <<'PYEOF' 2>>"$LOG_FILE" || echo "UNKNOWN"
 import json, sys
 
 snapshot_info_file = sys.argv[1]

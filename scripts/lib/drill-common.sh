@@ -25,6 +25,7 @@ generate_drill_env() {
   mkdir -p "$DRILL_DIR"
 
   cp "$source_env" "$DRILL_ENV"
+  printf '\n' >> "$DRILL_ENV"
 
   if grep -q '^HOST=' "$DRILL_ENV"; then
     sed -i "s/^HOST=.*/HOST=$DRILL_HOST/" "$DRILL_ENV"
@@ -54,39 +55,46 @@ generate_drill_env() {
   cat > "$DRILL_PORTS" <<EOF
 services:
   orchestration:
-    ports:
+    ports: !override
       - "$((26500 + DRILL_PORT_OFFSET)):26500"
       - "$((9600 + DRILL_PORT_OFFSET)):9600"
       - "$((8088 + DRILL_PORT_OFFSET)):8080"
   connectors:
-    ports:
+    ports: !override
       - "$((8086 + DRILL_PORT_OFFSET)):8080"
   optimize:
-    ports:
+    ports: !override
       - "$((8083 + DRILL_PORT_OFFSET)):8090"
   identity:
-    ports:
+    ports: !override
       - "$((8084 + DRILL_PORT_OFFSET)):8084"
   elasticsearch:
-    ports:
+    ports: !override
       - "$((9200 + DRILL_PORT_OFFSET)):9200"
       - "$((9300 + DRILL_PORT_OFFSET)):9300"
   web-modeler-db:
-    ports:
+    ports: !override
+      - "$((5432 + DRILL_PORT_OFFSET)):5432"
+  keycloak:
+    ports: !override
+      - "$((18080 + DRILL_PORT_OFFSET)):18080"
+  mailpit:
+    ports: !override
       - "$((1025 + DRILL_PORT_OFFSET)):1025"
       - "$((8075 + DRILL_PORT_OFFSET)):8025"
   web-modeler-webapp:
-    ports:
+    ports: !override
       - "$((8070 + DRILL_PORT_OFFSET)):8070"
+      - "$((8071 + DRILL_PORT_OFFSET)):8071"
   web-modeler-websockets:
-    ports:
+    ports: !override
       - "$((8060 + DRILL_PORT_OFFSET)):8060"
   console:
-    ports:
+    ports: !override
       - "$((8087 + DRILL_PORT_OFFSET)):8080"
       - "$((9100 + DRILL_PORT_OFFSET)):9100"
   reverse-proxy:
-    ports:
+    ports: !override
       - "$((443 + DRILL_PORT_OFFSET)):443"
 EOF
 
@@ -99,17 +107,18 @@ run_drill_stack_up() {
 
   export ENV_FILE="$DRILL_ENV"
   export COMPOSE_FILE="$PROJECT_DIR/docker-compose.yaml:$PROJECT_DIR/stages/drill.yaml:$DRILL_PORTS"
+  export COMPOSE_PROJECT_NAME="$DRILL_PROJECT_NAME"
   export ES_BACKUP_VOLUME="elastic-backup-drill"
 
   log_drill "Running restore.sh against drill stack..."
-  bash "$SCRIPT_DIR/../restore.sh" --force --no-pre-backup --env-file "$DRILL_ENV" "$backup_dir"
+  bash "$SCRIPT_DIR/../restore.sh" --force --no-pre-backup --rehost-keycloak --env-file "$DRILL_ENV" "$backup_dir"
 }
 
 run_smoke_tests() {
   local offset="${DRILL_PORT_OFFSET}"
   local keycloak_port=$((18080 + offset))
-  local orchestration_port=$((8088 + offset))
-  local webmodeler_port=$((8070 + offset))
+  local orchestration_port=$((9600 + offset))
+  local webmodeler_port=$((8071 + offset))
 
   local timeout=120
   local elapsed=0
@@ -120,7 +129,7 @@ run_smoke_tests() {
   local keycloak_url="http://localhost:${keycloak_port}/auth/realms/camunda-platform"
   elapsed=0
   while [[ $elapsed -lt $timeout ]]; do
-    if curl -s -o /dev/null -w '%{http_code}' "$keycloak_url" 2>/dev/null | grep -q '^200$'; then
+    if curl -sS -o /dev/null -w '%{http_code}' "$keycloak_url" 2>>"$DRILL_DIR/restore-drill.log" | grep -q '^200$'; then
       log_drill "  Keycloak realm: OK"
       break
     fi
@@ -136,7 +145,7 @@ run_smoke_tests() {
   elapsed=0
   while [[ $elapsed -lt $timeout ]]; do
     local orch_status
-    orch_status="$(curl -s "$orch_url" 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("status","DOWN"))' 2>/dev/null || echo "DOWN")"
+    orch_status="$(curl -sS "$orch_url" 2>>"$DRILL_DIR/restore-drill.log" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("status","DOWN"))' 2>>"$DRILL_DIR/restore-drill.log" || echo "DOWN")"
     if [[ "$orch_status" == "UP" ]]; then
       log_drill "  Orchestration health: OK"
       break
@@ -152,7 +161,7 @@ run_smoke_tests() {
   local wm_url="http://localhost:${webmodeler_port}/health/readiness"
   elapsed=0
   while [[ $elapsed -lt $timeout ]]; do
-    if curl -s -o /dev/null -w '%{http_code}' "$wm_url" 2>/dev/null | grep -q '^200$'; then
+    if curl -sS -o /dev/null -w '%{http_code}' "$wm_url" 2>>"$DRILL_DIR/restore-drill.log" | grep -q '^200$'; then
       log_drill "  Web Modeler readiness: OK"
       break
     fi
@@ -168,7 +177,7 @@ run_smoke_tests() {
     local proj_url="http://localhost:${webmodeler_port}/internal-api/projects/${DRILL_KNOWN_PROJECT_ID}"
     elapsed=0
     while [[ $elapsed -lt $timeout ]]; do
-      if curl -s -o /dev/null -w '%{http_code}' "$proj_url" 2>/dev/null | grep -q '^200$'; then
+      if curl -sS -o /dev/null -w '%{http_code}' "$proj_url" 2>>"$DRILL_DIR/restore-drill.log" | grep -q '^200$'; then
         log_drill "  Known project API: OK"
         break
       fi
@@ -189,9 +198,9 @@ teardown_drill_stack() {
   log_drill "Tearing down drill stack..."
   local cmd
   cmd="docker compose -p $DRILL_PROJECT_NAME"
-  $cmd down --volumes --remove-orphans 2>/dev/null || true
+  $cmd down --volumes --remove-orphans 2>>"$DRILL_DIR/restore-drill.log" || true
 
-  docker volume prune --filter label=com.docker.compose.project=$DRILL_PROJECT_NAME --force 2>/dev/null || true
+  docker volume prune --filter label=com.docker.compose.project=$DRILL_PROJECT_NAME --force 2>>"$DRILL_DIR/restore-drill.log" || true
 
   if [[ -d "$DRILL_DIR" ]]; then
     rm -rf "$DRILL_DIR"

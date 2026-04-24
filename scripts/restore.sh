@@ -3,6 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+RESTORE_SCRIPT_DIR="$SCRIPT_DIR"
 
 # Pre-parse --env-file so backup-common.sh can honor it
 for ((i=1; i<=$#; i++)); do
@@ -230,7 +231,7 @@ rehost_keycloak_clients() {
     exit 1
   fi
 
-  local sql_file="$SCRIPT_DIR/rehost-keycloak.sql"
+  local sql_file="$RESTORE_SCRIPT_DIR/rehost-keycloak.sql"
   if [[ ! -f "$sql_file" ]]; then
     log "ERROR: Keycloak rehost SQL not found: $sql_file"
     exit 1
@@ -349,7 +350,7 @@ compose_service_health_status() {
   local cmd
   cmd="$(docker_compose_cmd)"
 
-  $cmd ps "$service" --format json 2>/dev/null | python3 -c '
+  $cmd ps "$service" --format json 2>>"$LOG_FILE" | python3 -c '
 import json, sys
 try:
     data = json.load(sys.stdin)
@@ -362,7 +363,7 @@ try:
     print(item.get("Health", item.get("State", "unknown")))
 except:
     print("unknown")
-' 2>/dev/null || echo "unknown"
+' 2>>"$LOG_FILE" || echo "unknown"
 }
 
 service_readiness_check() {
@@ -446,10 +447,10 @@ validate_restore_inputs() {
   fi
 
   if [[ "$RESTORE_KEYCLOAK" == true ]]; then
-    gzip -t "$backup_dir/keycloak.sql.gz" || { log "ERROR: Keycloak dump is not valid gzip"; exit 1; }
+    gzip -t "$backup_dir/keycloak.sql.gz" 2>>"$LOG_FILE" || { log "ERROR: Keycloak dump is not valid gzip"; exit 1; }
   fi
   if [[ "$RESTORE_WEBMODELER" == true ]]; then
-    gzip -t "$backup_dir/webmodeler.sql.gz" || { log "ERROR: Web Modeler dump is not valid gzip"; exit 1; }
+    gzip -t "$backup_dir/webmodeler.sql.gz" 2>>"$LOG_FILE" || { log "ERROR: Web Modeler dump is not valid gzip"; exit 1; }
   fi
   if [[ "$RESTORE_ORCHESTRATION" == true ]]; then
     tar tzf "$backup_dir/orchestration.tar.gz" >/dev/null || { log "ERROR: Orchestration archive is not readable"; exit 1; }
@@ -569,7 +570,7 @@ main() {
   # Load manifest for version/host checks
   local source_host
   local manifest_file="$BACKUP_DIR/manifest.json"
-  source_host="$(python3 - "$manifest_file" <<'PYEOF' 2>/dev/null || echo ""
+  source_host="$(python3 - "$manifest_file" <<'PYEOF' 2>>"$LOG_FILE" || echo ""
 import json, sys
 try:
     with open(sys.argv[1]) as f: d = json.load(f)
@@ -578,7 +579,7 @@ except Exception: pass
 PYEOF
 )"
   local manifest_elastic_version
-  manifest_elastic_version="$(python3 - "$manifest_file" <<'PYEOF' 2>/dev/null || echo ""
+  manifest_elastic_version="$(python3 - "$manifest_file" <<'PYEOF' 2>>"$LOG_FILE" || echo ""
 import json, sys
 try:
     with open(sys.argv[1]) as f: d = json.load(f)
@@ -587,7 +588,7 @@ except Exception: pass
 PYEOF
 )"
   local manifest_camunda_version
-  manifest_camunda_version="$(python3 - "$manifest_file" <<'PYEOF' 2>/dev/null || echo ""
+  manifest_camunda_version="$(python3 - "$manifest_file" <<'PYEOF' 2>>"$LOG_FILE" || echo ""
 import json, sys
 try:
     with open(sys.argv[1]) as f: d = json.load(f)
@@ -641,7 +642,7 @@ PYEOF
     log "Creating pre-restore backup of current state..."
     local pre_restore_log
     pre_restore_log="$BACKUP_BASE_DIR/pre-restore-backup.log"
-    if bash "$SCRIPT_DIR/backup.sh" > "$pre_restore_log" 2>&1; then
+    if bash "$RESTORE_SCRIPT_DIR/backup.sh" > "$pre_restore_log" 2>&1; then
       log "Pre-restore backup completed. Log: $pre_restore_log"
       PRE_RESTORE_BACKUP_PATH="$(grep -E 'Backup completed successfully:' "$pre_restore_log" | tail -n 1 | sed 's/^.*Backup completed successfully: //')"
     else
@@ -699,10 +700,10 @@ PYEOF
     local proj
     proj="$(get_compose_project_name)"
     if [[ "$RESTORE_ALL" == true ]]; then
-      docker volume rm "${proj}_orchestration" "${proj}_elastic" "${proj}_postgres" "${proj}_postgres-web" 2>/dev/null || true
+      docker volume rm "${proj}_orchestration" "${proj}_elastic" "${proj}_postgres" "${proj}_postgres-web" 2>>"$LOG_FILE" || true
       log "Volumes removed."
     elif [[ "$RESTORE_ORCHESTRATION" == true ]]; then
-      docker volume rm "${proj}_orchestration" 2>/dev/null || true
+      docker volume rm "${proj}_orchestration" 2>>"$LOG_FILE" || true
       log "Orchestration volume removed."
     else
       log "No Docker data volumes removed for granular restore."
@@ -783,7 +784,7 @@ PYEOF
       # autovacuum (see docs/backup-restore.md).
       log "Refreshing Keycloak DB planner statistics (ANALYZE)..."
       docker exec postgres psql -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" \
-        -c "ANALYZE;" >/dev/null 2>&1 || { log "ERROR: ANALYZE on Keycloak DB failed"; exit 1; }
+        -c "ANALYZE;" >/dev/null 2>>"$LOG_FILE" || { log "ERROR: ANALYZE on Keycloak DB failed"; exit 1; }
     else
       log "ERROR: Keycloak backup not found."
       exit 1
@@ -815,7 +816,7 @@ PYEOF
       log "Web Modeler database restored."
       log "Refreshing Web Modeler DB planner statistics (ANALYZE)..."
       docker exec web-modeler-db psql -U "${WEBMODELER_DB_USER}" -d "${WEBMODELER_DB_NAME}" \
-        -c "ANALYZE;" >/dev/null 2>&1 || { log "ERROR: ANALYZE on Web Modeler DB failed"; exit 1; }
+        -c "ANALYZE;" >/dev/null 2>>"$LOG_FILE" || { log "ERROR: ANALYZE on Web Modeler DB failed"; exit 1; }
     else
       log "ERROR: Web Modeler backup not found."
       exit 1
@@ -840,7 +841,7 @@ PYEOF
   else
     local snapshot_name
     local snapshot_info_file="$BACKUP_DIR/snapshot-info.json"
-    snapshot_name="$(python3 - "$snapshot_info_file" <<'PYEOF' 2>/dev/null || echo ""
+    snapshot_name="$(python3 - "$snapshot_info_file" <<'PYEOF' 2>>"$LOG_FILE" || echo ""
 import json, sys
 try:
     with open(sys.argv[1]) as f:
@@ -878,6 +879,7 @@ PYEOF
           mv "$staging"/.[!.]* /dest/ 2>/dev/null || true
           mv "$staging"/..?* /dest/ 2>/dev/null || true
           rmdir "$staging"
+          chmod -R 777 /dest
         ' >>"$LOG_FILE" 2>&1 || {
           log "ERROR: Could not copy snapshot data to volume"
           exit 1
@@ -897,19 +899,27 @@ PYEOF
     es_url="http://${es_host}:${es_port}"
     local es_repo_body
     es_repo_body='{"type":"fs","settings":{"location":"/usr/share/elasticsearch/backup","compress":true}}'
-    local repo_response
-    repo_response="$(curl -s -X PUT "${es_url}/_snapshot/backup-repo" \
-      -H 'Content-Type: application/json' \
-      -d "$es_repo_body" 2>/dev/null || true)"
+    local repo_response repo_attempt
+    repo_response=""
+    for repo_attempt in {1..10}; do
+      repo_response="$(curl -sS -X PUT "${es_url}/_snapshot/backup-repo" \
+        -H 'Content-Type: application/json' \
+        -d "$es_repo_body" 2>>"$LOG_FILE" || true)"
+      if python3 -c "import json,sys; d=json.loads(sys.argv[1]); sys.exit(0 if d.get('acknowledged') else 1)" "$repo_response" > /dev/null 2>&1; then
+        break
+      fi
+      sleep 3
+    done
     if ! python3 -c "import json,sys; d=json.loads(sys.argv[1]); sys.exit(0 if d.get('acknowledged') else 1)" "$repo_response" > /dev/null 2>&1; then
       log "ERROR: Could not register snapshot repo: $repo_response"
       exit 1
     fi
+    log "Elasticsearch snapshot repo registered."
 
     # Verify the snapshot exists BEFORE deleting any indices, so a wrong or
     # incomplete backup directory cannot wipe the live cluster.
     local snapshot_check_code
-    snapshot_check_code="$(curl -s -o /dev/null -w '%{http_code}' "${es_url}/_snapshot/backup-repo/${snapshot_name}" 2>/dev/null || echo "000")"
+    snapshot_check_code="$(curl -sS -o /dev/null -w '%{http_code}' "${es_url}/_snapshot/backup-repo/${snapshot_name}" 2>>"$LOG_FILE" || echo "000")"
     if [[ "$snapshot_check_code" != "200" ]]; then
       log "ERROR: Snapshot '$snapshot_name' not found in repository (HTTP $snapshot_check_code). Aborting before deleting any indices."
       exit 1
@@ -1010,9 +1020,9 @@ PYEOF
     log "Restoring snapshot: $snapshot_name"
     local restore_response
     local restore_body='{"indices":"*,-.logs-*,-.ds-.logs-*,-ilm-history-*,-.ds-ilm-history-*","ignore_unavailable":true,"include_global_state":true}'
-    restore_response="$(curl -s -X POST "${es_url}/_snapshot/backup-repo/${snapshot_name}/_restore?wait_for_completion=true" \
+    restore_response="$(curl -sS -X POST "${es_url}/_snapshot/backup-repo/${snapshot_name}/_restore?wait_for_completion=true" \
       -H 'Content-Type: application/json' \
-      -d "$restore_body" 2>/dev/null || true)"
+      -d "$restore_body" 2>>"$LOG_FILE" || true)"
 
     local restore_status
     restore_status="$(python3 -c "
@@ -1028,7 +1038,7 @@ try:
         print('UNKNOWN')
 except Exception as e:
     print('UNKNOWN')
-" "$restore_response" 2>/dev/null || echo "UNKNOWN")"
+" "$restore_response" 2>>"$LOG_FILE" || echo "UNKNOWN")"
 
     if [[ "$restore_status" == "SUCCESS" ]]; then
       log "Elasticsearch snapshot restored successfully."

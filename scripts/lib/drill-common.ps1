@@ -47,39 +47,46 @@ function Generate-DrillEnv {
     $portsYaml = @"
 services:
   orchestration:
-    ports:
+    ports: !override
       - "$((26500 + $offset)):26500"
       - "$((9600 + $offset)):9600"
       - "$((8088 + $offset)):8080"
   connectors:
-    ports:
+    ports: !override
       - "$((8086 + $offset)):8080"
   optimize:
-    ports:
+    ports: !override
       - "$((8083 + $offset)):8090"
   identity:
-    ports:
+    ports: !override
       - "$((8084 + $offset)):8084"
   elasticsearch:
-    ports:
+    ports: !override
       - "$((9200 + $offset)):9200"
       - "$((9300 + $offset)):9300"
   web-modeler-db:
-    ports:
+    ports: !override
+      - "$((5432 + $offset)):5432"
+  keycloak:
+    ports: !override
+      - "$((18080 + $offset)):18080"
+  mailpit:
+    ports: !override
       - "$((1025 + $offset)):1025"
       - "$((8075 + $offset)):8025"
   web-modeler-webapp:
-    ports:
+    ports: !override
       - "$((8070 + $offset)):8070"
+      - "$((8071 + $offset)):8071"
   web-modeler-websockets:
-    ports:
+    ports: !override
       - "$((8060 + $offset)):8060"
   console:
-    ports:
+    ports: !override
       - "$((8087 + $offset)):8080"
       - "$((9100 + $offset)):9100"
   reverse-proxy:
-    ports:
+    ports: !override
       - "$((443 + $offset)):443"
 "@
     Set-Content -Path $DrillPorts -Value $portsYaml
@@ -93,17 +100,18 @@ function Run-DrillStackUp {
 
     $env:ENV_FILE = $DrillEnv
     $env:COMPOSE_FILE = "$ProjectDir\docker-compose.yaml;$ProjectDir\stages\drill.yaml;$DrillPorts"
+    $env:COMPOSE_PROJECT_NAME = $DrillProjectName
     $env:ES_BACKUP_VOLUME = "elastic-backup-drill"
 
     Log-Drill "Running restore.ps1 against drill stack..."
-    & "$ScriptDir\..\restore.ps1" --force --no-pre-backup --env-file "$DrillEnv" "$BackupDir"
+    & "$ScriptDir\..\restore.ps1" --force --no-pre-backup --rehost-keycloak --env-file "$DrillEnv" "$BackupDir"
 }
 
 function Run-SmokeTests {
     $offset = $DrillPortOffset
     $keycloakPort = 18080 + $offset
-    $orchestrationPort = 8088 + $offset
-    $webmodelerPort = 8070 + $offset
+    $orchestrationPort = 9600 + $offset
+    $webmodelerPort = 8071 + $offset
 
     $timeout = 120
     $interval = 5
@@ -200,10 +208,11 @@ function Run-SmokeTests {
 function Teardown-DrillStack {
     Log-Drill "Tearing down drill stack..."
     $cmd = "docker compose -p $DrillProjectName"
+    $drillLog = Join-Path $DrillDir "restore-drill.log"
     try { Invoke-Expression "$cmd down --volumes --remove-orphans" | Out-Null } catch { }
 
     try {
-        docker volume prune --filter label=com.docker.compose.project=$DrillProjectName --force 2>$null | Out-Null
+        docker volume prune --filter label=com.docker.compose.project=$DrillProjectName --force 2>> $drillLog | Out-Null
     } catch { }
 
     if (Test-Path $DrillDir) {

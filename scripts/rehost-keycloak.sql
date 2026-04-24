@@ -16,6 +16,8 @@ INSERT INTO restore_client_urls (client_id, root_url, base_url, admin_url) VALUE
   ('web-modeler', 'https://webmodeler.' || :'host', '/', 'https://webmodeler.' || :'host'),
   ('camunda-identity', 'https://identity.' || :'host', '/', 'https://identity.' || :'host');
 
+-- connectors uses client_credentials only; no URL rehost needed.
+
 CREATE TEMP TABLE restore_redirect_uris (
   client_id text,
   value text
@@ -57,6 +59,8 @@ INSERT INTO restore_client_secrets (client_id, secret) VALUES
   ('orchestration', :'orchestration_secret'),
   ('optimize', :'optimize_secret'),
   ('camunda-identity', :'identity_secret');
+
+-- web-modeler is a public browser client in this stack and has no client secret.
 
 DO $$
 DECLARE

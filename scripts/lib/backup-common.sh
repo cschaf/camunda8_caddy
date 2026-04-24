@@ -65,7 +65,7 @@ check_services_health() {
 
   log "Checking services health..."
   local unhealthy
-  unhealthy="$($cmd ps --format json 2>/dev/null | python3 -c '
+  unhealthy="$($cmd ps --format json 2>>"$LOG_FILE" | python3 -c '
 import json, sys
 try:
     data = json.load(sys.stdin)
@@ -76,7 +76,7 @@ try:
         if health == "unhealthy" or (state not in ("running", "")):
             print(item.get("Service", ""))
 except: pass
-' 2>/dev/null || true)"
+' 2>>"$LOG_FILE" || true)"
 
   if [[ -n "$unhealthy" ]]; then
     log "WARNING: The following services are unhealthy or not running:"
@@ -226,7 +226,7 @@ cleanup_old_backups() {
     log "Removing old backup: $dir"
     rm -rf "$dir"
     count=$((count + 1))
-  done < <(find "$target_dir" -maxdepth 1 -type d -name "[0-9]*" -mtime +$retention_days 2>/dev/null || true)
+  done < <(find "$target_dir" -maxdepth 1 -type d -name "[0-9]*" -mtime +$retention_days 2>>"$LOG_FILE" || true)
 
   log "Removed $count old backup(s)."
 }
@@ -308,7 +308,7 @@ cleanup_dangling_compose_volumes() {
   log "Cleaning up dangling Docker volumes from previous restore runs..."
 
   local dangling_volumes
-  dangling_volumes="$(docker volume ls -q -f dangling=true 2>/dev/null || true)"
+  dangling_volumes="$(docker volume ls -q -f dangling=true 2>>"$LOG_FILE" || true)"
   if [[ -z "$dangling_volumes" ]]; then
     log "No dangling Docker volumes found."
     return 0
@@ -320,7 +320,7 @@ cleanup_dangling_compose_volumes() {
     [[ "$volume_name" == "elastic-backup" ]] && continue
 
     local inspect_json
-    inspect_json="$(docker volume inspect "$volume_name" 2>/dev/null || true)"
+    inspect_json="$(docker volume inspect "$volume_name" 2>>"$LOG_FILE" || true)"
     [[ -z "$inspect_json" ]] && continue
 
     local decision
@@ -362,13 +362,13 @@ except ValueError:
         raise SystemExit
 
 print("remove" if created_dt <= restore_dt else "skip")
-' "$project_name" "$restore_started_at" "$inspect_json" 2>/dev/null || true)"
+' "$project_name" "$restore_started_at" "$inspect_json" 2>>"$LOG_FILE" || true)"
 
     if [[ "$decision" != "remove" ]]; then
       continue
     fi
 
-    if docker volume rm "$volume_name" > /dev/null 2>&1; then
+    if docker volume rm "$volume_name" > /dev/null 2>>"$LOG_FILE"; then
       removed=$((removed + 1))
       log "Removed dangling volume: $volume_name"
     else
@@ -391,10 +391,10 @@ collect_es_state() {
   es_url="http://${es_host}:${es_port}"
 
   local health_json indices_json data_streams_json
-  health_json="$(curl -s --max-time 10 "${es_url}/_cluster/health" 2>/dev/null || true)"
+  health_json="$(curl -sS --max-time 10 "${es_url}/_cluster/health" 2>>"$LOG_FILE" || true)"
 
   if [[ -z "$health_json" ]] || ! python3 -c "import json,sys; json.loads(sys.argv[1])" "$health_json" > /dev/null 2>&1; then
-    python3 - "$output_file" "$phase" <<'PYEOF' 2>/dev/null || true
+    python3 - "$output_file" "$phase" <<'PYEOF' 2>>"$LOG_FILE" || true
 import json, sys
 with open(sys.argv[1], 'w') as f:
     json.dump({'phase': sys.argv[2], 'reachable': False}, f, indent=2)
@@ -403,10 +403,10 @@ PYEOF
     return 0
   fi
 
-  indices_json="$(curl -s --max-time 15 "${es_url}/_cat/indices?h=index,docs.count,store.size&format=json&expand_wildcards=all" 2>/dev/null || echo '[]')"
-  data_streams_json="$(curl -s --max-time 10 "${es_url}/_data_stream?expand_wildcards=all" 2>/dev/null || echo '{}')"
+  indices_json="$(curl -sS --max-time 15 "${es_url}/_cat/indices?h=index,docs.count,store.size&format=json&expand_wildcards=all" 2>>"$LOG_FILE" || echo '[]')"
+  data_streams_json="$(curl -sS --max-time 10 "${es_url}/_data_stream?expand_wildcards=all" 2>>"$LOG_FILE" || echo '{}')"
 
-  python3 - "$output_file" "$phase" "$health_json" "$indices_json" "$data_streams_json" <<'PYEOF' 2>/dev/null || true
+  python3 - "$output_file" "$phase" "$health_json" "$indices_json" "$data_streams_json" <<'PYEOF' 2>>"$LOG_FILE" || true
 import json, re, sys
 
 output_file, phase, health_s, indices_s, data_streams_s = sys.argv[1:6]
@@ -484,7 +484,7 @@ PYEOF
   if [[ -f "$output_file" ]]; then
     while IFS= read -r line; do
       log "$line"
-    done < <(python3 - "$output_file" <<'PYEOF' 2>/dev/null || true
+    done < <(python3 - "$output_file" <<'PYEOF' 2>>"$LOG_FILE" || true
 import json, sys
 try:
     with open(sys.argv[1]) as f:
@@ -517,7 +517,7 @@ compare_es_state() {
   log "=== Elasticsearch state comparison (before -> after) ==="
   while IFS= read -r line; do
     log "$line"
-  done < <(python3 - "$before_file" "$after_file" <<'PYEOF' 2>/dev/null || true
+  done < <(python3 - "$before_file" "$after_file" <<'PYEOF' 2>>"$LOG_FILE" || true
 import json, sys
 
 try:
