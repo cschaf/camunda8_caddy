@@ -127,7 +127,7 @@ function Main {
             Log "WARNING: No config files found to back up"
         }
         else {
-            $relPaths = $existingItems | ForEach-Object { $_ -replace [regex]::Escape("$ProjectDir\"), "" }
+            $relPaths = $existingItems | ForEach-Object { (($_ -replace [regex]::Escape("$ProjectDir\"), "") -replace '\\', '/') }
             $tarResult = tar czf $configArchive -C $ProjectDir $relPaths 2>&1
             if ($LASTEXITCODE -ne 0) {
                 Log "WARNING: Config archive may be incomplete: $tarResult"

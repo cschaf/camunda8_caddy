@@ -11,10 +11,14 @@ $ProjectDir = Resolve-Path (Join-Path $ScriptDir "..")
 . (Join-Path $ScriptDir "lib\drill-common.ps1")
 
 function Show-Usage {
-    Write-Host "Usage: $(Split-Path -Leaf $PSCommandPath) [backup-directory]"
+    Write-Host "Usage: $(Split-Path -Leaf $PSCommandPath) [OPTIONS] [backup-directory]"
     Write-Host ""
     Write-Host "Arguments:"
     Write-Host "  backup-directory   Path to backup directory (default: most recent under backups\)"
+    Write-Host ""
+    Write-Host "Options:"
+    Write-Host "  --keep            Keep the drill stack running after completion or failure"
+    Write-Host "  -h, --help        Show this help message"
     Write-Host ""
     Write-Host "Environment:"
     Write-Host "  DRILL_PORT_OFFSET       Port offset for drill stack (default: 10000)"
@@ -24,13 +28,25 @@ function Show-Usage {
     exit 0
 }
 
-if ($CliArgs.Count -gt 0 -and ($CliArgs[0] -in "-h","--help")) {
-    Show-Usage
-}
-
+$Keep = $false
 $BackupDir = $null
-if ($CliArgs.Count -gt 0) {
-    $BackupDir = $CliArgs[0]
+
+$i = 0
+while ($i -lt $CliArgs.Count) {
+    $arg = $CliArgs[$i]
+    switch ($arg) {
+        "--keep" { $Keep = $true; $i++; break }
+        { $_ -in "-h","--help" } { Show-Usage }
+        default {
+            if (-not $BackupDir) {
+                $BackupDir = $arg
+            } else {
+                Write-Host "Unexpected argument: $arg"
+                Show-Usage
+            }
+            $i++
+        }
+    }
 }
 
 if (-not $BackupDir) {
@@ -60,5 +76,10 @@ try {
     Log-Drill "Restore drill completed successfully."
 }
 finally {
-    Teardown-DrillStack
+    if ($Keep) {
+        Log-Drill "Keeping drill stack running for manual inspection (port offset: ${DrillPortOffset})"
+        Log-Drill "Teardown later with: docker compose -p ${DrillProjectName} down --volumes --remove-orphans"
+    } else {
+        Teardown-DrillStack
+    }
 }

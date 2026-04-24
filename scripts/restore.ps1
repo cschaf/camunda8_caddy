@@ -160,13 +160,23 @@ function Main {
         if ($CrossCluster) {
             Log "Cross-cluster restore mode enabled."
 
-            if ($manifestElasticVersion -and $manifestElasticVersion -ne $env:ELASTIC_VERSION) {
-                Log "ERROR: Elasticsearch version mismatch. Backup: $manifestElasticVersion, Current: $($env:ELASTIC_VERSION)"
+            if ($manifestElasticVersion) {
+                if ($manifestElasticVersion -ne $env:ELASTIC_VERSION) {
+                    Log "ERROR: Elasticsearch version mismatch. Backup: $manifestElasticVersion, Current: $($env:ELASTIC_VERSION)"
+                    exit 1
+                }
+            } else {
+                Log "ERROR: Elasticsearch version not found in manifest. Cannot verify cross-cluster compatibility."
                 exit 1
             }
 
-            if ($manifestCamundaVersion -and $manifestCamundaVersion -ne $env:CAMUNDA_VERSION) {
-                Log "ERROR: Camunda version mismatch. Backup: $manifestCamundaVersion, Current: $($env:CAMUNDA_VERSION)"
+            if ($manifestCamundaVersion) {
+                if ($manifestCamundaVersion -ne $env:CAMUNDA_VERSION) {
+                    Log "ERROR: Camunda version mismatch. Backup: $manifestCamundaVersion, Current: $($env:CAMUNDA_VERSION)"
+                    exit 1
+                }
+            } else {
+                Log "ERROR: Camunda version not found in manifest. Cannot verify cross-cluster compatibility."
                 exit 1
             }
 
@@ -286,8 +296,14 @@ function Main {
         }
         else {
             if (Test-Path $keycloakBackup) {
+                $pgStderrFile = [System.IO.Path]::GetTempFileName()
                 $pgRestoreCmd = "gzip -d -c `"$keycloakBackup`" | docker exec -i postgres pg_restore -U `"$env:POSTGRES_USER`" -d `"$env:POSTGRES_DB`" --clean --if-exists"
-                Invoke-Expression "$pgRestoreCmd 2>`$null" | Out-Null
+                Invoke-Expression "$pgRestoreCmd 2>$pgStderrFile" | Out-Null
+                if ($LASTEXITCODE -ne 0) {
+                    Log "WARNING: pg_restore exited with non-zero status (code: $LASTEXITCODE). stderr:"
+                    Get-Content $pgStderrFile -ErrorAction SilentlyContinue | ForEach-Object { Log "  $_" }
+                }
+                Remove-Item $pgStderrFile -ErrorAction SilentlyContinue
                 Log "Keycloak database restored."
                 # pg_restore does not restore planner statistics; run ANALYZE so the
                 # first queries after restore use good plans instead of waiting for
@@ -309,8 +325,14 @@ function Main {
         }
         else {
             if (Test-Path $webmodelerBackup) {
+                $pgStderrFile = [System.IO.Path]::GetTempFileName()
                 $pgRestoreCmd = "gzip -d -c `"$webmodelerBackup`" | docker exec -i web-modeler-db pg_restore -U `"$env:WEBMODELER_DB_USER`" -d `"$env:WEBMODELER_DB_NAME`" --clean --if-exists"
-                Invoke-Expression "$pgRestoreCmd 2>`$null" | Out-Null
+                Invoke-Expression "$pgRestoreCmd 2>$pgStderrFile" | Out-Null
+                if ($LASTEXITCODE -ne 0) {
+                    Log "WARNING: pg_restore exited with non-zero status (code: $LASTEXITCODE). stderr:"
+                    Get-Content $pgStderrFile -ErrorAction SilentlyContinue | ForEach-Object { Log "  $_" }
+                }
+                Remove-Item $pgStderrFile -ErrorAction SilentlyContinue
                 Log "Web Modeler database restored."
                 Log "Refreshing Web Modeler DB planner statistics (ANALYZE)..."
                 docker exec web-modeler-db psql -U "$env:WEBMODELER_DB_USER" -d "$env:WEBMODELER_DB_NAME" -c "ANALYZE;" 2>$null | Out-Null

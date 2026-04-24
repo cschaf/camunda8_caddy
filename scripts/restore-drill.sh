@@ -8,10 +8,14 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 source "$SCRIPT_DIR/lib/drill-common.sh"
 
 usage() {
-  echo "Usage: $(basename "$0") [backup-directory]"
+  echo "Usage: $(basename "$0") [OPTIONS] [backup-directory]"
   echo ""
   echo "Arguments:"
   echo "  backup-directory   Path to backup directory (default: most recent under backups/)"
+  echo ""
+  echo "Options:"
+  echo "  --keep            Keep the drill stack running after completion or failure"
+  echo "  -h, --help        Show this help message"
   echo ""
   echo "Environment:"
   echo "  DRILL_PORT_OFFSET       Port offset for drill stack (default: 10000)"
@@ -21,14 +25,29 @@ usage() {
   exit 0
 }
 
+KEEP=false
 BACKUP_DIR=""
 
-if [[ $# -gt 0 ]]; then
-  if [[ "$1" == "-h" || "$1" == "--help" ]]; then
-    usage
-  fi
-  BACKUP_DIR="$1"
-fi
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --keep)
+      KEEP=true
+      shift
+      ;;
+    -h|--help)
+      usage
+      ;;
+    *)
+      if [[ -z "$BACKUP_DIR" ]]; then
+        BACKUP_DIR="$1"
+      else
+        echo "Unexpected argument: $1"
+        usage
+      fi
+      shift
+      ;;
+  esac
+done
 
 if [[ -z "$BACKUP_DIR" ]]; then
   if [[ -d "$PROJECT_DIR/backups" ]]; then
@@ -49,7 +68,12 @@ log_drill "Backup directory: $BACKUP_DIR"
 
 cleanup() {
   local exit_code=$?
-  teardown_drill_stack
+  if [[ "$KEEP" == true ]]; then
+    log_drill "Keeping drill stack running for manual inspection (port offset: ${DRILL_PORT_OFFSET})"
+    log_drill "Teardown later with: docker compose -p ${DRILL_PROJECT_NAME} down --volumes --remove-orphans"
+  else
+    teardown_drill_stack
+  fi
   exit $exit_code
 }
 trap cleanup EXIT

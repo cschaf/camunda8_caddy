@@ -219,13 +219,23 @@ PYEOF
   if [[ "$CROSS_CLUSTER" == true ]]; then
     log "Cross-cluster restore mode enabled."
 
-    if [[ -n "$manifest_elastic_version" && "$manifest_elastic_version" != "${ELASTIC_VERSION:-}" ]]; then
-      log "ERROR: Elasticsearch version mismatch. Backup: $manifest_elastic_version, Current: ${ELASTIC_VERSION:-}"
+    if [[ -n "$manifest_elastic_version" ]]; then
+      if [[ "$manifest_elastic_version" != "${ELASTIC_VERSION:-}" ]]; then
+        log "ERROR: Elasticsearch version mismatch. Backup: $manifest_elastic_version, Current: ${ELASTIC_VERSION:-}"
+        exit 1
+      fi
+    else
+      log "ERROR: Elasticsearch version not found in manifest. Cannot verify cross-cluster compatibility."
       exit 1
     fi
 
-    if [[ -n "$manifest_camunda_version" && "$manifest_camunda_version" != "${CAMUNDA_VERSION:-}" ]]; then
-      log "ERROR: Camunda version mismatch. Backup: $manifest_camunda_version, Current: ${CAMUNDA_VERSION:-}"
+    if [[ -n "$manifest_camunda_version" ]]; then
+      if [[ "$manifest_camunda_version" != "${CAMUNDA_VERSION:-}" ]]; then
+        log "ERROR: Camunda version mismatch. Backup: $manifest_camunda_version, Current: ${CAMUNDA_VERSION:-}"
+        exit 1
+      fi
+    else
+      log "ERROR: Camunda version not found in manifest. Cannot verify cross-cluster compatibility."
       exit 1
     fi
 
@@ -326,10 +336,16 @@ PYEOF
     log "[DRY-RUN] Would run ANALYZE on Keycloak DB"
   else
     if [[ -f "$BACKUP_DIR/keycloak.sql.gz" ]]; then
-      gunzip -c "$BACKUP_DIR/keycloak.sql.gz" | docker exec -i postgres pg_restore \
-        -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" --clean --if-exists 2>/dev/null || {
-        log "WARNING: pg_restore exited with non-zero status (may be normal for existing objects)"
-      }
+      local pg_stderr
+      pg_stderr="$(mktemp)"
+      if ! gunzip -c "$BACKUP_DIR/keycloak.sql.gz" | docker exec -i postgres pg_restore \
+        -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" --clean --if-exists 2>"$pg_stderr"; then
+        log "WARNING: pg_restore exited with non-zero status. stderr:"
+        while IFS= read -r line; do
+          log "  $line"
+        done < "$pg_stderr"
+      fi
+      rm -f "$pg_stderr"
       log "Keycloak database restored."
       # pg_restore does not restore planner statistics; run ANALYZE so the
       # first queries after restore use good plans instead of waiting for
@@ -348,10 +364,16 @@ PYEOF
     log "[DRY-RUN] Would run ANALYZE on Web Modeler DB"
   else
     if [[ -f "$BACKUP_DIR/webmodeler.sql.gz" ]]; then
-      gunzip -c "$BACKUP_DIR/webmodeler.sql.gz" | docker exec -i web-modeler-db pg_restore \
-        -U "${WEBMODELER_DB_USER}" -d "${WEBMODELER_DB_NAME}" --clean --if-exists 2>/dev/null || {
-        log "WARNING: pg_restore exited with non-zero status (may be normal for existing objects)"
-      }
+      local pg_stderr
+      pg_stderr="$(mktemp)"
+      if ! gunzip -c "$BACKUP_DIR/webmodeler.sql.gz" | docker exec -i web-modeler-db pg_restore \
+        -U "${WEBMODELER_DB_USER}" -d "${WEBMODELER_DB_NAME}" --clean --if-exists 2>"$pg_stderr"; then
+        log "WARNING: pg_restore exited with non-zero status. stderr:"
+        while IFS= read -r line; do
+          log "  $line"
+        done < "$pg_stderr"
+      fi
+      rm -f "$pg_stderr"
       log "Web Modeler database restored."
       log "Refreshing Web Modeler DB planner statistics (ANALYZE)..."
       docker exec web-modeler-db psql -U "${WEBMODELER_DB_USER}" -d "${WEBMODELER_DB_NAME}" \
