@@ -216,20 +216,26 @@ main() {
     done
 
     log "Backing up Keycloak database..."
-    if docker exec postgres pg_dump -Fc -U "${POSTGRES_USER}" "${POSTGRES_DB}" | gzip > "$backup_dir/keycloak.sql.gz" 2>/dev/null; then
-      log "Keycloak DB backed up: $backup_dir/keycloak.sql.gz"
-    else
+    if ! docker exec postgres pg_dump -Fc -U "${POSTGRES_USER}" "${POSTGRES_DB}" 2>>"$LOG_FILE" | gzip > "$backup_dir/keycloak.sql.gz"; then
       log "ERROR: Keycloak DB backup failed"
       exit 1
     fi
+    if ! gunzip -t "$backup_dir/keycloak.sql.gz" 2>>"$LOG_FILE"; then
+      log "ERROR: Keycloak DB backup produced invalid gzip"
+      exit 1
+    fi
+    log "Keycloak DB backed up: $backup_dir/keycloak.sql.gz"
 
     log "Backing up Web Modeler database..."
-    if docker exec web-modeler-db pg_dump -Fc -U "${WEBMODELER_DB_USER}" "${WEBMODELER_DB_NAME}" | gzip > "$backup_dir/webmodeler.sql.gz" 2>/dev/null; then
-      log "Web Modeler DB backed up: $backup_dir/webmodeler.sql.gz"
-    else
+    if ! docker exec web-modeler-db pg_dump -Fc -U "${WEBMODELER_DB_USER}" "${WEBMODELER_DB_NAME}" 2>>"$LOG_FILE" | gzip > "$backup_dir/webmodeler.sql.gz"; then
       log "ERROR: Web Modeler DB backup failed"
       exit 1
     fi
+    if ! gunzip -t "$backup_dir/webmodeler.sql.gz" 2>>"$LOG_FILE"; then
+      log "ERROR: Web Modeler DB backup produced invalid gzip"
+      exit 1
+    fi
+    log "Web Modeler DB backed up: $backup_dir/webmodeler.sql.gz"
 
     log "Creating Elasticsearch snapshot..."
     # Ensure the Docker volume has open permissions for the elasticsearch user

@@ -198,22 +198,54 @@ function Main {
             }
 
             Log "Backing up Keycloak database..."
-            $pgDumpCmd = "docker exec postgres pg_dump -Fc -U `"$env:POSTGRES_USER`" `"$env:POSTGRES_DB`""
             $outputFile = Join-Path $backupDir "keycloak.sql.gz"
-            Invoke-Expression "$pgDumpCmd | gzip > `"$outputFile`""
-            if ($LASTEXITCODE -ne 0 -or -not (Test-Path $outputFile) -or (Get-Item $outputFile).Length -eq 0) {
-                Log "ERROR: Keycloak DB backup failed"
-                exit 1
+            $tmpDumpFile = Join-Path $backupDir "keycloak.sql"
+            try {
+                & docker exec postgres pg_dump -Fc -U "$env:POSTGRES_USER" "$env:POSTGRES_DB" 2>> $Global:LogFile > $tmpDumpFile
+                $pgDumpExit = $LASTEXITCODE
+                if ($pgDumpExit -ne 0 -or -not (Test-Path $tmpDumpFile) -or (Get-Item $tmpDumpFile).Length -eq 0) {
+                    Log "ERROR: Keycloak DB backup failed"
+                    exit 1
+                }
+                gzip -c $tmpDumpFile > $outputFile
+                if ($LASTEXITCODE -ne 0 -or -not (Test-Path $outputFile) -or (Get-Item $outputFile).Length -eq 0) {
+                    Log "ERROR: Keycloak DB gzip failed"
+                    exit 1
+                }
+                gunzip -t $outputFile 2>> $Global:LogFile
+                if ($LASTEXITCODE -ne 0) {
+                    Log "ERROR: Keycloak DB backup produced invalid gzip"
+                    exit 1
+                }
+            }
+            finally {
+                Remove-Item -Path $tmpDumpFile -Force -ErrorAction SilentlyContinue
             }
             Log "Keycloak DB backed up: $outputFile"
 
             Log "Backing up Web Modeler database..."
-            $pgDumpCmd = "docker exec web-modeler-db pg_dump -Fc -U `"$env:WEBMODELER_DB_USER`" `"$env:WEBMODELER_DB_NAME`""
             $outputFile = Join-Path $backupDir "webmodeler.sql.gz"
-            Invoke-Expression "$pgDumpCmd | gzip > `"$outputFile`""
-            if ($LASTEXITCODE -ne 0 -or -not (Test-Path $outputFile) -or (Get-Item $outputFile).Length -eq 0) {
-                Log "ERROR: Web Modeler DB backup failed"
-                exit 1
+            $tmpDumpFile = Join-Path $backupDir "webmodeler.sql"
+            try {
+                & docker exec web-modeler-db pg_dump -Fc -U "$env:WEBMODELER_DB_USER" "$env:WEBMODELER_DB_NAME" 2>> $Global:LogFile > $tmpDumpFile
+                $pgDumpExit = $LASTEXITCODE
+                if ($pgDumpExit -ne 0 -or -not (Test-Path $tmpDumpFile) -or (Get-Item $tmpDumpFile).Length -eq 0) {
+                    Log "ERROR: Web Modeler DB backup failed"
+                    exit 1
+                }
+                gzip -c $tmpDumpFile > $outputFile
+                if ($LASTEXITCODE -ne 0 -or -not (Test-Path $outputFile) -or (Get-Item $outputFile).Length -eq 0) {
+                    Log "ERROR: Web Modeler DB gzip failed"
+                    exit 1
+                }
+                gunzip -t $outputFile 2>> $Global:LogFile
+                if ($LASTEXITCODE -ne 0) {
+                    Log "ERROR: Web Modeler DB backup produced invalid gzip"
+                    exit 1
+                }
+            }
+            finally {
+                Remove-Item -Path $tmpDumpFile -Force -ErrorAction SilentlyContinue
             }
             Log "Web Modeler DB backed up: $outputFile"
 
