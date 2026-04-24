@@ -282,6 +282,8 @@ The comparison emitted to `restore.log` and stdout looks like:
 
 Use this as a quick sanity check that the restore landed the expected data. Non-Camunda indices are intentionally excluded — the restore itself only touches Camunda-scoped data, so noise from other indices would drown out the signal. State files are skipped by the manifest and do not affect backup integrity checks.
 
+Some differences after restore are expected. The `before` state is captured from the currently running stack before it is removed, while the `after` state is captured after Camunda services have started again. During startup, Zeebe exporters, Operate, Tasklist, Optimize, and Identity can create or update runtime/import records, session documents, metrics, and derived Optimize indices. Small doc-count changes or a newly added Optimize process-instance index therefore do not automatically indicate a restore problem as long as the snapshot restore succeeded, the cluster is `green`, and all services are healthy. Treat missing core index families, a `red` cluster, failed shards, or unhealthy services as the signals that require investigation.
+
 `backup-state.json` uses the same schema as the restore state files, but records the cluster state at backup time and is included in the manifest.
 
 ## Restore Drill
