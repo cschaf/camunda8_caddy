@@ -27,6 +27,14 @@ DRY_RUN=false
 CROSS_CLUSTER=false
 TEST_MODE=false
 CREATE_BACKUP=false
+REHOST_KEYCLOAK=false
+RESTORE_COMPONENTS="all"
+RESTORE_ALL=false
+RESTORE_KEYCLOAK=false
+RESTORE_WEBMODELER=false
+RESTORE_ELASTICSEARCH=false
+RESTORE_ORCHESTRATION=false
+RESTORE_CONFIGS=false
 
 usage() {
   echo "Usage: $(basename "$0") [OPTIONS] <backup-directory>"
@@ -39,6 +47,10 @@ usage() {
   echo "  --dry-run         Show what would be done without executing"
   echo "  --cross-cluster   Enable cross-cluster restore (skips config overwrite)"
   echo "  --create-backup   Create a fresh backup before restoring"
+  echo "  --rehost-keycloak Patch restored Keycloak clients to the current HOST and local client secrets"
+  echo "  --components LIST Restore only selected components"
+  echo "                    Allowed: all,keycloak,webmodeler,elasticsearch,orchestration,configs"
+  echo "                    Example: --components keycloak,webmodeler"
   echo "  --verify          Verify backup integrity without restoring"
   echo "  --env-file FILE   Use a custom env file instead of .env"
   echo "  -h, --help        Show this help message"
@@ -67,6 +79,18 @@ parse_args() {
       --createBackup)
         CREATE_BACKUP=true
         shift
+        ;;
+      --rehost-keycloak)
+        REHOST_KEYCLOAK=true
+        shift
+        ;;
+      --components)
+        if [[ $# -lt 2 ]]; then
+          echo "ERROR: --components requires a comma-separated list"
+          usage
+        fi
+        RESTORE_COMPONENTS="$2"
+        shift 2
         ;;
       --verify)
         TEST_MODE=true
@@ -97,6 +121,95 @@ parse_args() {
         ;;
     esac
   done
+}
+
+rehost_keycloak_clients() {
+  if [[ -z "${HOST:-}" ]]; then
+    log "ERROR: HOST is required for --rehost-keycloak"
+    exit 1
+  fi
+
+  local sql_file="$SCRIPT_DIR/rehost-keycloak.sql"
+  if [[ ! -f "$sql_file" ]]; then
+    log "ERROR: Keycloak rehost SQL not found: $sql_file"
+    exit 1
+  fi
+
+  log "Rehosting Keycloak clients to HOST=$HOST..."
+  if ! docker exec -i postgres psql \
+    -U "${POSTGRES_USER}" \
+    -d "${POSTGRES_DB}" \
+    -v "host=${HOST}" \
+    -v "connectors_secret=${CONNECTORS_CLIENT_SECRET:-}" \
+    -v "console_secret=${CONSOLE_CLIENT_SECRET:-}" \
+    -v "orchestration_secret=${ORCHESTRATION_CLIENT_SECRET:-}" \
+    -v "optimize_secret=${OPTIMIZE_CLIENT_SECRET:-}" \
+    -v "identity_secret=${CAMUNDA_IDENTITY_CLIENT_SECRET:-}" \
+    < "$sql_file"; then
+    log "ERROR: Keycloak rehost failed"
+    exit 1
+  fi
+  log "Keycloak clients rehosted for HOST=$HOST."
+}
+
+configure_restore_components() {
+  RESTORE_ALL=false
+  RESTORE_KEYCLOAK=false
+  RESTORE_WEBMODELER=false
+  RESTORE_ELASTICSEARCH=false
+  RESTORE_ORCHESTRATION=false
+  RESTORE_CONFIGS=false
+
+  local normalized
+  normalized="$(echo "$RESTORE_COMPONENTS" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+  if [[ -z "$normalized" || "$normalized" == "all" ]]; then
+    RESTORE_ALL=true
+    RESTORE_KEYCLOAK=true
+    RESTORE_WEBMODELER=true
+    RESTORE_ELASTICSEARCH=true
+    RESTORE_ORCHESTRATION=true
+    RESTORE_CONFIGS=true
+    RESTORE_COMPONENTS="all"
+    return
+  fi
+
+  IFS=',' read -r -a selected <<< "$normalized"
+  local component
+  for component in "${selected[@]}"; do
+    case "$component" in
+      keycloak)
+        RESTORE_KEYCLOAK=true
+        ;;
+      webmodeler|web-modeler)
+        RESTORE_WEBMODELER=true
+        ;;
+      elasticsearch|elastic)
+        RESTORE_ELASTICSEARCH=true
+        ;;
+      orchestration|zeebe)
+        RESTORE_ORCHESTRATION=true
+        ;;
+      configs|config|configuration)
+        RESTORE_CONFIGS=true
+        ;;
+      all)
+        RESTORE_ALL=true
+        RESTORE_KEYCLOAK=true
+        RESTORE_WEBMODELER=true
+        RESTORE_ELASTICSEARCH=true
+        RESTORE_ORCHESTRATION=true
+        RESTORE_CONFIGS=true
+        RESTORE_COMPONENTS="all"
+        return
+        ;;
+      *)
+        echo "ERROR: Unknown restore component: $component"
+        usage
+        ;;
+    esac
+  done
+
+  RESTORE_COMPONENTS="$normalized"
 }
 
 wait_for_service() {
@@ -137,14 +250,12 @@ except:
 validate_restore_inputs() {
   local backup_dir="$1"
   local missing=0
-  local required_files=(
-    "manifest.json"
-    "configs.tar.gz"
-    "keycloak.sql.gz"
-    "webmodeler.sql.gz"
-    "orchestration.tar.gz"
-    "snapshot-info.json"
-  )
+  local required_files=("manifest.json")
+  [[ "$RESTORE_CONFIGS" == true ]] && required_files+=("configs.tar.gz")
+  [[ "$RESTORE_KEYCLOAK" == true ]] && required_files+=("keycloak.sql.gz")
+  [[ "$RESTORE_WEBMODELER" == true ]] && required_files+=("webmodeler.sql.gz")
+  [[ "$RESTORE_ORCHESTRATION" == true ]] && required_files+=("orchestration.tar.gz")
+  [[ "$RESTORE_ELASTICSEARCH" == true ]] && required_files+=("snapshot-info.json")
 
   log "Validating required restore artifacts..."
   for rel in "${required_files[@]}"; do
@@ -154,21 +265,35 @@ validate_restore_inputs() {
     fi
   done
 
-  if [[ ! -d "$backup_dir/elasticsearch" ]] || ! find "$backup_dir/elasticsearch" -type f -print -quit | grep -q .; then
-    log "ERROR: Required Elasticsearch snapshot directory is missing or empty: elasticsearch/"
-    missing=1
+  if [[ "$RESTORE_ELASTICSEARCH" == true ]]; then
+    if [[ ! -d "$backup_dir/elasticsearch" ]] || ! find "$backup_dir/elasticsearch" -type f -print -quit | grep -q .; then
+      log "ERROR: Required Elasticsearch snapshot directory is missing or empty: elasticsearch/"
+      missing=1
+    fi
   fi
 
   if [[ $missing -ne 0 ]]; then
     exit 1
   fi
 
-  gzip -t "$backup_dir/keycloak.sql.gz" || { log "ERROR: Keycloak dump is not valid gzip"; exit 1; }
-  gzip -t "$backup_dir/webmodeler.sql.gz" || { log "ERROR: Web Modeler dump is not valid gzip"; exit 1; }
-  tar tzf "$backup_dir/orchestration.tar.gz" >/dev/null || { log "ERROR: Orchestration archive is not readable"; exit 1; }
-  tar tzf "$backup_dir/configs.tar.gz" >/dev/null || { log "ERROR: Config archive is not readable"; exit 1; }
+  if [[ "$RESTORE_KEYCLOAK" == true ]]; then
+    gzip -t "$backup_dir/keycloak.sql.gz" || { log "ERROR: Keycloak dump is not valid gzip"; exit 1; }
+  fi
+  if [[ "$RESTORE_WEBMODELER" == true ]]; then
+    gzip -t "$backup_dir/webmodeler.sql.gz" || { log "ERROR: Web Modeler dump is not valid gzip"; exit 1; }
+  fi
+  if [[ "$RESTORE_ORCHESTRATION" == true ]]; then
+    tar tzf "$backup_dir/orchestration.tar.gz" >/dev/null || { log "ERROR: Orchestration archive is not readable"; exit 1; }
+  fi
+  if [[ "$RESTORE_CONFIGS" == true ]]; then
+    tar tzf "$backup_dir/configs.tar.gz" >/dev/null || { log "ERROR: Config archive is not readable"; exit 1; }
+  fi
 
-  python3 - "$backup_dir/configs.tar.gz" "$backup_dir/orchestration.tar.gz" <<'PYEOF' || {
+  local archives_to_check=()
+  [[ "$RESTORE_CONFIGS" == true ]] && archives_to_check+=("$backup_dir/configs.tar.gz")
+  [[ "$RESTORE_ORCHESTRATION" == true ]] && archives_to_check+=("$backup_dir/orchestration.tar.gz")
+  if [[ ${#archives_to_check[@]} -gt 0 ]]; then
+    python3 - "${archives_to_check[@]}" <<'PYEOF' || {
 import sys, tarfile
 
 for archive in sys.argv[1:]:
@@ -179,11 +304,13 @@ for archive in sys.argv[1:]:
                 print(f"ERROR: Unsafe tar path in {archive}: {member.name}")
                 sys.exit(1)
 PYEOF
-    log "ERROR: Backup archive contains unsafe paths"
-    exit 1
-  }
+      log "ERROR: Backup archive contains unsafe paths"
+      exit 1
+    }
+  fi
 
-  python3 - "$backup_dir/snapshot-info.json" <<'PYEOF' || {
+  if [[ "$RESTORE_ELASTICSEARCH" == true ]]; then
+    python3 - "$backup_dir/snapshot-info.json" <<'PYEOF' || {
 import json, sys
 with open(sys.argv[1]) as f:
     d = json.load(f)
@@ -195,15 +322,17 @@ if not (snapshot.get("name") or snapshot.get("snapshot")):
     print("ERROR: Snapshot name missing from snapshot-info.json")
     sys.exit(1)
 PYEOF
-    log "ERROR: Elasticsearch snapshot metadata is not restorable"
-    exit 1
-  }
+      log "ERROR: Elasticsearch snapshot metadata is not restorable"
+      exit 1
+    }
+  fi
 
   log "Required restore artifacts validated."
 }
 
 main() {
   parse_args "$@"
+  configure_restore_components
 
   if [[ -z "$BACKUP_DIR" ]]; then
     echo "ERROR: Backup directory is required."
@@ -234,6 +363,8 @@ main() {
 
   log "Starting restore from: $BACKUP_DIR"
   log "Stage: $stage"
+  log "Restore components: $RESTORE_COMPONENTS"
+  [[ "$REHOST_KEYCLOAK" == true ]] && log "Keycloak rehost: enabled"
 
   # Step 1: Pre-flight checks
   log "Running pre-flight checks..."
@@ -254,6 +385,11 @@ main() {
 
   verify_manifest "$BACKUP_DIR"
   validate_restore_inputs "$BACKUP_DIR"
+
+  if [[ "$REHOST_KEYCLOAK" == true && "$RESTORE_KEYCLOAK" != true ]]; then
+    log "ERROR: --rehost-keycloak requires the keycloak component to be restored."
+    exit 1
+  fi
 
   # Load manifest for version/host checks
   local source_host
@@ -323,7 +459,12 @@ PYEOF
   # Step 2: Interactive warning
   if [[ "$FORCE" == false && "$DRY_RUN" == false ]]; then
     echo ""
-    echo "WARNING: This will OVERWRITE ALL current data in the Camunda stack!"
+    if [[ "$RESTORE_ALL" == true ]]; then
+      echo "WARNING: This will OVERWRITE ALL current data in the Camunda stack!"
+    else
+      echo "WARNING: This will OVERWRITE selected Camunda data only: $RESTORE_COMPONENTS"
+      echo "Granular restores do not guarantee a globally consistent stack timestamp."
+    fi
     echo "Backup: $BACKUP_DIR"
     echo ""
     read -r -p "Are you sure you want to continue? [y/N] " response
@@ -356,9 +497,9 @@ PYEOF
   local state_before="$BACKUP_DIR/restore-state-before.json"
   local state_after="$BACKUP_DIR/restore-state-after.json"
   if [[ "$DRY_RUN" == true ]]; then
-    log "[DRY-RUN] Would collect Elasticsearch state (before)"
+    [[ "$RESTORE_ELASTICSEARCH" == true ]] && log "[DRY-RUN] Would collect Elasticsearch state (before)"
   else
-    collect_es_state "before" "$state_before" || true
+    [[ "$RESTORE_ELASTICSEARCH" == true ]] && collect_es_state "before" "$state_before" || true
   fi
 
   # Step 3: Stop stack
@@ -372,13 +513,26 @@ PYEOF
   # Step 4: Remove volumes (except keycloak-theme)
   log "Removing data volumes..."
   if [[ "$DRY_RUN" == true ]]; then
-    log "[DRY-RUN] Would remove volumes: orchestration, elastic, postgres, postgres-web"
+    if [[ "$RESTORE_ALL" == true ]]; then
+      log "[DRY-RUN] Would remove volumes: orchestration, elastic, postgres, postgres-web"
+    elif [[ "$RESTORE_ORCHESTRATION" == true ]]; then
+      log "[DRY-RUN] Would remove volume: orchestration"
+    else
+      log "[DRY-RUN] Would keep existing Docker data volumes"
+    fi
     log "[DRY-RUN] Would keep volume: keycloak-theme"
   else
     local proj
     proj="$(get_compose_project_name)"
-    docker volume rm "${proj}_orchestration" "${proj}_elastic" "${proj}_postgres" "${proj}_postgres-web" 2>/dev/null || true
-    log "Volumes removed."
+    if [[ "$RESTORE_ALL" == true ]]; then
+      docker volume rm "${proj}_orchestration" "${proj}_elastic" "${proj}_postgres" "${proj}_postgres-web" 2>/dev/null || true
+      log "Volumes removed."
+    elif [[ "$RESTORE_ORCHESTRATION" == true ]]; then
+      docker volume rm "${proj}_orchestration" 2>/dev/null || true
+      log "Orchestration volume removed."
+    else
+      log "No Docker data volumes removed for granular restore."
+    fi
   fi
 
   # Step 5: Start only the services needed for data restore.
@@ -386,25 +540,51 @@ PYEOF
   # before the Elasticsearch snapshot restore runs.
   log "Starting core services with fresh volumes..."
   if [[ "$DRY_RUN" == true ]]; then
-    log "[DRY-RUN] Would run: $cmd up -d postgres web-modeler-db elasticsearch"
+    local core_services=()
+    [[ "$RESTORE_KEYCLOAK" == true ]] && core_services+=("postgres")
+    [[ "$RESTORE_WEBMODELER" == true ]] && core_services+=("web-modeler-db")
+    [[ "$RESTORE_ELASTICSEARCH" == true ]] && core_services+=("elasticsearch")
+    if [[ ${#core_services[@]} -gt 0 ]]; then
+      log "[DRY-RUN] Would run: $cmd up -d ${core_services[*]}"
+    else
+      log "[DRY-RUN] No core services needed before data restore"
+    fi
   else
-    $cmd up -d postgres web-modeler-db elasticsearch
+    local core_services=()
+    [[ "$RESTORE_KEYCLOAK" == true ]] && core_services+=("postgres")
+    [[ "$RESTORE_WEBMODELER" == true ]] && core_services+=("web-modeler-db")
+    [[ "$RESTORE_ELASTICSEARCH" == true ]] && core_services+=("elasticsearch")
+    if [[ ${#core_services[@]} -gt 0 ]]; then
+      $cmd up -d "${core_services[@]}"
+    fi
   fi
 
   # Step 6: Wait for Postgres and Elasticsearch
   if [[ "$DRY_RUN" == false ]]; then
-    wait_for_service "postgres" || exit 1
-    wait_for_service "web-modeler-db" || exit 1
-    wait_for_service "elasticsearch" || exit 1
+    if [[ "$RESTORE_KEYCLOAK" == true ]]; then
+      wait_for_service "postgres" || exit 1
+    fi
+    if [[ "$RESTORE_WEBMODELER" == true ]]; then
+      wait_for_service "web-modeler-db" || exit 1
+    fi
+    if [[ "$RESTORE_ELASTICSEARCH" == true ]]; then
+      wait_for_service "elasticsearch" || exit 1
+    fi
     log "Core services are healthy."
   else
-    log "[DRY-RUN] Would wait for postgres, web-modeler-db, elasticsearch to be healthy"
+    if [[ ${#core_services[@]} -gt 0 ]]; then
+      log "[DRY-RUN] Would wait for services to be healthy: ${core_services[*]}"
+    else
+      log "[DRY-RUN] No core services to wait for"
+    fi
   fi
 
   # Step 7: Restore Postgres databases
+  if [[ "$RESTORE_KEYCLOAK" == true ]]; then
   log "Restoring Keycloak database..."
   if [[ "$DRY_RUN" == true ]]; then
     log "[DRY-RUN] Would restore Keycloak DB from: $BACKUP_DIR/keycloak.sql.gz"
+    [[ "$REHOST_KEYCLOAK" == true ]] && log "[DRY-RUN] Would rehost Keycloak clients to HOST=$HOST and local client secrets"
     log "[DRY-RUN] Would run ANALYZE on Keycloak DB"
   else
     if [[ -f "$BACKUP_DIR/keycloak.sql.gz" ]]; then
@@ -421,6 +601,9 @@ PYEOF
       fi
       rm -f "$pg_stderr"
       log "Keycloak database restored."
+      if [[ "$REHOST_KEYCLOAK" == true ]]; then
+        rehost_keycloak_clients
+      fi
       # pg_restore does not restore planner statistics; run ANALYZE so the
       # first queries after restore use good plans instead of waiting for
       # autovacuum (see docs/backup-restore.md).
@@ -432,7 +615,11 @@ PYEOF
       exit 1
     fi
   fi
+  else
+    log "Skipping Keycloak database restore."
+  fi
 
+  if [[ "$RESTORE_WEBMODELER" == true ]]; then
   log "Restoring Web Modeler database..."
   if [[ "$DRY_RUN" == true ]]; then
     log "[DRY-RUN] Would restore Web Modeler DB from: $BACKUP_DIR/webmodeler.sql.gz"
@@ -460,6 +647,9 @@ PYEOF
       exit 1
     fi
   fi
+  else
+    log "Skipping Web Modeler database restore."
+  fi
 
   # Only core services are running at this point, so no Camunda apps can
   # recreate Elasticsearch indices before the snapshot restore.
@@ -469,6 +659,7 @@ PYEOF
   fi
 
   # Step 8: Restore Elasticsearch
+  if [[ "$RESTORE_ELASTICSEARCH" == true ]]; then
   log "Restoring Elasticsearch snapshot..."
   if [[ "$DRY_RUN" == true ]]; then
     log "[DRY-RUN] Would restore Elasticsearch snapshot"
@@ -612,8 +803,12 @@ except Exception as e:
       exit 1
     fi
   fi
+  else
+    log "Skipping Elasticsearch restore."
+  fi
 
   # Step 9: Restore Zeebe state
+  if [[ "$RESTORE_ORCHESTRATION" == true ]]; then
   log "Restoring Zeebe state..."
   if [[ "$DRY_RUN" == true ]]; then
     log "[DRY-RUN] Would run: $cmd create orchestration"
@@ -633,8 +828,12 @@ except Exception as e:
       exit 1
     fi
   fi
+  else
+    log "Skipping Zeebe state restore."
+  fi
 
   # Step 10: Restore configs
+  if [[ "$RESTORE_CONFIGS" == true ]]; then
   if [[ "$CROSS_CLUSTER" == true ]]; then
     log "Cross-cluster mode: configs will NOT be overwritten."
     log "Extracting configs to restored-configs/ for reference..."
@@ -656,6 +855,9 @@ except Exception as e:
         exit 1
       fi
     fi
+  fi
+  else
+    log "Skipping configuration restore."
   fi
 
   # Step 11: Restart stack
@@ -680,8 +882,8 @@ except Exception as e:
     }
 
     # Collect post-restore state and compare to pre-restore state
-    collect_es_state "after" "$state_after" || true
-    compare_es_state "$state_before" "$state_after" || true
+    [[ "$RESTORE_ELASTICSEARCH" == true ]] && collect_es_state "after" "$state_after" || true
+    [[ "$RESTORE_ELASTICSEARCH" == true ]] && compare_es_state "$state_before" "$state_after" || true
     cleanup_dangling_compose_volumes "$restore_started_at" || true
 
     log "Restore completed successfully."

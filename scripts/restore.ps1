@@ -28,6 +28,14 @@ $DryRun = $false
 $CrossCluster = $false
 $TestMode = $false
 $CreateBackup = $false
+$RehostKeycloak = $false
+$RestoreComponents = "all"
+$RestoreAll = $false
+$RestoreKeycloak = $false
+$RestoreWebmodeler = $false
+$RestoreElasticsearch = $false
+$RestoreOrchestration = $false
+$RestoreConfigs = $false
 
 function Show-Usage {
     Write-Host "Usage: $(Split-Path -Leaf $PSCommandPath) [OPTIONS] <backup-directory>"
@@ -40,6 +48,10 @@ function Show-Usage {
     Write-Host "  --dry-run         Show what would be done without executing"
     Write-Host "  --cross-cluster   Enable cross-cluster restore (skips config overwrite)"
     Write-Host "  --create-backup   Create a fresh backup before restoring"
+    Write-Host "  --rehost-keycloak Patch restored Keycloak clients to the current HOST and local client secrets"
+    Write-Host "  --components LIST Restore only selected components"
+    Write-Host "                    Allowed: all,keycloak,webmodeler,elasticsearch,orchestration,configs"
+    Write-Host "                    Example: --components keycloak,webmodeler"
     Write-Host "  --verify          Verify backup integrity without restoring"
     Write-Host "  --env-file FILE   Use a custom env file instead of .env"
     Write-Host "  -h, --help        Show this help message"
@@ -56,6 +68,16 @@ function Parse-Args {
             "--cross-cluster" { $script:CrossCluster = $true; break }
             "--create-backup" { $script:CreateBackup = $true; break }
             "--createBackup" { $script:CreateBackup = $true; break }
+            "--rehost-keycloak" { $script:RehostKeycloak = $true; break }
+            "--components" {
+                if (($i + 1) -ge $CliArgs.Count) {
+                    Write-Host "ERROR: --components requires a comma-separated list"
+                    Show-Usage
+                }
+                $i++
+                $script:RestoreComponents = $CliArgs[$i]
+                break
+            }
             "--verify" { $script:TestMode = $true; break }
             "--test" { $script:TestMode = $true; break }
             "--env-file" { $i++; break }
@@ -74,6 +96,82 @@ function Parse-Args {
             }
         }
     }
+}
+
+function Invoke-KeycloakRehost {
+    if (-not $env:HOST) {
+        Log "ERROR: HOST is required for --rehost-keycloak"
+        exit 1
+    }
+
+    $sqlFile = Join-Path $ScriptDir "rehost-keycloak.sql"
+    if (-not (Test-Path $sqlFile)) {
+        Log "ERROR: Keycloak rehost SQL not found: $sqlFile"
+        exit 1
+    }
+
+    Log "Rehosting Keycloak clients to HOST=$($env:HOST)..."
+    Get-Content $sqlFile -Raw | docker exec -i postgres psql `
+        -U "$env:POSTGRES_USER" `
+        -d "$env:POSTGRES_DB" `
+        -v "host=$($env:HOST)" `
+        -v "connectors_secret=$($env:CONNECTORS_CLIENT_SECRET)" `
+        -v "console_secret=$($env:CONSOLE_CLIENT_SECRET)" `
+        -v "orchestration_secret=$($env:ORCHESTRATION_CLIENT_SECRET)" `
+        -v "optimize_secret=$($env:OPTIMIZE_CLIENT_SECRET)" `
+        -v "identity_secret=$($env:CAMUNDA_IDENTITY_CLIENT_SECRET)" | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        Log "ERROR: Keycloak rehost failed"
+        exit 1
+    }
+    Log "Keycloak clients rehosted for HOST=$($env:HOST)."
+}
+
+function Set-RestoreComponents {
+    $script:RestoreAll = $false
+    $script:RestoreKeycloak = $false
+    $script:RestoreWebmodeler = $false
+    $script:RestoreElasticsearch = $false
+    $script:RestoreOrchestration = $false
+    $script:RestoreConfigs = $false
+
+    $normalized = ($script:RestoreComponents.ToLowerInvariant() -replace '\s+', '')
+    if (-not $normalized -or $normalized -eq "all") {
+        $script:RestoreAll = $true
+        $script:RestoreKeycloak = $true
+        $script:RestoreWebmodeler = $true
+        $script:RestoreElasticsearch = $true
+        $script:RestoreOrchestration = $true
+        $script:RestoreConfigs = $true
+        $script:RestoreComponents = "all"
+        return
+    }
+
+    foreach ($component in ($normalized -split ',')) {
+        switch ($component) {
+            "keycloak" { $script:RestoreKeycloak = $true }
+            { $_ -in "webmodeler","web-modeler" } { $script:RestoreWebmodeler = $true }
+            { $_ -in "elasticsearch","elastic" } { $script:RestoreElasticsearch = $true }
+            { $_ -in "orchestration","zeebe" } { $script:RestoreOrchestration = $true }
+            { $_ -in "configs","config","configuration" } { $script:RestoreConfigs = $true }
+            "all" {
+                $script:RestoreAll = $true
+                $script:RestoreKeycloak = $true
+                $script:RestoreWebmodeler = $true
+                $script:RestoreElasticsearch = $true
+                $script:RestoreOrchestration = $true
+                $script:RestoreConfigs = $true
+                $script:RestoreComponents = "all"
+                return
+            }
+            default {
+                Write-Host "ERROR: Unknown restore component: $component"
+                Show-Usage
+            }
+        }
+    }
+
+    $script:RestoreComponents = $normalized
 }
 
 function Wait-ForService {
@@ -123,14 +221,12 @@ function Validate-RestoreInputs {
     param([string]$BackupDir)
 
     Log "Validating required restore artifacts..."
-    $requiredFiles = @(
-        "manifest.json",
-        "configs.tar.gz",
-        "keycloak.sql.gz",
-        "webmodeler.sql.gz",
-        "orchestration.tar.gz",
-        "snapshot-info.json"
-    )
+    $requiredFiles = @("manifest.json")
+    if ($RestoreConfigs) { $requiredFiles += "configs.tar.gz" }
+    if ($RestoreKeycloak) { $requiredFiles += "keycloak.sql.gz" }
+    if ($RestoreWebmodeler) { $requiredFiles += "webmodeler.sql.gz" }
+    if ($RestoreOrchestration) { $requiredFiles += "orchestration.tar.gz" }
+    if ($RestoreElasticsearch) { $requiredFiles += "snapshot-info.json" }
 
     $missing = $false
     foreach ($rel in $requiredFiles) {
@@ -141,26 +237,33 @@ function Validate-RestoreInputs {
         }
     }
 
-    $esBackupDir = Join-Path $BackupDir "elasticsearch"
-    if (-not (Test-Path $esBackupDir) -or -not (Get-ChildItem -Path $esBackupDir -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1)) {
-        Log "ERROR: Required Elasticsearch snapshot directory is missing or empty: elasticsearch\"
-        $missing = $true
+    if ($RestoreElasticsearch) {
+        $esBackupDir = Join-Path $BackupDir "elasticsearch"
+        if (-not (Test-Path $esBackupDir) -or -not (Get-ChildItem -Path $esBackupDir -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1)) {
+            Log "ERROR: Required Elasticsearch snapshot directory is missing or empty: elasticsearch\"
+            $missing = $true
+        }
     }
 
     if ($missing) {
         exit 1
     }
 
-    gzip -t (Join-Path $BackupDir "keycloak.sql.gz")
-    if ($LASTEXITCODE -ne 0) { Log "ERROR: Keycloak dump is not valid gzip"; exit 1 }
+    if ($RestoreKeycloak) {
+        gzip -t (Join-Path $BackupDir "keycloak.sql.gz")
+        if ($LASTEXITCODE -ne 0) { Log "ERROR: Keycloak dump is not valid gzip"; exit 1 }
+    }
 
-    gzip -t (Join-Path $BackupDir "webmodeler.sql.gz")
-    if ($LASTEXITCODE -ne 0) { Log "ERROR: Web Modeler dump is not valid gzip"; exit 1 }
+    if ($RestoreWebmodeler) {
+        gzip -t (Join-Path $BackupDir "webmodeler.sql.gz")
+        if ($LASTEXITCODE -ne 0) { Log "ERROR: Web Modeler dump is not valid gzip"; exit 1 }
+    }
 
-    Test-ArchiveSafePaths -ArchivePath (Join-Path $BackupDir "orchestration.tar.gz")
-    Test-ArchiveSafePaths -ArchivePath (Join-Path $BackupDir "configs.tar.gz")
+    if ($RestoreOrchestration) { Test-ArchiveSafePaths -ArchivePath (Join-Path $BackupDir "orchestration.tar.gz") }
+    if ($RestoreConfigs) { Test-ArchiveSafePaths -ArchivePath (Join-Path $BackupDir "configs.tar.gz") }
 
-    try {
+    if ($RestoreElasticsearch) {
+      try {
         $snapshotInfo = Get-Content (Join-Path $BackupDir "snapshot-info.json") -Raw | ConvertFrom-Json
         if (-not $snapshotInfo.snapshot -or $snapshotInfo.snapshot.state -ne "SUCCESS") {
             Log "ERROR: Snapshot state is not SUCCESS: $($snapshotInfo.snapshot.state)"
@@ -175,6 +278,7 @@ function Validate-RestoreInputs {
         Log "ERROR: Elasticsearch snapshot metadata is not restorable: $_"
         exit 1
     }
+    }
 
     Log "Required restore artifacts validated."
 }
@@ -183,6 +287,7 @@ function Main {
     param([string[]]$CliArgs)
 
     Parse-Args -CliArgs $CliArgs
+    Set-RestoreComponents
 
     if (-not $BackupDir) {
         Write-Host "ERROR: Backup directory is required."
@@ -210,6 +315,8 @@ function Main {
     try {
         Log "Starting restore from: $BackupDir"
         Log "Stage: $stage"
+        Log "Restore components: $RestoreComponents"
+        if ($RehostKeycloak) { Log "Keycloak rehost: enabled" }
 
         # Pre-flight checks
         Log "Running pre-flight checks..."
@@ -230,6 +337,11 @@ function Main {
 
         Verify-Manifest -BackupDir $BackupDir
         Validate-RestoreInputs -BackupDir $BackupDir
+
+        if ($RehostKeycloak -and -not $RestoreKeycloak) {
+            Log "ERROR: --rehost-keycloak requires the keycloak component to be restored."
+            exit 1
+        }
 
         $manifest = Get-Content $manifestFile | ConvertFrom-Json
         $sourceHost = $manifest.source_host
@@ -274,7 +386,12 @@ function Main {
         # Interactive warning
         if (-not $Force -and -not $DryRun) {
             Write-Host ""
-            Write-Host "WARNING: This will OVERWRITE ALL current data in the Camunda stack!"
+            if ($RestoreAll) {
+                Write-Host "WARNING: This will OVERWRITE ALL current data in the Camunda stack!"
+            } else {
+                Write-Host "WARNING: This will OVERWRITE selected Camunda data only: $RestoreComponents"
+                Write-Host "Granular restores do not guarantee a globally consistent stack timestamp."
+            }
             Write-Host "Backup: $BackupDir"
             Write-Host ""
             $response = Read-Host "Are you sure you want to continue? [y/N]"
@@ -308,9 +425,9 @@ function Main {
         $stateBefore = Join-Path $BackupDir "restore-state-before.json"
         $stateAfter  = Join-Path $BackupDir "restore-state-after.json"
         if ($DryRun) {
-            Log "[DRY-RUN] Would collect Elasticsearch state (before)"
+            if ($RestoreElasticsearch) { Log "[DRY-RUN] Would collect Elasticsearch state (before)" }
         }
-        else {
+        elseif ($RestoreElasticsearch) {
             try { Collect-ESState -Phase "before" -OutputFile $stateBefore } catch { Log "WARNING: Pre-restore state collection failed: $_" }
         }
 
@@ -326,16 +443,27 @@ function Main {
         # Remove volumes
         Log "Removing data volumes..."
         if ($DryRun) {
-            Log "[DRY-RUN] Would remove volumes: orchestration, elastic, postgres, postgres-web"
+            if ($RestoreAll) {
+                Log "[DRY-RUN] Would remove volumes: orchestration, elastic, postgres, postgres-web"
+            } elseif ($RestoreOrchestration) {
+                Log "[DRY-RUN] Would remove volume: orchestration"
+            } else {
+                Log "[DRY-RUN] Would keep existing Docker data volumes"
+            }
             Log "[DRY-RUN] Would keep volume: keycloak-theme"
         }
         else {
-            $volumes = @(
-                (Get-ComposeVolumeName "orchestration"),
-                (Get-ComposeVolumeName "elastic"),
-                (Get-ComposeVolumeName "postgres"),
-                (Get-ComposeVolumeName "postgres-web")
-            )
+            $volumes = @()
+            if ($RestoreAll) {
+                $volumes = @(
+                    (Get-ComposeVolumeName "orchestration"),
+                    (Get-ComposeVolumeName "elastic"),
+                    (Get-ComposeVolumeName "postgres"),
+                    (Get-ComposeVolumeName "postgres-web")
+                )
+            } elseif ($RestoreOrchestration) {
+                $volumes = @((Get-ComposeVolumeName "orchestration"))
+            }
             foreach ($vol in $volumes) {
                 try {
                     docker volume rm $vol 2>$null | Out-Null
@@ -344,39 +472,57 @@ function Main {
                     Log "WARNING: Could not remove volume $vol (may not exist)"
                 }
             }
-            Log "Volumes removed."
+            if ($volumes.Count -gt 0) { Log "Volumes removed." } else { Log "No Docker data volumes removed for granular restore." }
         }
 
         # Start only the services needed for data restore.
         # Starting the full stack here allows Camunda apps to recreate indices
         # before the Elasticsearch snapshot restore runs.
         Log "Starting core services with fresh volumes..."
+        $coreServices = @()
+        if ($RestoreKeycloak) { $coreServices += "postgres" }
+        if ($RestoreWebmodeler) { $coreServices += "web-modeler-db" }
+        if ($RestoreElasticsearch) { $coreServices += "elasticsearch" }
         if ($DryRun) {
-            Log "[DRY-RUN] Would run: $cmd up -d postgres web-modeler-db elasticsearch"
+            if ($coreServices.Count -gt 0) {
+                Log "[DRY-RUN] Would run: $cmd up -d $($coreServices -join ' ')"
+            } else {
+                Log "[DRY-RUN] No core services needed before data restore"
+            }
         }
         else {
-            Invoke-Expression "$cmd up -d postgres web-modeler-db elasticsearch" | Out-Null
+            if ($coreServices.Count -gt 0) {
+                Invoke-Expression "$cmd up -d $($coreServices -join ' ')" | Out-Null
+            }
         }
 
         # Wait for core services
         if (-not $DryRun) {
-            if (-not (Wait-ForService -Service "postgres")) { exit 1 }
-            if (-not (Wait-ForService -Service "web-modeler-db")) { exit 1 }
-            if (-not (Wait-ForService -Service "elasticsearch")) { exit 1 }
+            if ($RestoreKeycloak -and -not (Wait-ForService -Service "postgres")) { exit 1 }
+            if ($RestoreWebmodeler -and -not (Wait-ForService -Service "web-modeler-db")) { exit 1 }
+            if ($RestoreElasticsearch -and -not (Wait-ForService -Service "elasticsearch")) { exit 1 }
             Log "Core services are healthy."
         }
         else {
-            Log "[DRY-RUN] Would wait for postgres, web-modeler-db, elasticsearch to be healthy"
+            if ($coreServices.Count -gt 0) {
+                Log "[DRY-RUN] Would wait for services to be healthy: $($coreServices -join ' ')"
+            } else {
+                Log "[DRY-RUN] No core services to wait for"
+            }
         }
 
         # Restore Keycloak DB
-        Log "Restoring Keycloak database..."
         $keycloakBackup = Join-Path $BackupDir "keycloak.sql.gz"
-        if ($DryRun) {
+        if (-not $RestoreKeycloak) {
+            Log "Skipping Keycloak database restore."
+        } elseif ($DryRun) {
+            Log "Restoring Keycloak database..."
             Log "[DRY-RUN] Would restore Keycloak DB from: $keycloakBackup"
+            if ($RehostKeycloak) { Log "[DRY-RUN] Would rehost Keycloak clients to HOST=$($env:HOST) and local client secrets" }
             Log "[DRY-RUN] Would run ANALYZE on Keycloak DB"
         }
         else {
+            Log "Restoring Keycloak database..."
             if (Test-Path $keycloakBackup) {
                 $pgStderrFile = [System.IO.Path]::GetTempFileName()
                 $pgRestoreCmd = "gzip -d -c `"$keycloakBackup`" | docker exec -i postgres pg_restore -U `"$env:POSTGRES_USER`" -d `"$env:POSTGRES_DB`" --clean --if-exists"
@@ -389,6 +535,9 @@ function Main {
                 }
                 Remove-Item $pgStderrFile -ErrorAction SilentlyContinue
                 Log "Keycloak database restored."
+                if ($RehostKeycloak) {
+                    Invoke-KeycloakRehost
+                }
                 # pg_restore does not restore planner statistics; run ANALYZE so the
                 # first queries after restore use good plans instead of waiting for
                 # autovacuum (see docs/backup-restore.md).
@@ -403,13 +552,16 @@ function Main {
         }
 
         # Restore Web Modeler DB
-        Log "Restoring Web Modeler database..."
         $webmodelerBackup = Join-Path $BackupDir "webmodeler.sql.gz"
-        if ($DryRun) {
+        if (-not $RestoreWebmodeler) {
+            Log "Skipping Web Modeler database restore."
+        } elseif ($DryRun) {
+            Log "Restoring Web Modeler database..."
             Log "[DRY-RUN] Would restore Web Modeler DB from: $webmodelerBackup"
             Log "[DRY-RUN] Would run ANALYZE on Web Modeler DB"
         }
         else {
+            Log "Restoring Web Modeler database..."
             if (Test-Path $webmodelerBackup) {
                 $pgStderrFile = [System.IO.Path]::GetTempFileName()
                 $pgRestoreCmd = "gzip -d -c `"$webmodelerBackup`" | docker exec -i web-modeler-db pg_restore -U `"$env:WEBMODELER_DB_USER`" -d `"$env:WEBMODELER_DB_NAME`" --clean --if-exists"
@@ -440,11 +592,14 @@ function Main {
         }
 
         # Restore Elasticsearch
-        Log "Restoring Elasticsearch snapshot..."
-        if ($DryRun) {
+        if (-not $RestoreElasticsearch) {
+            Log "Skipping Elasticsearch restore."
+        } elseif ($DryRun) {
+            Log "Restoring Elasticsearch snapshot..."
             Log "[DRY-RUN] Would restore Elasticsearch snapshot"
         }
         else {
+            Log "Restoring Elasticsearch snapshot..."
             $snapshotInfoFile = Join-Path $BackupDir "snapshot-info.json"
             $snapshotName = $null
             if (Test-Path $snapshotInfoFile) {
@@ -574,13 +729,16 @@ function Main {
         }
 
         # Restore Zeebe state
-        Log "Restoring Zeebe state..."
         $orchBackup = Join-Path $BackupDir "orchestration.tar.gz"
-        if ($DryRun) {
+        if (-not $RestoreOrchestration) {
+            Log "Skipping Zeebe state restore."
+        } elseif ($DryRun) {
+            Log "Restoring Zeebe state..."
             Log "[DRY-RUN] Would run: $cmd create orchestration"
             Log "[DRY-RUN] Would restore Zeebe state from: $orchBackup"
         }
         else {
+            Log "Restoring Zeebe state..."
             if (Test-Path $orchBackup) {
                 $zeebeVol = Get-ComposeVolumeName 'orchestration'
                 Invoke-Expression "$cmd create orchestration" | Out-Null
@@ -597,7 +755,9 @@ function Main {
         }
 
         # Restore configs
-        if ($CrossCluster) {
+        if (-not $RestoreConfigs) {
+            Log "Skipping configuration restore."
+        } elseif ($CrossCluster) {
             Log "Cross-cluster mode: configs will NOT be overwritten."
             Log "Extracting configs to restored-configs/ for reference..."
             $configArchive = Join-Path $BackupDir "configs.tar.gz"
@@ -650,8 +810,10 @@ function Main {
             }
 
             # Collect post-restore state and compare to pre-restore state
-            try { Collect-ESState -Phase "after" -OutputFile $stateAfter } catch { Log "WARNING: Post-restore state collection failed: $_" }
-            try { Compare-ESState -BeforeFile $stateBefore -AfterFile $stateAfter } catch { Log "WARNING: State comparison failed: $_" }
+            if ($RestoreElasticsearch) {
+                try { Collect-ESState -Phase "after" -OutputFile $stateAfter } catch { Log "WARNING: Post-restore state collection failed: $_" }
+                try { Compare-ESState -BeforeFile $stateBefore -AfterFile $stateAfter } catch { Log "WARNING: State comparison failed: $_" }
+            }
             try { Cleanup-DanglingComposeVolumes -RestoreStartedAt $restoreStartedAt } catch { Log "WARNING: Dangling volume cleanup failed: $_" }
 
             Log "Restore completed successfully."

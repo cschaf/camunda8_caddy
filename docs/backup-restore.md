@@ -195,6 +195,38 @@ Requirements:
 - Elasticsearch version in the backup must match `.env`
 - Camunda version in the backup must match `.env`
 
+Use `--rehost-keycloak` when restoring a backup from one hostname into a cluster that should keep its local `HOST`, for example restoring production data into a local development stack:
+
+```bash
+# Linux/macOS/WSL
+./scripts/restore.sh --cross-cluster --rehost-keycloak backups/20240115_120000
+
+# Windows
+.\scripts\restore.ps1 --cross-cluster --rehost-keycloak backups\20240115_120000
+```
+
+`--rehost-keycloak` runs immediately after the Keycloak database restore and before application services start. It patches the restored Keycloak clients for the current `.env`:
+
+| Client | Rehosted values |
+|---|---|
+| `console` | root URL, redirect URIs, web origins, client secret |
+| `orchestration` | root URL, redirect URIs, web origins, client secret |
+| `optimize` | root URL, redirect URIs, web origins, client secret |
+| `web-modeler` | root URL, redirect URIs, web origins |
+| `camunda-identity` | root URL, redirect URIs, web origins, client secret |
+| `connectors` | client secret |
+
+This lets the restored Keycloak realm issue tokens and accept redirects for the local hostname, while keeping the restored users, roles, and realm data. The patch uses the current `HOST`, `ORCHESTRATION_CLIENT_SECRET`, `CONNECTORS_CLIENT_SECRET`, `CONSOLE_CLIENT_SECRET`, `OPTIMIZE_CLIENT_SECRET`, and `CAMUNDA_IDENTITY_CLIENT_SECRET` from `.env`.
+
+For a production-to-local debugging restore, prepare the local `.env` first:
+
+1. Set `HOST` to the local hostname you want to use, e.g. `camunda.dev.local`.
+2. Ensure `CAMUNDA_VERSION` and `ELASTIC_VERSION` match the backup manifest.
+3. Run `scripts/setup-host.ps1` or `scripts/setup-host.sh` so Caddy and hosts entries match the local `HOST`.
+4. Run the restore with `--cross-cluster --rehost-keycloak`.
+
+If you omit `--rehost-keycloak`, the restored Keycloak database may still contain production redirect URIs, web origins, and client secrets. That mode is useful only when the target cluster intentionally uses compatible Keycloak client configuration, or when you restore without the `keycloak` component.
+
 ### Test Restore (integrity check)
 
 Checks backup integrity without restoring data:
@@ -234,15 +266,50 @@ The restore shutdown step now uses `docker compose down --remove-orphans`. After
 
 ### Granular Restore
 
-For granular restore (e.g. only one database), use the scripts as a template and execute individual steps manually:
+The restore scripts support an expert-mode granular restore via `--components`.
+Without this option the restore remains a full stack restore (`all`).
 
 ```bash
-# Keycloak DB only
-zcat backups/20240115_120000/keycloak.sql.gz | docker exec -i postgres pg_restore -U bn_keycloak -d bitnami_keycloak
+# Linux/macOS/WSL
+./scripts/restore.sh --components keycloak backups/20240115_120000
 
-# Elasticsearch only
-# Register snapshot repo and restore (see restore.sh)
+# Windows
+.\scripts\restore.ps1 --components keycloak,webmodeler backups\20240115_120000
 ```
+
+Allowed components:
+
+| Component | Restores | Notes |
+|---|---|---|
+| `all` | Full stack data and configs | Default; keeps the original disaster-recovery behavior |
+| `keycloak` | `keycloak.sql.gz` into the `postgres` service | Users, credentials, realm/client config, role mappings |
+| `webmodeler` | `webmodeler.sql.gz` into `web-modeler-db` | Web Modeler projects and database state |
+| `elasticsearch` | Snapshot under `elasticsearch/` | Deletes and restores Camunda-related indices/data streams only |
+| `orchestration` | `orchestration.tar.gz` into the Zeebe volume | Best used together with `elasticsearch` |
+| `configs` | `configs.tar.gz` | In `--cross-cluster` mode configs are extracted to `restored-configs/` instead of overwriting local files |
+
+Examples:
+
+```bash
+# Restore Keycloak only
+./scripts/restore.sh --components keycloak backups/20240115_120000
+
+# Restore Web Modeler and Keycloak together
+./scripts/restore.sh --components keycloak,webmodeler backups/20240115_120000
+
+# Restore Camunda runtime state together
+./scripts/restore.sh --components orchestration,elasticsearch backups/20240115_120000
+
+# Restore everything except local host configuration
+./scripts/restore.sh --cross-cluster --components keycloak,webmodeler,orchestration,elasticsearch backups/20240115_120000
+
+# Restore production data into local dev and rewrite Keycloak clients for local HOST
+./scripts/restore.sh --cross-cluster --rehost-keycloak backups/20240115_120000
+```
+
+Granular restores stop the stack, restore only the selected data sources, then start the stack again. They intentionally do **not** guarantee a globally consistent point-in-time restore across unselected data stores. Use them for targeted repair, e.g. a damaged Keycloak realm or Web Modeler database. For disaster recovery, migration, or reverting the whole platform to a backup timestamp, use the default full restore.
+
+Avoid restoring only `orchestration` unless you know the Elasticsearch state can be rebuilt or is already compatible. In most recovery cases, restore `orchestration,elasticsearch` together so Zeebe state and exported Camunda indices are aligned.
 
 ## Pre/Post-Restore State Comparison
 
@@ -426,6 +493,8 @@ A passing drill means your backup format, restore logic, and stack health checks
 | `--dry-run` | Shows what would be done without executing |
 | `--cross-cluster` | Enables cross-cluster restore (no config overwrite) |
 | `--create-backup` | Runs the existing backup script before restore starts (alias: `--createBackup`) |
+| `--rehost-keycloak` | After restoring Keycloak, rewrites selected clients for the current `HOST` and local client secrets |
+| `--components LIST` | Restores only selected components (`all`, `keycloak`, `webmodeler`, `elasticsearch`, `orchestration`, `configs`) |
 | `--verify` | Checks backup integrity without restoring (alias: `--test`) |
 | `-h, --help` | Shows help |
 
@@ -467,6 +536,9 @@ The drill also recognizes the environment variables listed in [Restore Drill](#r
 
 # Cross-cluster restore
 ./scripts/restore.sh --cross-cluster backups/20240115_120000
+
+# Cross-cluster restore into local HOST with Keycloak client rehost
+./scripts/restore.sh --cross-cluster --rehost-keycloak backups/20240115_120000
 
 # Dry-run of a restore
 ./scripts/restore.sh --dry-run --force backups/20240115_120000
