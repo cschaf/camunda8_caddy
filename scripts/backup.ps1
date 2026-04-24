@@ -150,7 +150,7 @@ function New-EncryptedBackupArchive {
 }
 
 function Main {
-    Parse-Args -Args $rawArgs
+    Parse-Args -CliArgs $rawArgs
 
     Load-Env
     $stage = Get-Stage
