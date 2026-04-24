@@ -225,6 +225,91 @@ function Get-ComposeVolumeName {
     return "$(Get-ComposeProjectName)_$VolumeKey"
 }
 
+function Get-RestoreStartTimestamp {
+    return [DateTimeOffset]::UtcNow
+}
+
+function Cleanup-DanglingComposeVolumes {
+    param(
+        [DateTimeOffset]$RestoreStartedAt,
+        [string]$ProjectName = (Get-ComposeProjectName)
+    )
+
+    Log "Cleaning up dangling Docker volumes from previous restore runs..."
+
+    $dangling = @()
+    try {
+        $dangling = @(docker volume ls -q -f dangling=true 2>$null | Where-Object { $_ -and $_.Trim() -ne "" })
+    }
+    catch {
+        Log "WARNING: Could not list dangling Docker volumes: $_"
+        return
+    }
+
+    if ($dangling.Count -eq 0) {
+        Log "No dangling Docker volumes found."
+        return
+    }
+
+    $removed = 0
+    foreach ($volumeName in $dangling) {
+        if ($volumeName -eq "elastic-backup") {
+            continue
+        }
+
+        $inspectRaw = $null
+        try {
+            $inspectRaw = docker volume inspect $volumeName 2>$null
+        }
+        catch {
+            continue
+        }
+        if (-not $inspectRaw) {
+            continue
+        }
+
+        try {
+            $inspect = $inspectRaw | ConvertFrom-Json
+            if ($inspect -is [System.Array]) {
+                $inspect = $inspect[0]
+            }
+        }
+        catch {
+            continue
+        }
+
+        $labels = $inspect.Labels
+        if (-not $labels) {
+            continue
+        }
+        if ($labels.'com.docker.compose.project' -ne $ProjectName) {
+            continue
+        }
+
+        $createdAt = $null
+        try {
+            $createdAt = [DateTimeOffset]::Parse($inspect.CreatedAt).ToUniversalTime()
+        }
+        catch {
+            continue
+        }
+        if ($createdAt -gt $RestoreStartedAt.ToUniversalTime()) {
+            continue
+        }
+
+        try {
+            docker volume rm $volumeName 2>$null | Out-Null
+            $removed++
+            Log "Removed dangling volume: $volumeName"
+        }
+        catch {
+            Log "WARNING: Could not remove dangling volume ${volumeName}: $_"
+        }
+    }
+
+    Log "Dangling volume cleanup removed $removed volume(s)."
+}
+
 function Collect-ESState {
     param(
         [string]$Phase,

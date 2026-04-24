@@ -273,6 +273,88 @@ compose_volume_name() {
   echo "$(get_compose_project_name)_${volume_key}"
 }
 
+restore_start_timestamp() {
+  date -u '+%Y-%m-%dT%H:%M:%SZ'
+}
+
+cleanup_dangling_compose_volumes() {
+  local restore_started_at="$1"
+  local project_name="${2:-$(get_compose_project_name)}"
+
+  log "Cleaning up dangling Docker volumes from previous restore runs..."
+
+  local dangling_volumes
+  dangling_volumes="$(docker volume ls -q -f dangling=true 2>/dev/null || true)"
+  if [[ -z "$dangling_volumes" ]]; then
+    log "No dangling Docker volumes found."
+    return 0
+  fi
+
+  local removed=0
+  while IFS= read -r volume_name; do
+    [[ -z "$volume_name" ]] && continue
+    [[ "$volume_name" == "elastic-backup" ]] && continue
+
+    local inspect_json
+    inspect_json="$(docker volume inspect "$volume_name" 2>/dev/null || true)"
+    [[ -z "$inspect_json" ]] && continue
+
+    local decision
+    decision="$(python3 -c '
+import json, sys
+from datetime import datetime, timezone
+
+project_name = sys.argv[1]
+restore_started_at = sys.argv[2]
+inspect_json = sys.argv[3]
+
+try:
+    restore_dt = datetime.strptime(restore_started_at, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+except ValueError:
+    print("skip")
+    raise SystemExit
+
+try:
+    payload = json.loads(inspect_json)
+    item = payload[0] if isinstance(payload, list) and payload else payload
+except Exception:
+    print("skip")
+    raise SystemExit
+
+labels = item.get("Labels") or {}
+if labels.get("com.docker.compose.project") != project_name:
+    print("skip")
+    raise SystemExit
+
+created_raw = item.get("CreatedAt") or ""
+created_main = created_raw.split(".")[0]
+try:
+    created_dt = datetime.strptime(created_main, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+except ValueError:
+    try:
+        created_dt = datetime.fromisoformat(created_raw.replace("Z", "+00:00")).astimezone(timezone.utc)
+    except ValueError:
+        print("skip")
+        raise SystemExit
+
+print("remove" if created_dt <= restore_dt else "skip")
+' "$project_name" "$restore_started_at" "$inspect_json" 2>/dev/null || true)"
+
+    if [[ "$decision" != "remove" ]]; then
+      continue
+    fi
+
+    if docker volume rm "$volume_name" > /dev/null 2>&1; then
+      removed=$((removed + 1))
+      log "Removed dangling volume: $volume_name"
+    else
+      log "WARNING: Could not remove dangling volume $volume_name"
+    fi
+  done <<< "$dangling_volumes"
+
+  log "Dangling volume cleanup removed $removed volume(s)."
+}
+
 collect_es_state() {
   local phase="$1"
   local output_file="$2"

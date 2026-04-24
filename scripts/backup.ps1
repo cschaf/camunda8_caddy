@@ -104,6 +104,7 @@ function Main {
         # Orchestration stop + all backups while stopped + restart
         Log "Stopping orchestration for cold backup..."
         if ($TestMode) {
+            Log "[TEST] Would collect Elasticsearch state to: $(Join-Path $backupDir 'backup-state.json')"
             Log "[TEST] Would stop orchestration"
             Log "[TEST] Would backup Zeebe state from volume 'orchestration'"
             Log "[TEST] Would pg_dump Keycloak DB: $env:POSTGRES_DB"
@@ -112,6 +113,9 @@ function Main {
             Log "[TEST] Would start orchestration"
         }
         else {
+            $backupStateFile = Join-Path $backupDir "backup-state.json"
+            try { Collect-ESState -Phase "backup" -OutputFile $backupStateFile } catch { Log "WARNING: Backup state collection failed: $_" }
+
             Invoke-Expression "$cmd stop --timeout 60 orchestration" | Out-Null
             $orchestrationStopped = $true
             Start-Sleep -Seconds 2

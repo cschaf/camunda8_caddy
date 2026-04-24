@@ -131,6 +131,8 @@ main() {
   stage="$(get_stage)"
   local cmd
   cmd="$(docker_compose_cmd)"
+  local restore_started_at
+  restore_started_at="$(restore_start_timestamp)"
 
   LOG_FILE="$BACKUP_DIR/restore.log"
   mkdir -p "$BACKUP_BASE_DIR"
@@ -254,9 +256,9 @@ PYEOF
   # Step 3: Stop stack
   log "Stopping Camunda stack..."
   if [[ "$DRY_RUN" == true ]]; then
-    log "[DRY-RUN] Would run: $cmd down"
+    log "[DRY-RUN] Would run: $cmd down --remove-orphans"
   else
-    $cmd down
+    $cmd down --remove-orphans
   fi
 
   # Step 4: Remove volumes (except keycloak-theme)
@@ -295,6 +297,7 @@ PYEOF
   log "Restoring Keycloak database..."
   if [[ "$DRY_RUN" == true ]]; then
     log "[DRY-RUN] Would restore Keycloak DB from: $BACKUP_DIR/keycloak.sql.gz"
+    log "[DRY-RUN] Would run ANALYZE on Keycloak DB"
   else
     if [[ -f "$BACKUP_DIR/keycloak.sql.gz" ]]; then
       gunzip -c "$BACKUP_DIR/keycloak.sql.gz" | docker exec -i postgres pg_restore \
@@ -302,6 +305,12 @@ PYEOF
         log "WARNING: pg_restore exited with non-zero status (may be normal for existing objects)"
       }
       log "Keycloak database restored."
+      # pg_restore does not restore planner statistics; run ANALYZE so the
+      # first queries after restore use good plans instead of waiting for
+      # autovacuum (see docs/backup-restore.md).
+      log "Refreshing Keycloak DB planner statistics (ANALYZE)..."
+      docker exec postgres psql -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" \
+        -c "ANALYZE;" >/dev/null 2>&1 || log "WARNING: ANALYZE on Keycloak DB failed (non-fatal)"
     else
       log "WARNING: Keycloak backup not found, skipping."
     fi
@@ -310,6 +319,7 @@ PYEOF
   log "Restoring Web Modeler database..."
   if [[ "$DRY_RUN" == true ]]; then
     log "[DRY-RUN] Would restore Web Modeler DB from: $BACKUP_DIR/webmodeler.sql.gz"
+    log "[DRY-RUN] Would run ANALYZE on Web Modeler DB"
   else
     if [[ -f "$BACKUP_DIR/webmodeler.sql.gz" ]]; then
       gunzip -c "$BACKUP_DIR/webmodeler.sql.gz" | docker exec -i web-modeler-db pg_restore \
@@ -317,6 +327,9 @@ PYEOF
         log "WARNING: pg_restore exited with non-zero status (may be normal for existing objects)"
       }
       log "Web Modeler database restored."
+      log "Refreshing Web Modeler DB planner statistics (ANALYZE)..."
+      docker exec web-modeler-db psql -U "${WEBMODELER_DB_USER}" -d "${WEBMODELER_DB_NAME}" \
+        -c "ANALYZE;" >/dev/null 2>&1 || log "WARNING: ANALYZE on Web Modeler DB failed (non-fatal)"
     else
       log "WARNING: Web Modeler backup not found, skipping."
     fi
@@ -529,6 +542,7 @@ except Exception as e:
     # Collect post-restore state and compare to pre-restore state
     collect_es_state "after" "$state_after" || true
     compare_es_state "$state_before" "$state_after" || true
+    cleanup_dangling_compose_volumes "$restore_started_at" || true
 
     log "Restore completed successfully."
   fi

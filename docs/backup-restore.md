@@ -88,6 +88,7 @@ Each backup creates a timestamped directory under `backups/YYYYMMDD_HHMMSS/`:
 
 ```
 backups/20240115_120000/
+├── backup-state.json      # pre-backup Elasticsearch state summary
 ├── backup.log              # Execution log
 ├── configs.tar.gz          # Configuration files
 ├── elasticsearch/          # Elasticsearch snapshot data
@@ -112,7 +113,9 @@ Run the backup script regularly, e.g. via a cronjob:
 
 The script creates a backup folder under `backups/YYYYMMDD_HHMMSS/` and automatically generates a JSON manifest with checksums.
 
-The manifest is recursive. It covers both top-level backup files and nested files under `elasticsearch/`, so `--test` restore mode validates copied snapshot data as well.
+Each real backup also writes `backup-state.json` before `orchestration` is stopped. It captures the current Elasticsearch cluster health, Camunda index counts, document totals, and data stream names so later debugging can compare what was present at backup time.
+
+The manifest is recursive. It covers both top-level backup files, `backup-state.json`, and nested files under `elasticsearch/`, so `--test` restore mode validates copied snapshot data as well.
 
 ### Test Run (simulation)
 
@@ -162,6 +165,8 @@ To test the backup flow without modifying data:
 ### Elasticsearch Snapshot Architecture
 
 Elasticsearch snapshots are stored in a dedicated Docker volume (`elastic-backup`) rather than a host bind-mount. This avoids permission issues on Windows Docker Desktop. After a successful snapshot, the data is copied from the volume to the host backup directory (`backups/YYYYMMDD_HHMMSS/elasticsearch/`). During restore, the data is copied back from the host into the Docker volume before the snapshot is restored.
+
+The `elastic-backup` volume has a fixed Docker `name:` and is intentionally not removed during restore. The restore flow overwrites its contents from the selected backup instead.
 
 ## Restore Scenarios
 
@@ -215,13 +220,16 @@ Current restore flow:
 
 1. Stop the stack and remove the data volumes (`orchestration`, `elastic`, `postgres`, `postgres-web`)
 2. Start only the core services needed for restore: `postgres`, `web-modeler-db`, `elasticsearch`
-3. Restore the PostgreSQL databases
+3. Restore the PostgreSQL databases, then run `ANALYZE` on each restored database so the planner has fresh statistics before app services start (without this, the first Web Modeler project load after restore can take ~12 s per query until autovacuum catches up)
 4. Restore the Elasticsearch snapshot while Camunda application services are still stopped
 5. Create the `orchestration` container via Docker Compose and restore Zeebe state into the compose-managed volume
 6. Restore configuration files
 7. Start the full stack and wait for service health checks
+8. Remove restore-created dangling Compose volumes from older runs
 
 This ordering prevents Camunda services from recreating Elasticsearch indices before the snapshot restore runs.
+
+The restore shutdown step now uses `docker compose down --remove-orphans`. After the stack is healthy again, the scripts remove dangling volumes that still carry this Compose project's labels and were created before the current restore started. This clears orphaned anonymous volumes from prior restore runs without touching parallel stacks or the fixed `elastic-backup` volume.
 
 ### Granular Restore
 
@@ -272,6 +280,8 @@ The comparison emitted to `restore.log` and stdout looks like:
 ```
 
 Use this as a quick sanity check that the restore landed the expected data. Non-Camunda indices are intentionally excluded — the restore itself only touches Camunda-scoped data, so noise from other indices would drown out the signal. State files are skipped by the manifest and do not affect backup integrity checks.
+
+`backup-state.json` uses the same schema as the restore state files, but records the cluster state at backup time and is included in the manifest.
 
 ## CLI Reference
 
@@ -372,6 +382,25 @@ Do not treat `Configs backed up ... (N files)` and `WARNING: Config archive may 
 ### pg_restore warnings
 
 `pg_restore` often emits warnings about existing objects. This is normal and does not affect the restore as long as no errors occur.
+
+### Web Modeler is slow for ~30 s after restore
+
+**Symptom:** Opening a BPMN diagram right after a restore takes ~20 s instead of ~2 s. Browser DevTools shows `GET /internal-api/projects/{id}?includeFiles=true&includeFolders=true` spending ~12 s in TTFB, while the same endpoint with `includeFolders=false` returns in ~200 ms. After ~30 s of activity, every request becomes fast again without any intervention.
+
+**Cause:** `pg_dump -Fc` / `pg_restore` does **not** restore the contents of `pg_statistic` — PostgreSQL's per-column planner statistics are always rebuilt locally after restore. Until they exist, the planner falls back to hard-coded defaults and picks poor plans for any non-trivial query (the Web Modeler project-with-folders fetch is particularly sensitive because it joins across projects, folders, and files). Autovacuum eventually runs `ANALYZE` on its own schedule (~30 s on the default configuration), which is why the slowness disappears after a brief window.
+
+This is an inherent `pg_restore` behavior, not a bug in the Camunda images or in the backup format. It affects **both** `postgres` (Keycloak) and `web-modeler-db`, but the Web Modeler queries are the ones most visibly affected.
+
+**Fix:** The restore scripts now run `ANALYZE` on each database immediately after `pg_restore` finishes and before the Camunda application services are started. With fresh statistics in place from the first request, the planner chooses the correct plan and the first BPMN load after restore matches normal cold-start performance.
+
+If you ever run a manual `pg_restore` (see [Granular Restore](#granular-restore)), remember to follow up with:
+
+```bash
+docker exec postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "ANALYZE;"
+docker exec web-modeler-db psql -U "$WEBMODELER_DB_USER" -d "$WEBMODELER_DB_NAME" -c "ANALYZE;"
+```
+
+Without it the stack still works correctly — it is only slow until autovacuum catches up.
 
 ### Orchestration does not start after restore
 

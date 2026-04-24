@@ -108,6 +108,7 @@ function Main {
     Load-Env
     $stage = Get-Stage
     $cmd = Get-DockerComposeCmd
+    $restoreStartedAt = Get-RestoreStartTimestamp
 
     $Global:LogFile = Join-Path $BackupDir "restore.log"
     New-Item -ItemType Directory -Path $BackupBaseDir -Force | Out-Null
@@ -208,10 +209,10 @@ function Main {
         # Stop stack
         Log "Stopping Camunda stack..."
         if ($DryRun) {
-            Log "[DRY-RUN] Would run: $cmd down"
+            Log "[DRY-RUN] Would run: $cmd down --remove-orphans"
         }
         else {
-            Invoke-Expression "$cmd down" | Out-Null
+            Invoke-Expression "$cmd down --remove-orphans" | Out-Null
         }
 
         # Remove volumes
@@ -265,12 +266,18 @@ function Main {
         $keycloakBackup = Join-Path $BackupDir "keycloak.sql.gz"
         if ($DryRun) {
             Log "[DRY-RUN] Would restore Keycloak DB from: $keycloakBackup"
+            Log "[DRY-RUN] Would run ANALYZE on Keycloak DB"
         }
         else {
             if (Test-Path $keycloakBackup) {
                 $pgRestoreCmd = "gzip -d -c `"$keycloakBackup`" | docker exec -i postgres pg_restore -U `"$env:POSTGRES_USER`" -d `"$env:POSTGRES_DB`" --clean --if-exists"
                 Invoke-Expression "$pgRestoreCmd 2>`$null" | Out-Null
                 Log "Keycloak database restored."
+                # pg_restore does not restore planner statistics; run ANALYZE so the
+                # first queries after restore use good plans instead of waiting for
+                # autovacuum (see docs/backup-restore.md).
+                Log "Refreshing Keycloak DB planner statistics (ANALYZE)..."
+                docker exec postgres psql -U "$env:POSTGRES_USER" -d "$env:POSTGRES_DB" -c "ANALYZE;" 2>$null | Out-Null
             }
             else {
                 Log "WARNING: Keycloak backup not found, skipping."
@@ -282,12 +289,15 @@ function Main {
         $webmodelerBackup = Join-Path $BackupDir "webmodeler.sql.gz"
         if ($DryRun) {
             Log "[DRY-RUN] Would restore Web Modeler DB from: $webmodelerBackup"
+            Log "[DRY-RUN] Would run ANALYZE on Web Modeler DB"
         }
         else {
             if (Test-Path $webmodelerBackup) {
                 $pgRestoreCmd = "gzip -d -c `"$webmodelerBackup`" | docker exec -i web-modeler-db pg_restore -U `"$env:WEBMODELER_DB_USER`" -d `"$env:WEBMODELER_DB_NAME`" --clean --if-exists"
                 Invoke-Expression "$pgRestoreCmd 2>`$null" | Out-Null
                 Log "Web Modeler database restored."
+                Log "Refreshing Web Modeler DB planner statistics (ANALYZE)..."
+                docker exec web-modeler-db psql -U "$env:WEBMODELER_DB_USER" -d "$env:WEBMODELER_DB_NAME" -c "ANALYZE;" 2>$null | Out-Null
             }
             else {
                 Log "WARNING: Web Modeler backup not found, skipping."
@@ -496,6 +506,7 @@ function Main {
             # Collect post-restore state and compare to pre-restore state
             try { Collect-ESState -Phase "after" -OutputFile $stateAfter } catch { Log "WARNING: Post-restore state collection failed: $_" }
             try { Compare-ESState -BeforeFile $stateBefore -AfterFile $stateAfter } catch { Log "WARNING: State comparison failed: $_" }
+            try { Cleanup-DanglingComposeVolumes -RestoreStartedAt $restoreStartedAt } catch { Log "WARNING: Dangling volume cleanup failed: $_" }
 
             Log "Restore completed successfully."
         }

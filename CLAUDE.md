@@ -219,13 +219,15 @@ Also add `SERVER_FORWARD_HEADERS_STRATEGY: framework` to the service's environme
 
 7. **Spring Boot POST 403 via proxy (CSRF Origin check)** — Spring Security validates that the `Origin` header on POST/PUT/DELETE matches the server's own URL. Behind Caddy this fails unless you add `SERVER_FORWARD_HEADERS_STRATEGY: framework` to the service's environment in `docker-compose.yaml`. **Apply this to every Spring Boot service added to the proxy.**
 
-8. **`header_up` is a `reverse_proxy` subdirective** — It cannot be used as a standalone directive inside a Caddy `handle` block. Always nest it: `reverse_proxy upstream { header_up -Origin }`.
+8. **`elastic-backup` is intentionally persistent across restore runs** — it uses a fixed Docker `name:` rather than a compose-prefixed managed volume. Restore overwrites its contents from the selected backup, but does not remove the volume itself.
 
-9. **HTTPS proxy → browser-facing Keycloak URL must also be HTTPS** — Services accessed via the reverse proxy are served over HTTPS. If `KEYCLOAK_BASE_URL` (or equivalent) still points to `http://localhost:18080`, the browser will refuse the OIDC discovery request (mixed content). Set it to `https://keycloak.{HOST}/auth` instead.
+9. **`header_up` is a `reverse_proxy` subdirective** — It cannot be used as a standalone directive inside a Caddy `handle` block. Always nest it: `reverse_proxy upstream { header_up -Origin }`.
 
-10. **Console is Node.js, not Spring Boot** — OIDC config is in `docker-compose.yaml` env vars (`KEYCLOAK_BASE_URL`, `KEYCLOAK_INTERNAL_BASE_URL`), not in `.console/application.yaml`. Spring Boot gotchas (font 403, CSRF POST, `SERVER_FORWARD_HEADERS_STRATEGY`) do not apply to Console.
+10. **HTTPS proxy → browser-facing Keycloak URL must also be HTTPS** — Services accessed via the reverse proxy are served over HTTPS. If `KEYCLOAK_BASE_URL` (or equivalent) still points to `http://localhost:18080`, the browser will refuse the OIDC discovery request (mixed content). Set it to `https://keycloak.{HOST}/auth` instead.
 
-11. **Spring Boot `redirectRootUrl` must use proxy URL** — Camunda Spring Boot services configure post-login redirect roots in `application.yaml` (e.g. `camunda.operate.identity.redirectRootUrl`, `camunda.tasklist.identity.redirectRootUrl`). When behind the proxy these must point to the proxy URL (e.g. `https://orchestration.{HOST}/operate`), not `http://localhost:8088`. Otherwise the browser is sent to the non-proxy URL after SSO completes.
+11. **Console is Node.js, not Spring Boot** — OIDC config is in `docker-compose.yaml` env vars (`KEYCLOAK_BASE_URL`, `KEYCLOAK_INTERNAL_BASE_URL`), not in `.console/application.yaml`. Spring Boot gotchas (font 403, CSRF POST, `SERVER_FORWARD_HEADERS_STRATEGY`) do not apply to Console.
+
+12. **Spring Boot `redirectRootUrl` must use proxy URL** — Camunda Spring Boot services configure post-login redirect roots in `application.yaml` (e.g. `camunda.operate.identity.redirectRootUrl`, `camunda.tasklist.identity.redirectRootUrl`). When behind the proxy these must point to the proxy URL (e.g. `https://orchestration.{HOST}/operate`), not `http://localhost:8088`. Otherwise the browser is sent to the non-proxy URL after SSO completes.
 
 12. **Web Modeler WebSocket (Pusher) via proxy** — When `webmodeler.{HOST}` is served over HTTPS, the browser's Pusher client must connect to the proxy host with TLS. Required changes in `docker-compose.yaml`:
     - `web-modeler-webapp`: `CLIENT_PUSHER_HOST: webmodeler.${HOST}`, `CLIENT_PUSHER_PORT: "443"`, `CLIENT_PUSHER_FORCE_TLS: "true"`, `SERVER_URL: https://webmodeler.${HOST}`, `OAUTH2_TOKEN_ISSUER: https://keycloak.${HOST}/auth/realms/camunda-platform`

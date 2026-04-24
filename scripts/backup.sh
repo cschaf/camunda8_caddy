@@ -127,6 +127,7 @@ main() {
   # Step 5-9: Orchestration stop + all backups while stopped + restart
   log "Stopping orchestration for cold backup..."
   if [[ "$TEST_MODE" == true ]]; then
+    log "[TEST] Would collect Elasticsearch state to: $backup_dir/backup-state.json"
     log "[TEST] Would stop orchestration"
     log "[TEST] Would backup Zeebe state from volume 'orchestration'"
     log "[TEST] Would pg_dump Keycloak DB: ${POSTGRES_DB:-}"
@@ -134,6 +135,8 @@ main() {
     log "[TEST] Would create Elasticsearch snapshot"
     log "[TEST] Would start orchestration"
   else
+    collect_es_state "backup" "$backup_dir/backup-state.json" || true
+
     $cmd stop --timeout 60 orchestration || true
     ORCHESTRATION_STOPPED=true
     sleep 2
