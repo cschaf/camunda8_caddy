@@ -13,7 +13,9 @@ $EnvFile = Join-Path $ProjectDir ".env"
 for ($i = 0; $i -lt $CliArgs.Count; $i++) {
     if ($CliArgs[$i] -eq "--env-file" -and ($i + 1) -lt $CliArgs.Count) {
         $EnvFile = $CliArgs[$i + 1]
-        $CliArgs = $CliArgs[0..($i-1)] + $CliArgs[($i+2)..($CliArgs.Count-1)]
+        $before = if ($i -gt 0) { $CliArgs[0..($i-1)] } else { @() }
+        $after = if (($i + 2) -lt $CliArgs.Count) { $CliArgs[($i+2)..($CliArgs.Count-1)] } else { @() }
+        $CliArgs = $before + $after
         break
     }
 }
@@ -405,7 +407,7 @@ function Main {
                     $idx = $row.index
                     if ($idx -match $camundaPattern) {
                         try {
-                            Invoke-RestMethod -Uri "http://localhost:9200/$idx" -Method Delete | Out-Null
+                            Invoke-RestMethod -Uri "${esUrl}/$idx" -Method Delete | Out-Null
                         }
                         catch {
                             # Already gone; ignore
@@ -424,7 +426,7 @@ function Main {
                     foreach ($ds in $dsResponse.data_streams) {
                         if ($ds.name -match $camundaPattern) {
                             try {
-                                Invoke-RestMethod -Uri "http://localhost:9200/_data_stream/$($ds.name)" -Method Delete | Out-Null
+                                Invoke-RestMethod -Uri "${esUrl}/_data_stream/$($ds.name)" -Method Delete | Out-Null
                             }
                             catch {
                                 # Already gone; ignore

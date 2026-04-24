@@ -297,6 +297,20 @@ A backup that has never been restored is a hope, not a guarantee. The drill catc
 - **Confirms service health after restore** — a backup can be technically valid but leave services in a broken state (e.g., missing indices, unhealthy Keycloak); smoke tests verify the stack is actually usable
 - **Safe to run anytime** — because the drill stack is fully isolated, you can run it while the live stack is serving traffic. The two stacks coexist without interference
 
+### `--test` vs restore drill
+
+The restore script already has a `--test` mode. It is not replaced by the drill — they answer different questions:
+
+| | `--test` | Restore drill |
+|---|---|---|
+| **What it checks** | Manifest checksums and file integrity | Full restore + service health |
+| **Containers started** | None | Full isolated Camunda stack |
+| **Live stack affected** | No | No |
+| **Runtime** | Seconds | Minutes |
+| **Best for** | Quick post-backup sanity check, verifying a backup before copying offsite | Proving the restore path still works after image or compose changes |
+
+Use `--test` when you want a fast, lightweight verification that the backup files are intact. Use the drill when you need confidence that the entire restore pipeline — scripts, compose configuration, container startup, and application health — still works end to end.
+
 ### How it works
 
 When you run `restore-drill.sh`, the script:

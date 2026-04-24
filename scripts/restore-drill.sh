@@ -32,7 +32,7 @@ fi
 
 if [[ -z "$BACKUP_DIR" ]]; then
   if [[ -d "$PROJECT_DIR/backups" ]]; then
-    BACKUP_DIR="$(find "$PROJECT_DIR/backups" -maxdepth 1 -type d -name "[0-9]*" | sort | tail -n 1 || true)"
+    BACKUP_DIR="$(find "$PROJECT_DIR/backups" -maxdepth 1 -type d | grep -E '/[0-9]{8}_[0-9]{6}$' | sort | tail -n 1 || true)"
   fi
 fi
 

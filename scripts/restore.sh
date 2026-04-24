@@ -462,7 +462,7 @@ PYEOF
     if [[ -n "$data_streams" ]]; then
       while IFS= read -r ds; do
         [[ -z "$ds" ]] && continue
-        curl -s -X DELETE "http://localhost:9200/_data_stream/${ds}" > /dev/null || true
+        curl -s -X DELETE "${es_url}/_data_stream/${ds}" > /dev/null || true
       done <<< "$data_streams"
     fi
     sleep 2
