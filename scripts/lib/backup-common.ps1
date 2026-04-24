@@ -6,7 +6,8 @@ if (-not $EnvFile) {
     $EnvFile = Join-Path $ProjectDir ".env"
 }
 $BackupBaseDir = Join-Path $ProjectDir "backups"
-$LockFile = Join-Path $BackupBaseDir ".backup.lock"
+$LockDir = Join-Path $BackupBaseDir ".backup.lock"
+$LockFile = Join-Path $LockDir "pid"
 
 function Log {
     param([string]$Message)
@@ -196,27 +197,41 @@ function Acquire-Lock {
         New-Item -ItemType Directory -Path $BackupBaseDir | Out-Null
     }
 
-    if (Test-Path $LockFile) {
-        $pidInFile = Get-Content $LockFile -ErrorAction SilentlyContinue
+    while ($true) {
         try {
-            $proc = Get-Process -Id $pidInFile -ErrorAction Stop
-            Log "ERROR: Another backup/restore process is already running (PID: $pidInFile)"
-            exit 2
+            New-Item -ItemType Directory -Path $LockDir -ErrorAction Stop | Out-Null
+            $PID | Set-Content -Path $LockFile
+            Log "Lock acquired: $LockDir"
+            return
         }
         catch {
-            Log "WARNING: Stale lock file found, removing..."
-            Remove-Item $LockFile -Force
+            $pidInFile = Get-Content $LockFile -ErrorAction SilentlyContinue
+            $parsedPid = 0
+            if ([int]::TryParse($pidInFile, [ref]$parsedPid)) {
+                try {
+                    $null = Get-Process -Id $parsedPid -ErrorAction Stop
+                    Log "ERROR: Another backup/restore process is already running (PID: $parsedPid)"
+                    exit 2
+                }
+                catch { }
+            }
+
+            Log "WARNING: Stale lock directory found, removing..."
+            Remove-Item $LockDir -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
-
-    $PID | Set-Content -Path $LockFile
-    Log "Lock acquired: $LockFile"
 }
 
 function Release-Lock {
-    if (Test-Path $LockFile) {
-        Remove-Item $LockFile -Force
-        Log "Lock released."
+    if (Test-Path $LockDir) {
+        $pidInFile = Get-Content $LockFile -ErrorAction SilentlyContinue
+        if (-not $pidInFile -or $pidInFile -eq "$PID") {
+            Remove-Item $LockDir -Recurse -Force
+            Log "Lock released."
+        }
+        else {
+            Log "WARNING: Lock not released because it is owned by PID: $pidInFile"
+        }
     }
 }
 

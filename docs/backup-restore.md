@@ -571,10 +571,10 @@ The drill also recognizes the environment variables listed in [Restore Drill](#r
 
 ### "Another backup/restore process is already running"
 
-A lock file (`backups/.backup.lock`) prevents parallel execution. If a previous crash left the lock behind:
+A lock directory (`backups/.backup.lock/`) prevents parallel execution. It contains a `pid` file so the scripts can detect and remove stale locks. If a previous crash left a lock behind and the owning process is gone:
 
 ```bash
-rm backups/.backup.lock
+rm -rf backups/.backup.lock
 ```
 
 Current scripts also release the lock reliably on PowerShell via `try/finally`, and the backup scripts restart stopped application services if a failure happens after the cold-backup stop.

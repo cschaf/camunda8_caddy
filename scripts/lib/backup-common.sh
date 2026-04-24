@@ -5,7 +5,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 ENV_FILE="${ENV_FILE:-$PROJECT_DIR/.env}"
 BACKUP_BASE_DIR="$PROJECT_DIR/backups"
-LOCK_FILE="$BACKUP_BASE_DIR/.backup.lock"
+LOCK_DIR="$BACKUP_BASE_DIR/.backup.lock"
+LOCK_FILE="$LOCK_DIR/pid"
 
 log() {
   local msg="[$(date '+%Y-%m-%d %H:%M:%S')] $*"
@@ -233,26 +234,35 @@ cleanup_old_backups() {
 acquire_lock() {
   mkdir -p "$BACKUP_BASE_DIR"
 
-  if [[ -f "$LOCK_FILE" ]]; then
+  while true; do
+    if mkdir "$LOCK_DIR" 2>/dev/null; then
+      echo "$$" > "$LOCK_FILE"
+      log "Lock acquired: $LOCK_DIR"
+      return 0
+    fi
+
     local pid
     pid="$(cat "$LOCK_FILE" 2>/dev/null || echo "unknown")"
-    if kill -0 "$pid" 2>/dev/null; then
+    if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then
       log "ERROR: Another backup/restore process is already running (PID: $pid)"
       exit 2
-    else
-      log "WARNING: Stale lock file found, removing..."
-      rm -f "$LOCK_FILE"
     fi
-  fi
 
-  echo "$$" > "$LOCK_FILE"
-  log "Lock acquired: $LOCK_FILE"
+    log "WARNING: Stale lock directory found, removing..."
+    rm -rf "$LOCK_DIR"
+  done
 }
 
 release_lock() {
-  if [[ -f "$LOCK_FILE" ]]; then
-    rm -f "$LOCK_FILE"
-    log "Lock released."
+  if [[ -d "$LOCK_DIR" ]]; then
+    local pid
+    pid="$(cat "$LOCK_FILE" 2>/dev/null || true)"
+    if [[ "$pid" == "$$" || -z "$pid" ]]; then
+      rm -rf "$LOCK_DIR"
+      log "Lock released."
+    else
+      log "WARNING: Lock not released because it is owned by PID: $pid"
+    fi
   fi
 }
 
