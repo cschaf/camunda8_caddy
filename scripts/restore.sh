@@ -134,6 +134,74 @@ except:
   return 1
 }
 
+validate_restore_inputs() {
+  local backup_dir="$1"
+  local missing=0
+  local required_files=(
+    "manifest.json"
+    "configs.tar.gz"
+    "keycloak.sql.gz"
+    "webmodeler.sql.gz"
+    "orchestration.tar.gz"
+    "snapshot-info.json"
+  )
+
+  log "Validating required restore artifacts..."
+  for rel in "${required_files[@]}"; do
+    if [[ ! -s "$backup_dir/$rel" ]]; then
+      log "ERROR: Required backup artifact missing or empty: $rel"
+      missing=1
+    fi
+  done
+
+  if [[ ! -d "$backup_dir/elasticsearch" ]] || ! find "$backup_dir/elasticsearch" -type f -print -quit | grep -q .; then
+    log "ERROR: Required Elasticsearch snapshot directory is missing or empty: elasticsearch/"
+    missing=1
+  fi
+
+  if [[ $missing -ne 0 ]]; then
+    exit 1
+  fi
+
+  gzip -t "$backup_dir/keycloak.sql.gz" || { log "ERROR: Keycloak dump is not valid gzip"; exit 1; }
+  gzip -t "$backup_dir/webmodeler.sql.gz" || { log "ERROR: Web Modeler dump is not valid gzip"; exit 1; }
+  tar tzf "$backup_dir/orchestration.tar.gz" >/dev/null || { log "ERROR: Orchestration archive is not readable"; exit 1; }
+  tar tzf "$backup_dir/configs.tar.gz" >/dev/null || { log "ERROR: Config archive is not readable"; exit 1; }
+
+  python3 - "$backup_dir/configs.tar.gz" "$backup_dir/orchestration.tar.gz" <<'PYEOF' || {
+import sys, tarfile
+
+for archive in sys.argv[1:]:
+    with tarfile.open(archive, "r:gz") as tf:
+        for member in tf.getmembers():
+            name = member.name.replace("\\", "/")
+            if name.startswith("/") or name == ".." or name.startswith("../") or "/../" in name:
+                print(f"ERROR: Unsafe tar path in {archive}: {member.name}")
+                sys.exit(1)
+PYEOF
+    log "ERROR: Backup archive contains unsafe paths"
+    exit 1
+  }
+
+  python3 - "$backup_dir/snapshot-info.json" <<'PYEOF' || {
+import json, sys
+with open(sys.argv[1]) as f:
+    d = json.load(f)
+snapshot = d.get("snapshot") or {}
+if snapshot.get("state") != "SUCCESS":
+    print(f"ERROR: Snapshot state is not SUCCESS: {snapshot.get('state', 'UNKNOWN')}")
+    sys.exit(1)
+if not snapshot.get("name"):
+    print("ERROR: Snapshot name missing from snapshot-info.json")
+    sys.exit(1)
+PYEOF
+    log "ERROR: Elasticsearch snapshot metadata is not restorable"
+    exit 1
+  }
+
+  log "Required restore artifacts validated."
+}
+
 main() {
   parse_args "$@"
 
@@ -178,12 +246,14 @@ main() {
   if [[ "$TEST_MODE" == true ]]; then
     log "=== TEST MODE: Verifying backup integrity ==="
     verify_manifest "$BACKUP_DIR"
+    validate_restore_inputs "$BACKUP_DIR"
     log "=== TEST MODE complete. Backup integrity verified. ==="
     release_lock
     exit 0
   fi
 
   verify_manifest "$BACKUP_DIR"
+  validate_restore_inputs "$BACKUP_DIR"
 
   # Load manifest for version/host checks
   local source_host
@@ -275,7 +345,9 @@ PYEOF
     if bash "$SCRIPT_DIR/backup.sh" > "$pre_restore_log" 2>&1; then
       log "Pre-restore backup completed. Log: $pre_restore_log"
     else
-      log "WARNING: Pre-restore backup failed, continuing with restore. Log: $pre_restore_log"
+      log "ERROR: Pre-restore backup failed. Aborting restore. Log: $pre_restore_log"
+      acquire_lock
+      exit 1
     fi
     acquire_lock
   fi
@@ -340,10 +412,12 @@ PYEOF
       pg_stderr="$(mktemp)"
       if ! gunzip -c "$BACKUP_DIR/keycloak.sql.gz" | docker exec -i postgres pg_restore \
         -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" --clean --if-exists 2>"$pg_stderr"; then
-        log "WARNING: pg_restore exited with non-zero status. stderr:"
+        log "ERROR: Keycloak pg_restore failed. stderr:"
         while IFS= read -r line; do
           log "  $line"
         done < "$pg_stderr"
+        rm -f "$pg_stderr"
+        exit 1
       fi
       rm -f "$pg_stderr"
       log "Keycloak database restored."
@@ -352,9 +426,10 @@ PYEOF
       # autovacuum (see docs/backup-restore.md).
       log "Refreshing Keycloak DB planner statistics (ANALYZE)..."
       docker exec postgres psql -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" \
-        -c "ANALYZE;" >/dev/null 2>&1 || log "WARNING: ANALYZE on Keycloak DB failed (non-fatal)"
+        -c "ANALYZE;" >/dev/null 2>&1 || { log "ERROR: ANALYZE on Keycloak DB failed"; exit 1; }
     else
-      log "WARNING: Keycloak backup not found, skipping."
+      log "ERROR: Keycloak backup not found."
+      exit 1
     fi
   fi
 
@@ -368,18 +443,21 @@ PYEOF
       pg_stderr="$(mktemp)"
       if ! gunzip -c "$BACKUP_DIR/webmodeler.sql.gz" | docker exec -i web-modeler-db pg_restore \
         -U "${WEBMODELER_DB_USER}" -d "${WEBMODELER_DB_NAME}" --clean --if-exists 2>"$pg_stderr"; then
-        log "WARNING: pg_restore exited with non-zero status. stderr:"
+        log "ERROR: Web Modeler pg_restore failed. stderr:"
         while IFS= read -r line; do
           log "  $line"
         done < "$pg_stderr"
+        rm -f "$pg_stderr"
+        exit 1
       fi
       rm -f "$pg_stderr"
       log "Web Modeler database restored."
       log "Refreshing Web Modeler DB planner statistics (ANALYZE)..."
       docker exec web-modeler-db psql -U "${WEBMODELER_DB_USER}" -d "${WEBMODELER_DB_NAME}" \
-        -c "ANALYZE;" >/dev/null 2>&1 || log "WARNING: ANALYZE on Web Modeler DB failed (non-fatal)"
+        -c "ANALYZE;" >/dev/null 2>&1 || { log "ERROR: ANALYZE on Web Modeler DB failed"; exit 1; }
     else
-      log "WARNING: Web Modeler backup not found, skipping."
+      log "ERROR: Web Modeler backup not found."
+      exit 1
     fi
   fi
 
@@ -425,11 +503,13 @@ PYEOF
         -v "$es_backup_dir:/source:ro" \
         -v "${es_backup_volume}:/dest" \
         alpine sh -c 'rm -rf /dest/* && cp -r /source/. /dest/' > /dev/null 2>&1 || {
-          log "WARNING: Could not copy snapshot data to volume"
+          log "ERROR: Could not copy snapshot data to volume"
+          exit 1
         }
       log "Snapshot data copied to volume '$es_backup_volume'."
     else
-      log "WARNING: Elasticsearch backup directory not found at $es_backup_dir, skipping snapshot copy."
+      log "ERROR: Elasticsearch backup directory not found at $es_backup_dir."
+      exit 1
     fi
 
     sleep 2
@@ -446,7 +526,8 @@ PYEOF
       -H 'Content-Type: application/json' \
       -d "$es_repo_body" 2>/dev/null || true)"
     if ! python3 -c "import json,sys; d=json.loads(sys.argv[1]); sys.exit(0 if d.get('acknowledged') else 1)" "$repo_response" > /dev/null 2>&1; then
-      log "WARNING: Could not register snapshot repo: $repo_response"
+      log "ERROR: Could not register snapshot repo: $repo_response"
+      exit 1
     fi
 
     # Verify the snapshot exists BEFORE deleting any indices, so a wrong or
@@ -524,9 +605,11 @@ except Exception as e:
     if [[ "$restore_status" == "SUCCESS" ]]; then
       log "Elasticsearch snapshot restored successfully."
     elif [[ "$restore_status" == ERROR* ]]; then
-      log "WARNING: Elasticsearch restore failed: $restore_status"
+      log "ERROR: Elasticsearch restore failed: $restore_status"
+      exit 1
     else
-      log "WARNING: Elasticsearch restore state: $restore_status"
+      log "ERROR: Elasticsearch restore state: $restore_status"
+      exit 1
     fi
   fi
 
@@ -546,7 +629,8 @@ except Exception as e:
         alpine sh -c "cd /data && tar xzf /backup/orchestration.tar.gz"
       log "Zeebe state restored."
     else
-      log "WARNING: Orchestration backup not found, skipping."
+      log "ERROR: Orchestration backup not found."
+      exit 1
     fi
   fi
 
@@ -568,7 +652,8 @@ except Exception as e:
         tar xzf "$BACKUP_DIR/configs.tar.gz" -C "$PROJECT_DIR"
         log "Configuration files restored."
       else
-        log "WARNING: Config backup not found, skipping."
+        log "ERROR: Config backup not found."
+        exit 1
       fi
     fi
   fi
@@ -590,7 +675,8 @@ except Exception as e:
   else
     sleep 10
     check_services_health || {
-      log "WARNING: Some services are not healthy yet. Check with: docker compose ps"
+      log "ERROR: Some services are not healthy yet. Check with: docker compose ps"
+      exit 1
     }
 
     # Collect post-restore state and compare to pre-restore state

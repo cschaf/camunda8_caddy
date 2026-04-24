@@ -101,6 +101,84 @@ function Wait-ForService {
     return $false
 }
 
+function Test-ArchiveSafePaths {
+    param([string]$ArchivePath)
+
+    $entries = tar tzf $ArchivePath 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        Log "ERROR: Archive is not readable: $ArchivePath"
+        exit 1
+    }
+
+    foreach ($entry in $entries) {
+        $normalized = ($entry -replace '\\', '/')
+        if ($normalized.StartsWith("/") -or $normalized -eq ".." -or $normalized.StartsWith("../") -or $normalized.Contains("/../")) {
+            Log "ERROR: Unsafe tar path in ${ArchivePath}: $entry"
+            exit 1
+        }
+    }
+}
+
+function Validate-RestoreInputs {
+    param([string]$BackupDir)
+
+    Log "Validating required restore artifacts..."
+    $requiredFiles = @(
+        "manifest.json",
+        "configs.tar.gz",
+        "keycloak.sql.gz",
+        "webmodeler.sql.gz",
+        "orchestration.tar.gz",
+        "snapshot-info.json"
+    )
+
+    $missing = $false
+    foreach ($rel in $requiredFiles) {
+        $path = Join-Path $BackupDir $rel
+        if (-not (Test-Path $path) -or (Get-Item $path).Length -eq 0) {
+            Log "ERROR: Required backup artifact missing or empty: $rel"
+            $missing = $true
+        }
+    }
+
+    $esBackupDir = Join-Path $BackupDir "elasticsearch"
+    if (-not (Test-Path $esBackupDir) -or -not (Get-ChildItem -Path $esBackupDir -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1)) {
+        Log "ERROR: Required Elasticsearch snapshot directory is missing or empty: elasticsearch\"
+        $missing = $true
+    }
+
+    if ($missing) {
+        exit 1
+    }
+
+    gzip -t (Join-Path $BackupDir "keycloak.sql.gz")
+    if ($LASTEXITCODE -ne 0) { Log "ERROR: Keycloak dump is not valid gzip"; exit 1 }
+
+    gzip -t (Join-Path $BackupDir "webmodeler.sql.gz")
+    if ($LASTEXITCODE -ne 0) { Log "ERROR: Web Modeler dump is not valid gzip"; exit 1 }
+
+    Test-ArchiveSafePaths -ArchivePath (Join-Path $BackupDir "orchestration.tar.gz")
+    Test-ArchiveSafePaths -ArchivePath (Join-Path $BackupDir "configs.tar.gz")
+
+    try {
+        $snapshotInfo = Get-Content (Join-Path $BackupDir "snapshot-info.json") -Raw | ConvertFrom-Json
+        if (-not $snapshotInfo.snapshot -or $snapshotInfo.snapshot.state -ne "SUCCESS") {
+            Log "ERROR: Snapshot state is not SUCCESS: $($snapshotInfo.snapshot.state)"
+            exit 1
+        }
+        if (-not $snapshotInfo.snapshot.name) {
+            Log "ERROR: Snapshot name missing from snapshot-info.json"
+            exit 1
+        }
+    }
+    catch {
+        Log "ERROR: Elasticsearch snapshot metadata is not restorable: $_"
+        exit 1
+    }
+
+    Log "Required restore artifacts validated."
+}
+
 function Main {
     param([string[]]$CliArgs)
 
@@ -145,11 +223,13 @@ function Main {
         if ($TestMode) {
             Log "=== TEST MODE: Verifying backup integrity ==="
             Verify-Manifest -BackupDir $BackupDir
+            Validate-RestoreInputs -BackupDir $BackupDir
             Log "=== TEST MODE complete. Backup integrity verified. ==="
             exit 0
         }
 
         Verify-Manifest -BackupDir $BackupDir
+        Validate-RestoreInputs -BackupDir $BackupDir
 
         $manifest = Get-Content $manifestFile | ConvertFrom-Json
         $sourceHost = $manifest.source_host
@@ -217,7 +297,9 @@ function Main {
                 Log "Pre-restore backup completed. Log: $preRestoreLog"
             }
             catch {
-                Log "WARNING: Pre-restore backup failed, continuing with restore. Log: $preRestoreLog"
+                Log "ERROR: Pre-restore backup failed. Aborting restore. Log: $preRestoreLog"
+                Acquire-Lock
+                exit 1
             }
             Acquire-Lock
         }
@@ -278,9 +360,9 @@ function Main {
 
         # Wait for core services
         if (-not $DryRun) {
-            Wait-ForService -Service "postgres" | Out-Null
-            Wait-ForService -Service "web-modeler-db" | Out-Null
-            Wait-ForService -Service "elasticsearch" | Out-Null
+            if (-not (Wait-ForService -Service "postgres")) { exit 1 }
+            if (-not (Wait-ForService -Service "web-modeler-db")) { exit 1 }
+            if (-not (Wait-ForService -Service "elasticsearch")) { exit 1 }
             Log "Core services are healthy."
         }
         else {
@@ -300,8 +382,10 @@ function Main {
                 $pgRestoreCmd = "gzip -d -c `"$keycloakBackup`" | docker exec -i postgres pg_restore -U `"$env:POSTGRES_USER`" -d `"$env:POSTGRES_DB`" --clean --if-exists"
                 Invoke-Expression "$pgRestoreCmd 2>$pgStderrFile" | Out-Null
                 if ($LASTEXITCODE -ne 0) {
-                    Log "WARNING: pg_restore exited with non-zero status (code: $LASTEXITCODE). stderr:"
+                    Log "ERROR: Keycloak pg_restore failed (code: $LASTEXITCODE). stderr:"
                     Get-Content $pgStderrFile -ErrorAction SilentlyContinue | ForEach-Object { Log "  $_" }
+                    Remove-Item $pgStderrFile -ErrorAction SilentlyContinue
+                    exit 1
                 }
                 Remove-Item $pgStderrFile -ErrorAction SilentlyContinue
                 Log "Keycloak database restored."
@@ -310,9 +394,11 @@ function Main {
                 # autovacuum (see docs/backup-restore.md).
                 Log "Refreshing Keycloak DB planner statistics (ANALYZE)..."
                 docker exec postgres psql -U "$env:POSTGRES_USER" -d "$env:POSTGRES_DB" -c "ANALYZE;" 2>$null | Out-Null
+                if ($LASTEXITCODE -ne 0) { Log "ERROR: ANALYZE on Keycloak DB failed"; exit 1 }
             }
             else {
-                Log "WARNING: Keycloak backup not found, skipping."
+                Log "ERROR: Keycloak backup not found."
+                exit 1
             }
         }
 
@@ -329,16 +415,20 @@ function Main {
                 $pgRestoreCmd = "gzip -d -c `"$webmodelerBackup`" | docker exec -i web-modeler-db pg_restore -U `"$env:WEBMODELER_DB_USER`" -d `"$env:WEBMODELER_DB_NAME`" --clean --if-exists"
                 Invoke-Expression "$pgRestoreCmd 2>$pgStderrFile" | Out-Null
                 if ($LASTEXITCODE -ne 0) {
-                    Log "WARNING: pg_restore exited with non-zero status (code: $LASTEXITCODE). stderr:"
+                    Log "ERROR: Web Modeler pg_restore failed (code: $LASTEXITCODE). stderr:"
                     Get-Content $pgStderrFile -ErrorAction SilentlyContinue | ForEach-Object { Log "  $_" }
+                    Remove-Item $pgStderrFile -ErrorAction SilentlyContinue
+                    exit 1
                 }
                 Remove-Item $pgStderrFile -ErrorAction SilentlyContinue
                 Log "Web Modeler database restored."
                 Log "Refreshing Web Modeler DB planner statistics (ANALYZE)..."
                 docker exec web-modeler-db psql -U "$env:WEBMODELER_DB_USER" -d "$env:WEBMODELER_DB_NAME" -c "ANALYZE;" 2>$null | Out-Null
+                if ($LASTEXITCODE -ne 0) { Log "ERROR: ANALYZE on Web Modeler DB failed"; exit 1 }
             }
             else {
-                Log "WARNING: Web Modeler backup not found, skipping."
+                Log "ERROR: Web Modeler backup not found."
+                exit 1
             }
         }
 
@@ -381,11 +471,13 @@ function Main {
                     Log "Snapshot data copied to volume '$esBackupVolume'."
                 }
                 catch {
-                    Log "WARNING: Could not copy snapshot data to volume: $_"
+                    Log "ERROR: Could not copy snapshot data to volume: $_"
+                    exit 1
                 }
             }
             else {
-                Log "WARNING: Elasticsearch backup directory not found at $esBackupDir, skipping snapshot copy."
+                Log "ERROR: Elasticsearch backup directory not found at $esBackupDir."
+                exit 1
             }
 
             Start-Sleep -Seconds 2
@@ -400,7 +492,8 @@ function Main {
                 Log "Elasticsearch snapshot repo registered."
             }
             catch {
-                Log "WARNING: Could not register snapshot repo: $_"
+                Log "ERROR: Could not register snapshot repo: $_"
+                exit 1
             }
 
             # Verify the snapshot exists BEFORE deleting any indices, so a wrong
@@ -468,10 +561,15 @@ function Main {
             try {
                 $restoreBody = '{"indices":"*,-.logs-*,-.ds-.logs-*,-ilm-history-*,-.ds-ilm-history-*","ignore_unavailable":true,"include_global_state":true}'
                 $restoreResponse = Invoke-RestMethod -Uri "${esUrl}/_snapshot/backup-repo/$snapshotName/_restore?wait_for_completion=true" -Method Post -ContentType "application/json" -Body $restoreBody
+                if (-not $restoreResponse.snapshot -or $restoreResponse.snapshot.state -ne "SUCCESS") {
+                    Log "ERROR: Elasticsearch restore state: $($restoreResponse.snapshot.state)"
+                    exit 1
+                }
                 Log "Elasticsearch snapshot restored successfully."
             }
             catch {
-                Log "WARNING: Elasticsearch restore failed: $_"
+                Log "ERROR: Elasticsearch restore failed: $_"
+                exit 1
             }
         }
 
@@ -493,7 +591,8 @@ function Main {
                 Log "Zeebe state restored."
             }
             else {
-                Log "WARNING: Orchestration backup not found, skipping."
+                Log "ERROR: Orchestration backup not found."
+                exit 1
             }
         }
 
@@ -521,7 +620,8 @@ function Main {
                     Log "Configuration files restored."
                 }
                 else {
-                    Log "WARNING: Config backup not found, skipping."
+                    Log "ERROR: Config backup not found."
+                    exit 1
                 }
             }
         }
@@ -544,7 +644,10 @@ function Main {
         }
         else {
             Start-Sleep -Seconds 10
-            Check-ServicesHealth | Out-Null
+            if (-not (Check-ServicesHealth)) {
+                Log "ERROR: Some services are not healthy yet. Check with: docker compose ps"
+                exit 1
+            }
 
             # Collect post-restore state and compare to pre-restore state
             try { Collect-ESState -Phase "after" -OutputFile $stateAfter } catch { Log "WARNING: Post-restore state collection failed: $_" }

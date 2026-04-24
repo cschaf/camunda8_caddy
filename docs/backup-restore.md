@@ -21,7 +21,7 @@ The backup system secures the following data:
 
 | Data Source | Method | Notes |
 |-------------|--------|-------|
-| Zeebe State | Volume dump (`orchestration.tar.gz`) | Cold backup (orchestration is stopped) |
+| Zeebe State | Volume dump (`orchestration.tar.gz`) | Cold backup (application services are stopped) |
 | Elasticsearch | Snapshot API | FS repository via Docker volume `elastic-backup`, copied to host after snapshot |
 | Keycloak DB | `pg_dump -Fc` | GZIP-compressed (`keycloak.sql.gz`) |
 | Web Modeler DB | `pg_dump -Fc` | GZIP-compressed (`webmodeler.sql.gz`) |
@@ -33,7 +33,7 @@ The backup system secures the following data:
 
 ## Relation to Official Procedure
 
-These scripts implement a **cold backup** tailored to the local Docker Compose stack: the `orchestration` container is stopped, then Elasticsearch is snapshotted, PostgreSQL databases are dumped, and the Zeebe state volume is archived. This yields consistent backups without orchestrating Camunda's backup APIs, at the cost of a short downtime window for the duration of the backup.
+These scripts implement a **cold backup** tailored to the local Docker Compose stack: application services that can write to Zeebe, Elasticsearch, or the PostgreSQL databases are stopped, then Elasticsearch is snapshotted, PostgreSQL databases are dumped, and the Zeebe state volume is archived. This yields consistent backups without orchestrating Camunda's backup APIs, at the cost of a short downtime window for the duration of the backup.
 
 They do **not** implement the official Camunda 8 Self-Managed hot-backup procedure, which:
 
@@ -54,7 +54,7 @@ Alignment notes:
 - The Elasticsearch snapshot repository registration and the `path.repo` mount in `docker-compose.yaml` match the official procedure and can be reused if you switch approaches later.
 - The snapshot `PUT` body uses `"feature_states": ["none"]`, matching the official recommendation for Elasticsearch 8.x.
 - On restore, the scripts delete only Camunda-related indices and data streams (`operate*`, `tasklist*`, `optimize*`, `zeebe*`, `camunda-*`, `.camunda*`, `.tasks*`) rather than wiping the whole cluster, which matches the index filter example in the official restore docs.
-- Before deleting anything on restore, the scripts verify the named snapshot exists in the repository and abort otherwise. A wrong or incomplete backup directory cannot destroy live data.
+- Before destructive restore steps, the scripts validate required artifacts, archive readability, checksums, and snapshot metadata. Before deleting Elasticsearch indices, they also verify the named snapshot exists in the registered repository and abort otherwise.
 
 ## Users and Permissions
 
@@ -114,7 +114,7 @@ Run the backup script regularly, e.g. via a cronjob:
 
 The script creates a backup folder under `backups/YYYYMMDD_HHMMSS/` and automatically generates a JSON manifest with checksums.
 
-Each real backup also writes `backup-state.json` before `orchestration` is stopped. It captures the current Elasticsearch cluster health, Camunda index counts, document totals, and data stream names so later debugging can compare what was present at backup time.
+Each real backup also writes `backup-state.json` before application services are stopped. It captures the current Elasticsearch cluster health, Camunda index counts, document totals, and data stream names so later debugging can compare what was present at backup time.
 
 The manifest is recursive. It covers both top-level backup files, `backup-state.json`, and nested files under `elasticsearch/`, so `--verify` restore mode validates copied snapshot data as well.
 
@@ -126,7 +126,7 @@ To test the backup flow without modifying data:
 ./scripts/backup.sh --simulate
 ```
 
-`--simulate` verifies prerequisites and logs the steps that would run, but it does not stop orchestration, dump volumes, create a manifest, or write a retained backup.
+`--simulate` verifies prerequisites and logs the steps that would run, but it does not stop application services, dump volumes, create a manifest, or write a retained backup.
 
 ### Manual Backup
 
@@ -181,7 +181,7 @@ Restores all data on the same host, including configuration files:
 
 **Warning:** This overwrites all current data! The script asks for confirmation.
 
-By default, restore does **not** create a fresh backup first. To trigger one with the existing backup script before restore starts, add `--create-backup`. The pre-restore backup log is written to `backups/pre-restore-backup.log`. If that pre-backup fails, restore continues with a warning.
+By default, restore does **not** create a fresh backup first. To trigger one with the existing backup script before restore starts, add `--create-backup`. The pre-restore backup log is written to `backups/pre-restore-backup.log`. If that pre-backup fails, restore aborts before destructive steps continue.
 
 ### Cross-Cluster Restore
 
@@ -203,7 +203,7 @@ Checks backup integrity without restoring data:
 ./scripts/restore.sh --verify backups/20240115_120000
 ```
 
-`--verify` validates the manifest and checksum set only. It does not stop the stack or modify data.
+`--verify` validates the manifest, checksum set, required backup artifacts, gzip archives, tar archives, and Elasticsearch snapshot metadata. It does not stop the stack or modify data.
 
 ### Dry-Run
 
@@ -486,7 +486,7 @@ A lock file (`backups/.backup.lock`) prevents parallel execution. If a previous 
 rm backups/.backup.lock
 ```
 
-Current scripts also release the lock reliably on PowerShell via `try/finally`, and the bash backup script restarts `orchestration` from its EXIT trap if a failure happens after the cold-backup stop.
+Current scripts also release the lock reliably on PowerShell via `try/finally`, and the backup scripts restart stopped application services if a failure happens after the cold-backup stop.
 
 ### Elasticsearch snapshot fails
 
@@ -521,15 +521,11 @@ docker compose ps --filter status=running
 
 ### Config archive warnings
 
-Configuration backup now distinguishes between:
-- No matching config files found: the backup logs a warning and skips `configs.tar.gz`
-- `tar` returned a non-zero exit code: the backup logs that the archive may be incomplete
-
-Do not treat `Configs backed up ... (N files)` and `WARNING: Config archive may be incomplete` as equivalent outcomes.
+Configuration backup is a required artifact. If no matching config files are found or `tar` returns a non-zero exit code, the backup exits with status `1` instead of creating a partial success.
 
 ### pg_restore warnings
 
-`pg_restore` often emits warnings about existing objects. This is normal and does not affect the restore as long as no errors occur.
+The restore scripts now treat non-zero `pg_restore` exits as restore failures and log stderr before aborting. A successful restore should not rely on ignored `pg_restore` warnings.
 
 ### Web Modeler is slow for ~30 s after restore
 

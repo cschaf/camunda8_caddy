@@ -20,8 +20,19 @@ done
 # shellcheck source=/dev/null
 source "$SCRIPT_DIR/lib/backup-common.sh"
 
-ORCHESTRATION_STOPPED=false
+APP_SERVICES_STOPPED=false
 BACKUP_COMPOSE_CMD=""
+BACKUP_APP_SERVICES=(
+  orchestration
+  connectors
+  optimize
+  identity
+  keycloak
+  web-modeler-restapi
+  web-modeler-webapp
+  web-modeler-websockets
+  console
+)
 TEST_MODE=false
 RETENTION_DAYS=7
 CUSTOM_BACKUP_DIR=""
@@ -75,9 +86,9 @@ backup_cleanup_on_error() {
   local exit_code=$?
   if [[ $exit_code -ne 0 ]]; then
     log "ERROR: Backup script failed with exit code $exit_code"
-    if [[ "$ORCHESTRATION_STOPPED" == true && -n "$BACKUP_COMPOSE_CMD" ]]; then
-      log "Attempting to restart orchestration after failure..."
-      $BACKUP_COMPOSE_CMD start orchestration 2>/dev/null || true
+    if [[ "$APP_SERVICES_STOPPED" == true && -n "$BACKUP_COMPOSE_CMD" ]]; then
+      log "Attempting to restart application services after failure..."
+      $BACKUP_COMPOSE_CMD start "${BACKUP_APP_SERVICES[@]}" 2>/dev/null || true
     fi
   fi
   release_lock
@@ -152,31 +163,34 @@ main() {
     done
 
     if [[ ${#config_files[@]} -eq 0 ]]; then
-      log "WARNING: No config files found to back up"
+      log "ERROR: No config files found to back up"
+      exit 1
     else
       if tar czf "$config_archive" -C "$PROJECT_DIR" "${config_files[@]}" 2>/dev/null; then
         log "Configs backed up: $config_archive (${#config_files[@]} files)"
       else
-        log "WARNING: Config archive may be incomplete"
+        log "ERROR: Config archive failed"
+        exit 1
       fi
     fi
   fi
 
   # Step 5-9: Orchestration stop + all backups while stopped + restart
-  log "Stopping orchestration for cold backup..."
+  log "Stopping application services for cold backup..."
   if [[ "$TEST_MODE" == true ]]; then
     log "[TEST] Would collect Elasticsearch state to: $backup_dir/backup-state.json"
-    log "[TEST] Would stop orchestration"
+    log "[TEST] Would stop application services: ${BACKUP_APP_SERVICES[*]}"
     log "[TEST] Would backup Zeebe state from volume 'orchestration'"
     log "[TEST] Would pg_dump Keycloak DB: ${POSTGRES_DB:-}"
     log "[TEST] Would pg_dump Web Modeler DB: ${WEBMODELER_DB_NAME:-}"
     log "[TEST] Would create Elasticsearch snapshot"
-    log "[TEST] Would start orchestration"
+    log "[TEST] Would start application services: ${BACKUP_APP_SERVICES[*]}"
   else
     collect_es_state "backup" "$backup_dir/backup-state.json" || true
 
-    $cmd stop --timeout 60 orchestration || true
-    ORCHESTRATION_STOPPED=true
+    log "Stopping application services for consistent cold backup..."
+    $cmd stop --timeout 60 "${BACKUP_APP_SERVICES[@]}"
+    APP_SERVICES_STOPPED=true
     sleep 2
 
     log "Backing up Zeebe state (volume: orchestration)..."
@@ -206,6 +220,7 @@ main() {
       log "Keycloak DB backed up: $backup_dir/keycloak.sql.gz"
     else
       log "ERROR: Keycloak DB backup failed"
+      exit 1
     fi
 
     log "Backing up Web Modeler database..."
@@ -213,6 +228,7 @@ main() {
       log "Web Modeler DB backed up: $backup_dir/webmodeler.sql.gz"
     else
       log "ERROR: Web Modeler DB backup failed"
+      exit 1
     fi
 
     log "Creating Elasticsearch snapshot..."
@@ -222,10 +238,11 @@ main() {
     # Register snapshot repository
     local es_repo_body
     es_repo_body='{"type":"fs","settings":{"location":"/usr/share/elasticsearch/backup","compress":true}}'
-    curl -s -X PUT "http://localhost:9200/_snapshot/backup-repo" \
+    curl -fsS -X PUT "http://localhost:9200/_snapshot/backup-repo" \
       -H 'Content-Type: application/json' \
       -d "$es_repo_body" > /dev/null || {
-        log "WARNING: Could not register snapshot repo"
+        log "ERROR: Could not register snapshot repo"
+        exit 1
       }
 
     # Create snapshot
@@ -260,28 +277,29 @@ PYEOF
       log "Elasticsearch snapshot created successfully: $snapshot_name"
       es_success=true
     elif [[ "$snapshot_state" == ERROR* ]]; then
-      log "WARNING: Elasticsearch snapshot failed: $snapshot_state"
+      log "ERROR: Elasticsearch snapshot failed: $snapshot_state"
+      exit 1
     else
-      log "WARNING: Elasticsearch snapshot state: $snapshot_state"
+      log "ERROR: Elasticsearch snapshot state: $snapshot_state"
+      exit 1
     fi
 
     # Copy snapshot data from the Docker volume to the host backup directory
-    if [[ "$es_success" == true ]]; then
-      log "Copying snapshot data from Docker volume to backup directory..."
-      local es_backup_dir="$backup_dir/elasticsearch"
-      mkdir -p "$es_backup_dir"
-      docker run --rm \
-        -v "elastic-backup:/source:ro" \
-        -v "$es_backup_dir:/dest" \
-        alpine sh -c 'cp -r /source/. /dest/' > /dev/null 2>&1 || {
-          log "WARNING: Could not copy snapshot data from volume"
-        }
-      log "Snapshot data copied to: $es_backup_dir"
-    fi
+    log "Copying snapshot data from Docker volume to backup directory..."
+    local es_backup_dir="$backup_dir/elasticsearch"
+    mkdir -p "$es_backup_dir"
+    docker run --rm \
+      -v "elastic-backup:/source:ro" \
+      -v "$es_backup_dir:/dest" \
+      alpine sh -c 'cp -r /source/. /dest/' > /dev/null 2>&1 || {
+        log "ERROR: Could not copy snapshot data from volume"
+        exit 1
+      }
+    log "Snapshot data copied to: $es_backup_dir"
 
-    log "Starting orchestration..."
-    $cmd start orchestration || true
-    ORCHESTRATION_STOPPED=false
+    log "Starting application services..."
+    $cmd start "${BACKUP_APP_SERVICES[@]}"
+    APP_SERVICES_STOPPED=false
     sleep 2
   fi
 

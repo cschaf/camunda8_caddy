@@ -21,6 +21,17 @@ for ($i = 0; $i -lt $rawArgs.Count; $i++) {
 $TestMode = $false
 $RetentionDays = 7
 $CustomBackupDir = ""
+$AppServices = @(
+    "orchestration",
+    "connectors",
+    "optimize",
+    "identity",
+    "keycloak",
+    "web-modeler-restapi",
+    "web-modeler-webapp",
+    "web-modeler-websockets",
+    "console"
+)
 
 function Show-Usage {
     Write-Host "Usage: $(Split-Path -Leaf $PSCommandPath) [OPTIONS]"
@@ -87,7 +98,7 @@ function Main {
 
     New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
 
-    $orchestrationStopped = $false
+    $appServicesStopped = $false
     Acquire-Lock
     try {
         Log "Starting backup to $backupDir"
@@ -124,13 +135,15 @@ function Main {
         )
         $existingItems = $configItems | Where-Object { Test-Path $_ }
         if (-not $existingItems) {
-            Log "WARNING: No config files found to back up"
+            Log "ERROR: No config files found to back up"
+            exit 1
         }
         else {
             $relPaths = $existingItems | ForEach-Object { (($_ -replace [regex]::Escape("$ProjectDir\"), "") -replace '\\', '/') }
             $tarResult = tar czf $configArchive -C $ProjectDir $relPaths 2>&1
             if ($LASTEXITCODE -ne 0) {
-                Log "WARNING: Config archive may be incomplete: $tarResult"
+                Log "ERROR: Config archive failed: $tarResult"
+                exit 1
             }
             else {
                 Log "Configs backed up: $configArchive ($($existingItems.Count) files)"
@@ -139,22 +152,23 @@ function Main {
     }
 
         # Orchestration stop + all backups while stopped + restart
-        Log "Stopping orchestration for cold backup..."
+        Log "Stopping application services for cold backup..."
         if ($TestMode) {
             Log "[TEST] Would collect Elasticsearch state to: $(Join-Path $backupDir 'backup-state.json')"
-            Log "[TEST] Would stop orchestration"
+            Log "[TEST] Would stop application services: $($AppServices -join ', ')"
             Log "[TEST] Would backup Zeebe state from volume 'orchestration'"
             Log "[TEST] Would pg_dump Keycloak DB: $env:POSTGRES_DB"
             Log "[TEST] Would pg_dump Web Modeler DB: $env:WEBMODELER_DB_NAME"
             Log "[TEST] Would create Elasticsearch snapshot"
-            Log "[TEST] Would start orchestration"
+            Log "[TEST] Would start application services: $($AppServices -join ', ')"
         }
         else {
             $backupStateFile = Join-Path $backupDir "backup-state.json"
             try { Collect-ESState -Phase "backup" -OutputFile $backupStateFile } catch { Log "WARNING: Backup state collection failed: $_" }
 
-            Invoke-Expression "$cmd stop --timeout 60 orchestration" | Out-Null
-            $orchestrationStopped = $true
+            Log "Stopping application services for consistent cold backup..."
+            Invoke-Expression "$cmd stop --timeout 60 $($AppServices -join ' ')" | Out-Null
+            $appServicesStopped = $true
             Start-Sleep -Seconds 2
 
             Log "Backing up Zeebe state (volume: orchestration)..."
@@ -187,12 +201,20 @@ function Main {
             $pgDumpCmd = "docker exec postgres pg_dump -Fc -U `"$env:POSTGRES_USER`" `"$env:POSTGRES_DB`""
             $outputFile = Join-Path $backupDir "keycloak.sql.gz"
             Invoke-Expression "$pgDumpCmd | gzip > `"$outputFile`""
+            if ($LASTEXITCODE -ne 0 -or -not (Test-Path $outputFile) -or (Get-Item $outputFile).Length -eq 0) {
+                Log "ERROR: Keycloak DB backup failed"
+                exit 1
+            }
             Log "Keycloak DB backed up: $outputFile"
 
             Log "Backing up Web Modeler database..."
             $pgDumpCmd = "docker exec web-modeler-db pg_dump -Fc -U `"$env:WEBMODELER_DB_USER`" `"$env:WEBMODELER_DB_NAME`""
             $outputFile = Join-Path $backupDir "webmodeler.sql.gz"
             Invoke-Expression "$pgDumpCmd | gzip > `"$outputFile`""
+            if ($LASTEXITCODE -ne 0 -or -not (Test-Path $outputFile) -or (Get-Item $outputFile).Length -eq 0) {
+                Log "ERROR: Web Modeler DB backup failed"
+                exit 1
+            }
             Log "Web Modeler DB backed up: $outputFile"
 
             Log "Creating Elasticsearch snapshot..."
@@ -210,7 +232,8 @@ function Main {
                 Log "Elasticsearch snapshot repo registered."
             }
             catch {
-                Log "WARNING: Could not register snapshot repo: $_"
+                Log "ERROR: Could not register snapshot repo: $_"
+                exit 1
             }
 
             $snapshotName = "snapshot_$timestamp"
@@ -223,7 +246,8 @@ function Main {
 
                 $state = $response.snapshot.state
                 if ($state -ne "SUCCESS") {
-                    Log "WARNING: Elasticsearch snapshot state: $state"
+                    Log "ERROR: Elasticsearch snapshot state: $state"
+                    exit 1
                 }
                 else {
                     Log "Elasticsearch snapshot created successfully: $snapshotName"
@@ -231,30 +255,30 @@ function Main {
                 }
             }
             catch {
-                Log "WARNING: Elasticsearch snapshot creation failed: $_"
+                Log "ERROR: Elasticsearch snapshot creation failed: $_"
                 @{error=$_.Exception.Message} | ConvertTo-Json | Set-Content -Path $snapshotInfoFile
+                exit 1
             }
 
             # Copy snapshot data from the Docker volume to the host backup directory
-            if ($esSuccess) {
-                Log "Copying snapshot data from Docker volume to backup directory..."
-                $esBackupDir = Join-Path $backupDir "elasticsearch"
-                New-Item -ItemType Directory -Path $esBackupDir -Force | Out-Null
-                try {
-                    docker run --rm `
-                        -v "elastic-backup:/source:ro" `
-                        -v "${esBackupDir}:/dest" `
-                        alpine sh -c 'cp -r /source/. /dest/' | Out-Null
-                    Log "Snapshot data copied to: $esBackupDir"
-                }
-                catch {
-                    Log "WARNING: Could not copy snapshot data from volume: $_"
-                }
+            Log "Copying snapshot data from Docker volume to backup directory..."
+            $esBackupDir = Join-Path $backupDir "elasticsearch"
+            New-Item -ItemType Directory -Path $esBackupDir -Force | Out-Null
+            try {
+                docker run --rm `
+                    -v "elastic-backup:/source:ro" `
+                    -v "${esBackupDir}:/dest" `
+                    alpine sh -c 'cp -r /source/. /dest/' | Out-Null
+                Log "Snapshot data copied to: $esBackupDir"
+            }
+            catch {
+                Log "ERROR: Could not copy snapshot data from volume: $_"
+                exit 1
             }
 
-            Log "Starting orchestration..."
-            Invoke-Expression "$cmd start orchestration" | Out-Null
-            $orchestrationStopped = $false
+            Log "Starting application services..."
+            Invoke-Expression "$cmd start $($AppServices -join ' ')" | Out-Null
+            $appServicesStopped = $false
             Start-Sleep -Seconds 2
         }
 
@@ -286,9 +310,9 @@ function Main {
     }
     catch {
         Log "ERROR: Backup failed: $_"
-        if ($orchestrationStopped) {
-            Log "Attempting to restart orchestration after failure..."
-            try { Invoke-Expression "$cmd start orchestration" | Out-Null } catch { }
+        if ($appServicesStopped) {
+            Log "Attempting to restart application services after failure..."
+            try { Invoke-Expression "$cmd start $($AppServices -join ' ')" | Out-Null } catch { }
         }
         exit 1
     }
