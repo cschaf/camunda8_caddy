@@ -817,7 +817,11 @@ except Exception as e:
     if [[ -f "$BACKUP_DIR/orchestration.tar.gz" ]]; then
       local zeebe_vol
       zeebe_vol="$(compose_volume_name orchestration)"
-      $cmd create orchestration > /dev/null 2>&1 || true
+      $cmd create orchestration >>"$LOG_FILE" 2>&1
+      if ! docker volume inspect "$zeebe_vol" > /dev/null 2>>"$LOG_FILE"; then
+        log "ERROR: Zeebe volume '$zeebe_vol' missing after compose create"
+        exit 1
+      fi
       docker run --rm \
         -v "${zeebe_vol}:/data" \
         -v "$BACKUP_DIR:/backup" \

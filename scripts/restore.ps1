@@ -741,7 +741,16 @@ function Main {
             Log "Restoring Zeebe state..."
             if (Test-Path $orchBackup) {
                 $zeebeVol = Get-ComposeVolumeName 'orchestration'
-                Invoke-Expression "$cmd create orchestration" | Out-Null
+                Invoke-Expression "$cmd create orchestration" *>> $Global:LogFile
+                if ($LASTEXITCODE -ne 0) {
+                    Log "ERROR: docker compose create orchestration failed"
+                    throw "docker compose create orchestration failed"
+                }
+                docker volume inspect $zeebeVol *>> $Global:LogFile
+                if ($LASTEXITCODE -ne 0) {
+                    Log "ERROR: Zeebe volume '$zeebeVol' missing after compose create"
+                    throw "Zeebe volume '$zeebeVol' missing after compose create"
+                }
                 docker run --rm `
                     -v "${zeebeVol}:/data" `
                     -v "${BackupDir}:/backup" `
