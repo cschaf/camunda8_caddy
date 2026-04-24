@@ -242,17 +242,12 @@ configure_restore_components() {
   RESTORE_COMPONENTS="$normalized"
 }
 
-wait_for_service() {
+compose_service_health_status() {
   local service="$1"
   local cmd
   cmd="$(docker_compose_cmd)"
-  local retries=60
-  local delay=5
 
-  log "Waiting for $service to be healthy..."
-  for ((i=1; i<=retries; i++)); do
-    local status
-    status="$($cmd ps "$service" --format json 2>/dev/null | python3 -c '
+  $cmd ps "$service" --format json 2>/dev/null | python3 -c '
 import json, sys
 try:
     data = json.load(sys.stdin)
@@ -265,15 +260,57 @@ try:
     print(item.get("Health", item.get("State", "unknown")))
 except:
     print("unknown")
-' 2>/dev/null || echo "unknown")"
+' 2>/dev/null || echo "unknown"
+}
+
+service_readiness_check() {
+  local service="$1"
+  case "$service" in
+    postgres)
+      docker exec postgres pg_isready -U "${POSTGRES_USER}" >/dev/null 2>&1
+      ;;
+    web-modeler-db)
+      docker exec web-modeler-db pg_isready -U "${WEBMODELER_DB_USER}" >/dev/null 2>&1
+      ;;
+    elasticsearch)
+      curl -sf --max-time 6 "http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s" >/dev/null
+      ;;
+    orchestration)
+      curl -sf --max-time 6 "http://localhost:8088/actuator/health/readiness" >/dev/null
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+wait_for_service() {
+  local service="$1"
+  local timeout="${RESTORE_HEALTH_TIMEOUT:-300}"
+  local delay=5
+
+  if [[ ! "$timeout" =~ ^[0-9]+$ || "$timeout" -le 0 ]]; then
+    log "ERROR: RESTORE_HEALTH_TIMEOUT must be a positive integer (got: $timeout)"
+    return 1
+  fi
+
+  log "Waiting up to ${timeout}s for $service to be healthy..."
+  local deadline=$((SECONDS + timeout))
+  while [[ $SECONDS -le $deadline ]]; do
+    local status
+    status="$(compose_service_health_status "$service")"
     if [[ "$status" == "healthy" ]]; then
-      log "$service is healthy."
+      log "$service is healthy according to Docker Compose."
+      return 0
+    fi
+    if service_readiness_check "$service"; then
+      log "$service is ready according to direct readiness check."
       return 0
     fi
     sleep "$delay"
   done
 
-  log "ERROR: $service did not become healthy within $((retries * delay)) seconds"
+  log "ERROR: $service did not become healthy within ${timeout} seconds"
   return 1
 }
 

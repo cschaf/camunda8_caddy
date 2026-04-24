@@ -177,28 +177,78 @@ function Set-RestoreComponents {
     $script:RestoreComponents = $normalized
 }
 
-function Wait-ForService {
+function Get-ComposeServiceHealthStatus {
     param([string]$Service)
     $cmd = Get-DockerComposeCmd
-    $retries = 60
-    $delay = 5
 
-    Log "Waiting for $Service to be healthy..."
-    for ($i = 1; $i -le $retries; $i++) {
-        try {
-            $info = Invoke-Expression "$cmd ps `"$Service`" --format json" | ConvertFrom-Json
-            $status = $info.Health
-            if (-not $status) { $status = $info.State }
-            if ($status -eq "healthy") {
-                Log "$Service is healthy."
+    try {
+        $info = Invoke-Expression "$cmd ps `"$Service`" --format json" | ConvertFrom-Json
+        if ($info -is [System.Array]) { $info = $info | Select-Object -First 1 }
+        $status = $info.Health
+        if (-not $status) { $status = $info.State }
+        if ($status) { return $status }
+    }
+    catch { }
+    return "unknown"
+}
+
+function Test-ServiceReadiness {
+    param([string]$Service)
+
+    switch ($Service) {
+        "postgres" {
+            docker exec postgres pg_isready -U "$env:POSTGRES_USER" *> $null
+            return ($LASTEXITCODE -eq 0)
+        }
+        "web-modeler-db" {
+            docker exec web-modeler-db pg_isready -U "$env:WEBMODELER_DB_USER" *> $null
+            return ($LASTEXITCODE -eq 0)
+        }
+        "elasticsearch" {
+            try {
+                Invoke-RestMethod -Uri "http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s" -TimeoutSec 6 | Out-Null
                 return $true
             }
+            catch { return $false }
         }
-        catch { }
+        "orchestration" {
+            try {
+                Invoke-RestMethod -Uri "http://localhost:8088/actuator/health/readiness" -TimeoutSec 6 | Out-Null
+                return $true
+            }
+            catch { return $false }
+        }
+        default { return $false }
+    }
+}
+
+function Wait-ForService {
+    param([string]$Service)
+    $timeout = 300
+    if ($env:RESTORE_HEALTH_TIMEOUT) {
+        if (-not [int]::TryParse($env:RESTORE_HEALTH_TIMEOUT, [ref]$timeout) -or $timeout -le 0) {
+            Log "ERROR: RESTORE_HEALTH_TIMEOUT must be a positive integer (got: $($env:RESTORE_HEALTH_TIMEOUT))"
+            return $false
+        }
+    }
+    $delay = 5
+    $deadline = (Get-Date).AddSeconds($timeout)
+
+    Log "Waiting up to ${timeout}s for $Service to be healthy..."
+    while ((Get-Date) -le $deadline) {
+        $status = Get-ComposeServiceHealthStatus -Service $Service
+        if ($status -eq "healthy") {
+            Log "$Service is healthy according to Docker Compose."
+            return $true
+        }
+        if (Test-ServiceReadiness -Service $Service) {
+            Log "$Service is ready according to direct readiness check."
+            return $true
+        }
         Start-Sleep -Seconds $delay
     }
 
-    Log "ERROR: $Service did not become healthy within $($retries * $delay) seconds"
+    Log "ERROR: $Service did not become healthy within $timeout seconds"
     return $false
 }
 
