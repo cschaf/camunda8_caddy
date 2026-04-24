@@ -198,6 +198,8 @@ Elasticsearch snapshots are stored in a dedicated Docker volume (`elastic-backup
 
 The `elastic-backup` volume has a fixed Docker `name:` and is intentionally not removed during restore. The restore flow overwrites its contents from the selected backup instead.
 
+The backup and restore scripts contact Elasticsearch through `ES_HOST` and `ES_PORT` when those variables are set, defaulting to `localhost:9200`. This is required for drill and cross-context runs where Elasticsearch is reachable on a remapped host port.
+
 ## Restore Scenarios
 
 ### In-Place Restore (same cluster)
@@ -264,6 +266,8 @@ Use `--rehost-keycloak` when restoring a backup from one hostname into a cluster
 | `connectors` | client secret |
 
 This lets the restored Keycloak realm issue tokens and accept redirects for the local hostname, while keeping the restored users, roles, and realm data. The patch uses the current `HOST`, `ORCHESTRATION_CLIENT_SECRET`, `CONNECTORS_CLIENT_SECRET`, `CONSOLE_CLIENT_SECRET`, `OPTIMIZE_CLIENT_SECRET`, and `CAMUNDA_IDENTITY_CLIENT_SECRET` from `.env`.
+
+`web-modeler` is a public browser client in this stack and has no client secret to rehost. `connectors` uses the client credentials flow only, so it has no redirect URIs or web origins to rehost.
 
 For a production-to-local debugging restore, prepare the local `.env` first:
 
@@ -432,7 +436,7 @@ Use `--verify` (alias `--test`) when you want a fast, lightweight verification t
 When you run `restore-drill.sh`, the script:
 
 1. **Generates an isolated environment** — copies your `.env` into `backups/.drill/.env.drill`, overrides `HOST`, `COMPOSE_PROJECT_NAME`, and `ES_PORT`, and creates a compose port-remap override
-2. **Restores the backup into the drill stack** — invokes the real `restore.sh --force` against the isolated project, so you are testing the exact same restore logic you would use in production
+2. **Restores the backup into the drill stack** — invokes the real `restore.sh --force --no-pre-backup --rehost-keycloak` against the isolated project, so you are testing the exact same restore logic you would use in production
 3. **Runs smoke tests** — probes the remapped ports to verify Keycloak, Orchestration, and Web Modeler are healthy
 4. **Tears down unconditionally** — runs `docker compose down --volumes --remove-orphans` and deletes temporary files, even if a previous step failed
 
@@ -442,8 +446,8 @@ If any step fails, the script exits with a non-zero status and still completes t
 
 Three independent layers guarantee the drill cannot touch live data:
 
-1. **Compose project name** (`COMPOSE_PROJECT_NAME=camunda-restoredrill`) — Docker prefixes every container and managed volume with the project name. The drill gets its own `camunda-restoredrill_orchestration`, `camunda-restoredrill_postgres`, etc., completely separate from the live stack's volumes.
-2. **Port remap** (`DRILL_PORT_OFFSET`, default `+10000`) — every host-bound port in the drill is shifted by the offset so it never collides with the live stack. Keycloak moves from `18080` to `28080`, Orchestration from `8088` to `18088`, Elasticsearch from `9200` to `19200`, and every other service follows suit.
+1. **Compose project name and container names** (`COMPOSE_PROJECT_NAME=camunda-restoredrill`) — Docker prefixes managed volumes with the project name, and `stages/drill.yaml` overrides the fixed `container_name` values from the main compose file. The drill gets its own `camunda-restoredrill-orchestration`, `camunda-restoredrill-postgres`, `camunda-restoredrill_orchestration`, `camunda-restoredrill_postgres`, etc., completely separate from the live stack.
+2. **Port remap** (`DRILL_PORT_OFFSET`, default `+10000`) — every host-bound port in the drill is replaced with an offset port so it never collides with the live stack. Keycloak moves from `18080` to `28080`, Orchestration REST from `8088` to `18088`, Orchestration management from `9600` to `19600`, Web Modeler readiness from `8071` to `18071`, Elasticsearch from `9200` to `19200`, and every other service follows suit.
 3. **Dedicated ES backup volume** (`ES_BACKUP_VOLUME=elastic-backup-drill` via `stages/drill.yaml`) — the drill's Elasticsearch snapshot staging uses its own named volume. Even if something goes wrong mid-drill, the live `elastic-backup` volume is untouched.
 
 All drill-generated files (`backups/.drill/.env.drill`, `backups/.drill/ports.yaml`, and any runtime state) are deleted on teardown.
@@ -469,8 +473,8 @@ All drill-generated files (`backups/.drill/.env.drill`, `backups/.drill/ports.ya
 The drill waits up to 120 seconds for each check, polling every 5 seconds:
 
 - **Keycloak realm endpoint** (`http://localhost:<remapped_port>/auth/realms/camunda-platform` returns HTTP 200) — confirms authentication infrastructure is functional
-- **Orchestration health** (`/actuator/health` returns `status: UP`) — confirms Operate, Tasklist, and Zeebe are operational
-- **Web Modeler readiness** (`/health/readiness` returns HTTP 200) — confirms the Web Modeler stack is ready to serve requests
+- **Orchestration health** (`/actuator/health` on the remapped management port returns `status: UP`) — confirms Operate, Tasklist, and Zeebe are operational
+- **Web Modeler readiness** (`/health/readiness` on the remapped webapp readiness port returns HTTP 200) — confirms the Web Modeler stack is ready to serve requests
 - **Optional known project check** (only if `DRILL_KNOWN_PROJECT_ID` is set) — verifies a specific project is accessible via `/internal-api/projects/{id}`, proving data integrity beyond generic health checks
 
 ### Customizing the drill
