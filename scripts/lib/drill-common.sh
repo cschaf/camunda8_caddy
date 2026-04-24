@@ -102,7 +102,7 @@ run_drill_stack_up() {
   export ES_BACKUP_VOLUME="elastic-backup-drill"
 
   log_drill "Running restore.sh against drill stack..."
-  bash "$SCRIPT_DIR/../restore.sh" --force --env-file "$DRILL_ENV" "$backup_dir"
+  bash "$SCRIPT_DIR/../restore.sh" --force --no-pre-backup --env-file "$DRILL_ENV" "$backup_dir"
 }
 
 run_smoke_tests() {

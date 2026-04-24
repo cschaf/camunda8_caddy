@@ -26,7 +26,8 @@ FORCE=false
 DRY_RUN=false
 CROSS_CLUSTER=false
 TEST_MODE=false
-CREATE_BACKUP=false
+CREATE_PRE_BACKUP=true
+DEPRECATED_CREATE_BACKUP_USED=false
 REHOST_KEYCLOAK=false
 RESTORE_COMPONENTS="all"
 RESTORE_ALL=false
@@ -46,8 +47,11 @@ restore_cleanup_on_error() {
     if [[ "$STACK_DOWN_FOR_RESTORE" == true && -n "$RESTORE_COMPOSE_CMD" ]]; then
       log "Attempting to restart stack after restore failure..."
       $RESTORE_COMPOSE_CMD up -d >>"$LOG_FILE" 2>&1 || true
-      local recovery_backup="${PRE_RESTORE_BACKUP_PATH:-unavailable}"
-      log "ERROR: Restore failed. Stack may be inconsistent. Pre-restore backup (if --create-backup was used): $recovery_backup. To re-try from a clean state, run: scripts/restore.sh --force $recovery_backup"
+      if [[ -n "$PRE_RESTORE_BACKUP_PATH" ]]; then
+        log "ERROR: Restore failed. Stack may be inconsistent. Pre-restore backup stored at $PRE_RESTORE_BACKUP_PATH; run: scripts/restore.sh --force $PRE_RESTORE_BACKUP_PATH"
+      else
+        log "ERROR: Restore failed. Stack may be inconsistent. Pre-restore backup unavailable; no rollback backup was created or its path could not be determined."
+      fi
     fi
   fi
   release_lock
@@ -65,7 +69,8 @@ usage() {
   echo "  --force           Skip all prompts"
   echo "  --dry-run         Show what would be done without executing"
   echo "  --cross-cluster   Enable cross-cluster restore (skips config overwrite)"
-  echo "  --create-backup   Create a fresh backup before restoring"
+  echo "  --no-pre-backup   Do not create a rollback backup before restoring"
+  echo "  --create-backup   Deprecated; pre-restore backups are enabled by default"
   echo "  --rehost-keycloak Patch restored Keycloak clients to the current HOST and local client secrets"
   echo "  --components LIST Restore only selected components"
   echo "                    Allowed: all,keycloak,webmodeler,elasticsearch,orchestration,configs"
@@ -92,11 +97,17 @@ parse_args() {
         shift
         ;;
       --create-backup)
-        CREATE_BACKUP=true
+        CREATE_PRE_BACKUP=true
+        DEPRECATED_CREATE_BACKUP_USED=true
         shift
         ;;
       --createBackup)
-        CREATE_BACKUP=true
+        CREATE_PRE_BACKUP=true
+        DEPRECATED_CREATE_BACKUP_USED=true
+        shift
+        ;;
+      --no-pre-backup)
+        CREATE_PRE_BACKUP=false
         shift
         ;;
       --rehost-keycloak)
@@ -385,6 +396,7 @@ main() {
   log "Stage: $stage"
   log "Restore components: $RESTORE_COMPONENTS"
   [[ "$REHOST_KEYCLOAK" == true ]] && log "Keycloak rehost: enabled"
+  [[ "$DEPRECATED_CREATE_BACKUP_USED" == true ]] && log "WARNING: --create-backup is deprecated; pre-restore backups are now created by default. Use --no-pre-backup to opt out."
 
   # Step 1: Pre-flight checks
   log "Running pre-flight checks..."
@@ -498,7 +510,7 @@ PYEOF
   fi
 
   # Step 2b: Pre-restore backup
-  if [[ "$CREATE_BACKUP" == true && "$DRY_RUN" == false && "$TEST_MODE" == false ]]; then
+  if [[ "$CREATE_PRE_BACKUP" == true && "$DRY_RUN" == false && "$TEST_MODE" == false ]]; then
     release_lock
     log "Creating pre-restore backup of current state..."
     local pre_restore_log
@@ -512,6 +524,8 @@ PYEOF
       exit 1
     fi
     acquire_lock
+  elif [[ "$CREATE_PRE_BACKUP" == false ]]; then
+    log "Pre-restore backup disabled by --no-pre-backup."
   fi
 
   # Step 2c: Collect pre-restore Elasticsearch state for later comparison

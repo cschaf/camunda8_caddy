@@ -181,7 +181,23 @@ Restores all data on the same host, including configuration files:
 
 **Warning:** This overwrites all current data! The script asks for confirmation.
 
-By default, restore does **not** create a fresh backup first. To trigger one with the existing backup script before restore starts, add `--create-backup`. The pre-restore backup log is written to `backups/pre-restore-backup.log`. If that pre-backup fails, restore aborts before destructive steps continue.
+By default, restore creates a fresh rollback backup with the existing backup script before destructive steps start. The pre-restore backup log is written to `backups/pre-restore-backup.log`. If that pre-backup fails, restore aborts before destructive steps continue. Use `--no-pre-backup` only when you intentionally want to skip this safety net. The legacy `--create-backup` flag is still accepted, but it is deprecated because this behavior is now the default.
+
+### Rollback after failed restore
+
+If a restore fails after the stack has been stopped, the restore log includes a recovery line like:
+
+```text
+Pre-restore backup stored at backups/20240115_121500; run: scripts/restore.sh --force backups/20240115_121500
+```
+
+Use that path to roll back to the state captured immediately before the failed restore:
+
+```bash
+./scripts/restore.sh --force backups/20240115_121500
+```
+
+On Windows, use the same path shown in `restore.log` with `.\scripts\restore.ps1 --force <path>`.
 
 ### Cross-Cluster Restore
 
@@ -492,7 +508,8 @@ A passing drill means your backup format, restore logic, and stack health checks
 | `--force` | Skips all confirmation prompts |
 | `--dry-run` | Shows what would be done without executing |
 | `--cross-cluster` | Enables cross-cluster restore (no config overwrite) |
-| `--create-backup` | Runs the existing backup script before restore starts (alias: `--createBackup`) |
+| `--no-pre-backup` | Skips the default rollback backup before restore starts |
+| `--create-backup` | Deprecated no-op preference flag; pre-restore backups are already enabled by default (alias: `--createBackup`) |
 | `--rehost-keycloak` | After restoring Keycloak, rewrites selected clients for the current `HOST` and local client secrets |
 | `--components LIST` | Restores only selected components (`all`, `keycloak`, `webmodeler`, `elasticsearch`, `orchestration`, `configs`) |
 | `--verify` | Checks backup integrity without restoring (alias: `--test`) |
@@ -528,8 +545,8 @@ The drill also recognizes the environment variables listed in [Restore Drill](#r
 # Restore on same cluster
 ./scripts/restore.sh backups/20240115_120000
 
-# Restore on same cluster after creating a fresh backup first
-./scripts/restore.sh --create-backup backups/20240115_120000
+# Restore on same cluster without the default rollback backup
+./scripts/restore.sh --no-pre-backup backups/20240115_120000
 
 # Restore with automatic confirmation
 ./scripts/restore.sh --force backups/20240115_120000

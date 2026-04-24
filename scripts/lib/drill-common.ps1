@@ -96,7 +96,7 @@ function Run-DrillStackUp {
     $env:ES_BACKUP_VOLUME = "elastic-backup-drill"
 
     Log-Drill "Running restore.ps1 against drill stack..."
-    & "$ScriptDir\..\restore.ps1" --force --env-file "$DrillEnv" "$BackupDir"
+    & "$ScriptDir\..\restore.ps1" --force --no-pre-backup --env-file "$DrillEnv" "$BackupDir"
 }
 
 function Run-SmokeTests {

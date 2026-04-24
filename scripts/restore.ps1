@@ -27,7 +27,8 @@ $Force = $false
 $DryRun = $false
 $CrossCluster = $false
 $TestMode = $false
-$CreateBackup = $false
+$CreatePreBackup = $true
+$DeprecatedCreateBackupUsed = $false
 $RehostKeycloak = $false
 $RestoreComponents = "all"
 $RestoreAll = $false
@@ -47,7 +48,8 @@ function Show-Usage {
     Write-Host "  --force           Skip all prompts"
     Write-Host "  --dry-run         Show what would be done without executing"
     Write-Host "  --cross-cluster   Enable cross-cluster restore (skips config overwrite)"
-    Write-Host "  --create-backup   Create a fresh backup before restoring"
+    Write-Host "  --no-pre-backup   Do not create a rollback backup before restoring"
+    Write-Host "  --create-backup   Deprecated; pre-restore backups are enabled by default"
     Write-Host "  --rehost-keycloak Patch restored Keycloak clients to the current HOST and local client secrets"
     Write-Host "  --components LIST Restore only selected components"
     Write-Host "                    Allowed: all,keycloak,webmodeler,elasticsearch,orchestration,configs"
@@ -66,8 +68,9 @@ function Parse-Args {
             "--force" { $script:Force = $true; break }
             "--dry-run" { $script:DryRun = $true; break }
             "--cross-cluster" { $script:CrossCluster = $true; break }
-            "--create-backup" { $script:CreateBackup = $true; break }
-            "--createBackup" { $script:CreateBackup = $true; break }
+            "--create-backup" { $script:CreatePreBackup = $true; $script:DeprecatedCreateBackupUsed = $true; break }
+            "--createBackup" { $script:CreatePreBackup = $true; $script:DeprecatedCreateBackupUsed = $true; break }
+            "--no-pre-backup" { $script:CreatePreBackup = $false; break }
             "--rehost-keycloak" { $script:RehostKeycloak = $true; break }
             "--components" {
                 if (($i + 1) -ge $CliArgs.Count) {
@@ -319,6 +322,7 @@ function Main {
         Log "Stage: $stage"
         Log "Restore components: $RestoreComponents"
         if ($RehostKeycloak) { Log "Keycloak rehost: enabled" }
+        if ($DeprecatedCreateBackupUsed) { Log "WARNING: --create-backup is deprecated; pre-restore backups are now created by default. Use --no-pre-backup to opt out." }
 
         # Pre-flight checks
         Log "Running pre-flight checks..."
@@ -407,7 +411,7 @@ function Main {
         }
 
         # Pre-restore backup
-        if ($CreateBackup -and -not $DryRun -and -not $TestMode) {
+        if ($CreatePreBackup -and -not $DryRun -and -not $TestMode) {
             Release-Lock
             Log "Creating pre-restore backup of current state..."
             $preRestoreLog = Join-Path $BackupBaseDir "pre-restore-backup.log"
@@ -425,6 +429,9 @@ function Main {
                 exit 1
             }
             Acquire-Lock
+        }
+        elseif (-not $CreatePreBackup) {
+            Log "Pre-restore backup disabled by --no-pre-backup."
         }
 
         # Collect pre-restore Elasticsearch state for later comparison
@@ -840,8 +847,12 @@ function Main {
         if ($stackDownForRestore) {
             Log "Attempting to restart stack after restore failure..."
             try { Invoke-Expression "$cmd up -d" *>> $Global:LogFile } catch { }
-            $recoveryBackup = if ($preRestoreBackupPath) { $preRestoreBackupPath } else { "unavailable" }
-            Log "ERROR: Restore failed. Stack may be inconsistent. Pre-restore backup (if --create-backup was used): $recoveryBackup. To re-try from a clean state, run: scripts/restore.ps1 --force $recoveryBackup"
+            if ($preRestoreBackupPath) {
+                Log "ERROR: Restore failed. Stack may be inconsistent. Pre-restore backup stored at $preRestoreBackupPath; run: scripts/restore.ps1 --force $preRestoreBackupPath"
+            }
+            else {
+                Log "ERROR: Restore failed. Stack may be inconsistent. Pre-restore backup unavailable; no rollback backup was created or its path could not be determined."
+            }
         }
         Release-Lock
     }
