@@ -729,7 +729,18 @@ PYEOF
       docker run --rm \
         -v "$es_backup_dir:/source:ro" \
         -v "${es_backup_volume}:/dest" \
-        alpine sh -c 'rm -rf /dest/* && cp -r /source/. /dest/' > /dev/null 2>&1 || {
+        alpine sh -c '
+          set -e
+          rm -rf /dest/.staging-*
+          staging="/dest/.staging-$$"
+          mkdir -p "$staging"
+          cp -r /source/. "$staging"/
+          find /dest -mindepth 1 -maxdepth 1 ! -name "$(basename "$staging")" -exec rm -rf {} +
+          mv "$staging"/* /dest/ 2>/dev/null || true
+          mv "$staging"/.[!.]* /dest/ 2>/dev/null || true
+          mv "$staging"/..?* /dest/ 2>/dev/null || true
+          rmdir "$staging"
+        ' >>"$LOG_FILE" 2>&1 || {
           log "ERROR: Could not copy snapshot data to volume"
           exit 1
         }

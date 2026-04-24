@@ -632,15 +632,27 @@ function Main {
             if (Test-Path $esBackupDir) {
                 $esBackupVolume = if ($env:ES_BACKUP_VOLUME) { $env:ES_BACKUP_VOLUME } else { "elastic-backup" }
                 Log "Copying snapshot data into Docker volume '$esBackupVolume'..."
-                try {
-                    docker run --rm `
-                        -v "${esBackupDir}:/source:ro" `
-                        -v "${esBackupVolume}:/dest" `
-                        alpine sh -c 'rm -rf /dest/* && cp -r /source/. /dest/' | Out-Null
+                $snapshotCopyScript = @'
+set -e
+rm -rf /dest/.staging-*
+staging="/dest/.staging-$$"
+mkdir -p "$staging"
+cp -r /source/. "$staging"/
+find /dest -mindepth 1 -maxdepth 1 ! -name "$(basename "$staging")" -exec rm -rf {} +
+mv "$staging"/* /dest/ 2>/dev/null || true
+mv "$staging"/.[!.]* /dest/ 2>/dev/null || true
+mv "$staging"/..?* /dest/ 2>/dev/null || true
+rmdir "$staging"
+'@
+                docker run --rm `
+                    -v "${esBackupDir}:/source:ro" `
+                    -v "${esBackupVolume}:/dest" `
+                    alpine sh -c $snapshotCopyScript *>> $Global:LogFile
+                if ($LASTEXITCODE -eq 0) {
                     Log "Snapshot data copied to volume '$esBackupVolume'."
                 }
-                catch {
-                    Log "ERROR: Could not copy snapshot data to volume: $_"
+                else {
+                    Log "ERROR: Could not copy snapshot data to volume"
                     exit 1
                 }
             }
