@@ -29,6 +29,7 @@ TEST_MODE=false
 CREATE_PRE_BACKUP=true
 DEPRECATED_CREATE_BACKUP_USED=false
 DECRYPT_ARCHIVE=""
+SKIP_PULL=false
 REHOST_KEYCLOAK=false
 RESTORE_COMPONENTS="all"
 RESTORE_ALL=false
@@ -73,6 +74,7 @@ usage() {
   echo "  --no-pre-backup   Do not create a rollback backup before restoring"
   echo "  --create-backup   Deprecated; pre-restore backups are enabled by default"
   echo "  --decrypt FILE    Decrypt a .tar.gz.gpg or .tar.gz.age backup archive before restore"
+  echo "  --skip-pull       Skip pre-flight docker compose pull for offline/air-gapped restores"
   echo "  --rehost-keycloak Patch restored Keycloak clients to the current HOST and local client secrets"
   echo "  --components LIST Restore only selected components"
   echo "                    Allowed: all,keycloak,webmodeler,elasticsearch,orchestration,configs"
@@ -119,6 +121,10 @@ parse_args() {
         fi
         DECRYPT_ARCHIVE="$2"
         shift 2
+        ;;
+      --skip-pull)
+        SKIP_PULL=true
+        shift
         ;;
       --rehost-keycloak)
         REHOST_KEYCLOAK=true
@@ -658,6 +664,18 @@ PYEOF
   fi
 
   # Step 3: Stop stack
+  if [[ "$SKIP_PULL" == true ]]; then
+    log "Pre-flight image pull skipped by --skip-pull."
+  elif [[ "$DRY_RUN" == true ]]; then
+    log "[DRY-RUN] Would run: $cmd pull"
+  else
+    log "Pulling images before destructive restore steps..."
+    if ! $cmd pull; then
+      log "ERROR: Pre-flight pull failed, aborting before any destructive action."
+      exit 1
+    fi
+  fi
+
   log "Stopping Camunda stack..."
   if [[ "$DRY_RUN" == true ]]; then
     log "[DRY-RUN] Would run: $cmd down --remove-orphans"

@@ -30,6 +30,7 @@ $TestMode = $false
 $CreatePreBackup = $true
 $DeprecatedCreateBackupUsed = $false
 $DecryptArchive = ""
+$SkipPull = $false
 $RehostKeycloak = $false
 $RestoreComponents = "all"
 $RestoreAll = $false
@@ -52,6 +53,7 @@ function Show-Usage {
     Write-Host "  --no-pre-backup   Do not create a rollback backup before restoring"
     Write-Host "  --create-backup   Deprecated; pre-restore backups are enabled by default"
     Write-Host "  --decrypt FILE    Decrypt a .tar.gz.gpg or .tar.gz.age backup archive before restore"
+    Write-Host "  --skip-pull       Skip pre-flight docker compose pull for offline/air-gapped restores"
     Write-Host "  --rehost-keycloak Patch restored Keycloak clients to the current HOST and local client secrets"
     Write-Host "  --components LIST Restore only selected components"
     Write-Host "                    Allowed: all,keycloak,webmodeler,elasticsearch,orchestration,configs"
@@ -82,6 +84,7 @@ function Parse-Args {
                 $script:DecryptArchive = $CliArgs[$i]
                 break
             }
+            "--skip-pull" { $script:SkipPull = $true; break }
             "--rehost-keycloak" { $script:RehostKeycloak = $true; break }
             "--components" {
                 if (($i + 1) -ge $CliArgs.Count) {
@@ -588,6 +591,21 @@ function Main {
         }
 
         # Stop stack
+        if ($SkipPull) {
+            Log "Pre-flight image pull skipped by --skip-pull."
+        }
+        elseif ($DryRun) {
+            Log "[DRY-RUN] Would run: $cmd pull"
+        }
+        else {
+            Log "Pulling images before destructive restore steps..."
+            Invoke-Expression "$cmd pull" | Out-Null
+            if ($LASTEXITCODE -ne 0) {
+                Log "ERROR: Pre-flight pull failed, aborting before any destructive action."
+                exit 1
+            }
+        }
+
         Log "Stopping Camunda stack..."
         if ($DryRun) {
             Log "[DRY-RUN] Would run: $cmd down --remove-orphans"

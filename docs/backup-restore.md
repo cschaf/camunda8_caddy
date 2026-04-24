@@ -543,6 +543,7 @@ A passing drill means your backup format, restore logic, and stack health checks
 | `--no-pre-backup` | Skips the default rollback backup before restore starts |
 | `--create-backup` | Deprecated no-op preference flag; pre-restore backups are already enabled by default (alias: `--createBackup`) |
 | `--decrypt FILE` | Decrypts a `.tar.gz.gpg` or `.tar.gz.age` backup archive before restore |
+| `--skip-pull` | Skips the pre-flight `docker compose pull` for offline or air-gapped restore targets |
 | `--rehost-keycloak` | After restoring Keycloak, rewrites selected clients for the current `HOST` and local client secrets |
 | `--components LIST` | Restores only selected components (`all`, `keycloak`, `webmodeler`, `elasticsearch`, `orchestration`, `configs`) |
 | `--verify` | Checks backup integrity without restoring (alias: `--test`) |
@@ -580,6 +581,9 @@ The drill also recognizes the environment variables listed in [Restore Drill](#r
 
 # Restore on same cluster without the default rollback backup
 ./scripts/restore.sh --no-pre-backup backups/20240115_120000
+
+# Restore without pre-pulling images, for offline/air-gapped targets
+./scripts/restore.sh --skip-pull backups/20240115_120000
 
 # Restore with automatic confirmation
 ./scripts/restore.sh --force backups/20240115_120000
