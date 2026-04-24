@@ -166,7 +166,7 @@ function Validate-RestoreInputs {
             Log "ERROR: Snapshot state is not SUCCESS: $($snapshotInfo.snapshot.state)"
             exit 1
         }
-        if (-not $snapshotInfo.snapshot.name) {
+        if (-not ($snapshotInfo.snapshot.name -or $snapshotInfo.snapshot.snapshot)) {
             Log "ERROR: Snapshot name missing from snapshot-info.json"
             exit 1
         }

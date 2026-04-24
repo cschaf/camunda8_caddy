@@ -191,7 +191,7 @@ snapshot = d.get("snapshot") or {}
 if snapshot.get("state") != "SUCCESS":
     print(f"ERROR: Snapshot state is not SUCCESS: {snapshot.get('state', 'UNKNOWN')}")
     sys.exit(1)
-if not snapshot.get("name"):
+if not (snapshot.get("name") or snapshot.get("snapshot")):
     print("ERROR: Snapshot name missing from snapshot-info.json")
     sys.exit(1)
 PYEOF
