@@ -248,6 +248,14 @@ function Get-ComposeVolumeName {
     return "$(Get-ComposeProjectName)_$VolumeKey"
 }
 
+function Get-SemverMajorMinor {
+    param([string]$Version)
+    if ($Version -match '^([0-9]+)\.([0-9]+)(\.[0-9]+)?([.-].*)?$') {
+        return "$($matches[1]).$($matches[2])"
+    }
+    return $null
+}
+
 function Get-RestoreStartTimestamp {
     return [DateTimeOffset]::UtcNow
 }

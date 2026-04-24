@@ -242,6 +242,37 @@ configure_restore_components() {
   RESTORE_COMPONENTS="$normalized"
 }
 
+validate_cross_cluster_version() {
+  local label="$1"
+  local backup_version="$2"
+  local current_version="$3"
+
+  if [[ -z "$backup_version" ]]; then
+    log "ERROR: $label version not found in manifest. Cannot verify cross-cluster compatibility."
+    exit 1
+  fi
+  if [[ -z "$current_version" ]]; then
+    log "ERROR: $label version not found in current environment. Cannot verify cross-cluster compatibility."
+    exit 1
+  fi
+
+  local backup_major_minor current_major_minor
+  backup_major_minor="$(semver_major_minor "$backup_version" || true)"
+  current_major_minor="$(semver_major_minor "$current_version" || true)"
+  if [[ -z "$backup_major_minor" || -z "$current_major_minor" ]]; then
+    log "ERROR: $label version is not a supported semantic version. Backup: $backup_version, Current: $current_version"
+    exit 1
+  fi
+
+  if [[ "$backup_major_minor" != "$current_major_minor" ]]; then
+    log "ERROR: $label major.minor version mismatch. Backup: $backup_version, Current: $current_version"
+    exit 1
+  fi
+  if [[ "$backup_version" != "$current_version" ]]; then
+    log "WARNING: $label patch version differs. Backup: $backup_version, Current: $current_version"
+  fi
+}
+
 compose_service_health_status() {
   local service="$1"
   local cmd
@@ -494,25 +525,8 @@ PYEOF
   if [[ "$CROSS_CLUSTER" == true ]]; then
     log "Cross-cluster restore mode enabled."
 
-    if [[ -n "$manifest_elastic_version" ]]; then
-      if [[ "$manifest_elastic_version" != "${ELASTIC_VERSION:-}" ]]; then
-        log "ERROR: Elasticsearch version mismatch. Backup: $manifest_elastic_version, Current: ${ELASTIC_VERSION:-}"
-        exit 1
-      fi
-    else
-      log "ERROR: Elasticsearch version not found in manifest. Cannot verify cross-cluster compatibility."
-      exit 1
-    fi
-
-    if [[ -n "$manifest_camunda_version" ]]; then
-      if [[ "$manifest_camunda_version" != "${CAMUNDA_VERSION:-}" ]]; then
-        log "ERROR: Camunda version mismatch. Backup: $manifest_camunda_version, Current: ${CAMUNDA_VERSION:-}"
-        exit 1
-      fi
-    else
-      log "ERROR: Camunda version not found in manifest. Cannot verify cross-cluster compatibility."
-      exit 1
-    fi
+    validate_cross_cluster_version "Elasticsearch" "$manifest_elastic_version" "${ELASTIC_VERSION:-}"
+    validate_cross_cluster_version "Camunda" "$manifest_camunda_version" "${CAMUNDA_VERSION:-}"
 
     if [[ -n "$source_host" && "$source_host" != "${HOST:-}" ]]; then
       log "WARNING: Source host mismatch. Backup from: $source_host, Current: ${HOST:-}"

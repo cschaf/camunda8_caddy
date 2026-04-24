@@ -177,6 +177,38 @@ function Set-RestoreComponents {
     $script:RestoreComponents = $normalized
 }
 
+function Assert-CrossClusterVersion {
+    param(
+        [string]$Label,
+        [string]$BackupVersion,
+        [string]$CurrentVersion
+    )
+
+    if (-not $BackupVersion) {
+        Log "ERROR: $Label version not found in manifest. Cannot verify cross-cluster compatibility."
+        exit 1
+    }
+    if (-not $CurrentVersion) {
+        Log "ERROR: $Label version not found in current environment. Cannot verify cross-cluster compatibility."
+        exit 1
+    }
+
+    $backupMajorMinor = Get-SemverMajorMinor -Version $BackupVersion
+    $currentMajorMinor = Get-SemverMajorMinor -Version $CurrentVersion
+    if (-not $backupMajorMinor -or -not $currentMajorMinor) {
+        Log "ERROR: $Label version is not a supported semantic version. Backup: $BackupVersion, Current: $CurrentVersion"
+        exit 1
+    }
+
+    if ($backupMajorMinor -ne $currentMajorMinor) {
+        Log "ERROR: $Label major.minor version mismatch. Backup: $BackupVersion, Current: $CurrentVersion"
+        exit 1
+    }
+    if ($BackupVersion -ne $CurrentVersion) {
+        Log "WARNING: $Label patch version differs. Backup: $BackupVersion, Current: $CurrentVersion"
+    }
+}
+
 function Get-ComposeServiceHealthStatus {
     param([string]$Service)
     $cmd = Get-DockerComposeCmd
@@ -408,25 +440,8 @@ function Main {
         if ($CrossCluster) {
             Log "Cross-cluster restore mode enabled."
 
-            if ($manifestElasticVersion) {
-                if ($manifestElasticVersion -ne $env:ELASTIC_VERSION) {
-                    Log "ERROR: Elasticsearch version mismatch. Backup: $manifestElasticVersion, Current: $($env:ELASTIC_VERSION)"
-                    exit 1
-                }
-            } else {
-                Log "ERROR: Elasticsearch version not found in manifest. Cannot verify cross-cluster compatibility."
-                exit 1
-            }
-
-            if ($manifestCamundaVersion) {
-                if ($manifestCamundaVersion -ne $env:CAMUNDA_VERSION) {
-                    Log "ERROR: Camunda version mismatch. Backup: $manifestCamundaVersion, Current: $($env:CAMUNDA_VERSION)"
-                    exit 1
-                }
-            } else {
-                Log "ERROR: Camunda version not found in manifest. Cannot verify cross-cluster compatibility."
-                exit 1
-            }
+            Assert-CrossClusterVersion -Label "Elasticsearch" -BackupVersion $manifestElasticVersion -CurrentVersion $env:ELASTIC_VERSION
+            Assert-CrossClusterVersion -Label "Camunda" -BackupVersion $manifestCamundaVersion -CurrentVersion $env:CAMUNDA_VERSION
 
             if ($sourceHost -and $sourceHost -ne $env:HOST) {
                 Log "WARNING: Source host mismatch. Backup from: $sourceHost, Current: $($env:HOST)"

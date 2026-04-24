@@ -288,6 +288,15 @@ compose_volume_name() {
   echo "$(get_compose_project_name)_${volume_key}"
 }
 
+semver_major_minor() {
+  local version="$1"
+  if [[ "$version" =~ ^([0-9]+)\.([0-9]+)(\.[0-9]+)?([.-].*)?$ ]]; then
+    printf '%s.%s\n' "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}"
+    return 0
+  fi
+  return 1
+}
+
 restore_start_timestamp() {
   date -u '+%Y-%m-%dT%H:%M:%SZ'
 }

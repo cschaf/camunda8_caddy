@@ -208,8 +208,10 @@ Restores data on a different cluster. Configuration files are **not** overwritte
 ```
 
 Requirements:
-- Elasticsearch version in the backup must match `.env`
-- Camunda version in the backup must match `.env`
+- Elasticsearch version in the backup must match the `.env` major.minor version
+- Camunda version in the backup must match the `.env` major.minor version
+
+Cross-cluster restore requires matching major.minor versions. Patch versions may differ; the restore scripts log a warning for patch drift and continue. Major or minor version differences abort the restore because Camunda and Elasticsearch have introduced breaking changes across those boundaries.
 
 Use `--rehost-keycloak` when restoring a backup from one hostname into a cluster that should keep its local `HOST`, for example restoring production data into a local development stack:
 
@@ -237,7 +239,7 @@ This lets the restored Keycloak realm issue tokens and accept redirects for the 
 For a production-to-local debugging restore, prepare the local `.env` first:
 
 1. Set `HOST` to the local hostname you want to use, e.g. `camunda.dev.local`.
-2. Ensure `CAMUNDA_VERSION` and `ELASTIC_VERSION` match the backup manifest.
+2. Ensure `CAMUNDA_VERSION` and `ELASTIC_VERSION` match the backup manifest major.minor versions.
 3. Run `scripts/setup-host.ps1` or `scripts/setup-host.sh` so Caddy and hosts entries match the local `HOST`.
 4. Run the restore with `--cross-cluster --rehost-keycloak`.
 
@@ -664,7 +666,7 @@ If you still see the warning for an old restored stack but the services are heal
 
 ### Version mismatch on cross-cluster restore
 
-Ensure that versions in `.env` match the backup:
+Ensure that the major.minor versions in `.env` match the backup. Patch versions may differ and produce a warning instead of an abort:
 
 ```bash
 # Show version from backup
