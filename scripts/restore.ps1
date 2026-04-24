@@ -312,6 +312,8 @@ function Main {
     $Global:LogFile = Join-Path $BackupDir "restore.log"
     New-Item -ItemType Directory -Path $BackupBaseDir -Force | Out-Null
     Acquire-Lock
+    $stackDownForRestore = $false
+    $preRestoreBackupPath = ""
     try {
         Log "Starting restore from: $BackupDir"
         Log "Stage: $stage"
@@ -412,6 +414,10 @@ function Main {
             try {
                 & "$PSScriptRoot\backup.ps1" > $preRestoreLog 2>&1
                 Log "Pre-restore backup completed. Log: $preRestoreLog"
+                $preRestoreBackupPath = Get-Content $preRestoreLog -ErrorAction SilentlyContinue |
+                    Select-String -Pattern "Backup completed successfully:" |
+                    Select-Object -Last 1 |
+                    ForEach-Object { $_.Line -replace '^.*Backup completed successfully: ', '' }
             }
             catch {
                 Log "ERROR: Pre-restore backup failed. Aborting restore. Log: $preRestoreLog"
@@ -438,6 +444,7 @@ function Main {
         }
         else {
             Invoke-Expression "$cmd down --remove-orphans" | Out-Null
+            $stackDownForRestore = $true
         }
 
         # Remove volumes
@@ -802,6 +809,7 @@ function Main {
         }
         else {
             Invoke-Expression "$cmd up -d" | Out-Null
+            $stackDownForRestore = $false
             Start-Sleep -Seconds 5
         }
 
@@ -829,6 +837,12 @@ function Main {
         }
     }
     finally {
+        if ($stackDownForRestore) {
+            Log "Attempting to restart stack after restore failure..."
+            try { Invoke-Expression "$cmd up -d" *>> $Global:LogFile } catch { }
+            $recoveryBackup = if ($preRestoreBackupPath) { $preRestoreBackupPath } else { "unavailable" }
+            Log "ERROR: Restore failed. Stack may be inconsistent. Pre-restore backup (if --create-backup was used): $recoveryBackup. To re-try from a clean state, run: scripts/restore.ps1 --force $recoveryBackup"
+        }
         Release-Lock
     }
 }

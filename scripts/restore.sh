@@ -35,6 +35,25 @@ RESTORE_WEBMODELER=false
 RESTORE_ELASTICSEARCH=false
 RESTORE_ORCHESTRATION=false
 RESTORE_CONFIGS=false
+STACK_DOWN_FOR_RESTORE=false
+RESTORE_COMPOSE_CMD=""
+PRE_RESTORE_BACKUP_PATH=""
+
+restore_cleanup_on_error() {
+  local exit_code=$?
+  if [[ $exit_code -ne 0 ]]; then
+    log "ERROR: Restore script failed with exit code $exit_code"
+    if [[ "$STACK_DOWN_FOR_RESTORE" == true && -n "$RESTORE_COMPOSE_CMD" ]]; then
+      log "Attempting to restart stack after restore failure..."
+      $RESTORE_COMPOSE_CMD up -d >>"$LOG_FILE" 2>&1 || true
+      local recovery_backup="${PRE_RESTORE_BACKUP_PATH:-unavailable}"
+      log "ERROR: Restore failed. Stack may be inconsistent. Pre-restore backup (if --create-backup was used): $recovery_backup. To re-try from a clean state, run: scripts/restore.sh --force $recovery_backup"
+    fi
+  fi
+  release_lock
+  exit $exit_code
+}
+trap restore_cleanup_on_error EXIT
 
 usage() {
   echo "Usage: $(basename "$0") [OPTIONS] <backup-directory>"
@@ -354,6 +373,7 @@ main() {
   stage="$(get_stage)"
   local cmd
   cmd="$(docker_compose_cmd)"
+  RESTORE_COMPOSE_CMD="$cmd"
   local restore_started_at
   restore_started_at="$(restore_start_timestamp)"
 
@@ -485,6 +505,7 @@ PYEOF
     pre_restore_log="$BACKUP_BASE_DIR/pre-restore-backup.log"
     if bash "$SCRIPT_DIR/backup.sh" > "$pre_restore_log" 2>&1; then
       log "Pre-restore backup completed. Log: $pre_restore_log"
+      PRE_RESTORE_BACKUP_PATH="$(grep -E 'Backup completed successfully:' "$pre_restore_log" | tail -n 1 | sed 's/^.*Backup completed successfully: //')"
     else
       log "ERROR: Pre-restore backup failed. Aborting restore. Log: $pre_restore_log"
       acquire_lock
@@ -508,6 +529,7 @@ PYEOF
     log "[DRY-RUN] Would run: $cmd down --remove-orphans"
   else
     $cmd down --remove-orphans
+    STACK_DOWN_FOR_RESTORE=true
   fi
 
   # Step 4: Remove volumes (except keycloak-theme)
@@ -870,6 +892,7 @@ except Exception as e:
     log "[DRY-RUN] Would run: $cmd up -d"
   else
     $cmd up -d
+    STACK_DOWN_FOR_RESTORE=false
     sleep 5
   fi
 
