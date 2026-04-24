@@ -78,6 +78,17 @@ function Main {
     Load-Env
     $stage = Get-Stage
     $cmd = Get-DockerComposeCmd
+    $backupStopTimeout = 180
+    if ($env:BACKUP_STOP_TIMEOUT) {
+        if (-not [int]::TryParse($env:BACKUP_STOP_TIMEOUT, [ref]$backupStopTimeout) -or $backupStopTimeout -le 0) {
+            Log "ERROR: BACKUP_STOP_TIMEOUT must be a positive integer (got: $($env:BACKUP_STOP_TIMEOUT))"
+            exit 1
+        }
+    }
+    elseif ($backupStopTimeout -le 0) {
+        Log "ERROR: BACKUP_STOP_TIMEOUT must be a positive integer (got: $backupStopTimeout)"
+        exit 1
+    }
 
     $backupBaseDir = $BackupBaseDir
     if ($CustomBackupDir) {
@@ -104,6 +115,7 @@ function Main {
     try {
         Log "Starting backup to $backupDir"
         Log "Stage: $stage"
+        Log "Application service stop timeout: ${backupStopTimeout}s"
 
     # Check stack status
     Log "Checking stack status..."
@@ -156,7 +168,7 @@ function Main {
         Log "Stopping application services for cold backup..."
         if ($TestMode) {
             Log "[TEST] Would collect Elasticsearch state to: $(Join-Path $backupDir 'backup-state.json')"
-            Log "[TEST] Would stop application services: $($AppServices -join ', ')"
+            Log "[TEST] Would stop application services with timeout ${backupStopTimeout}s: $($AppServices -join ', ')"
             Log "[TEST] Would backup Zeebe state from volume 'orchestration'"
             Log "[TEST] Would pg_dump Keycloak DB: $env:POSTGRES_DB"
             Log "[TEST] Would pg_dump Web Modeler DB: $env:WEBMODELER_DB_NAME"
@@ -166,8 +178,8 @@ function Main {
             $backupStateFile = Join-Path $backupDir "backup-state.json"
             try { Collect-ESState -Phase "backup" -OutputFile $backupStateFile } catch { Log "WARNING: Backup state collection failed: $_" }
 
-            Log "Stopping application services for consistent cold backup..."
-            Invoke-Expression "$cmd stop --timeout 60 $($AppServices -join ' ')" | Out-Null
+            Log "Stopping application services for consistent cold backup (timeout: ${backupStopTimeout}s)..."
+            Invoke-Expression "$cmd stop --timeout $backupStopTimeout $($AppServices -join ' ')" | Out-Null
             $appServicesStopped = $true
             Start-Sleep -Seconds 2
 

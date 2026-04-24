@@ -598,6 +598,16 @@ The backup script retries the Zeebe volume backup up to 3 times with 5-second de
 
 If all 3 retries fail, the backup exits with status `1`. It no longer falls through as a partial success.
 
+### Zeebe shutdown timeout
+
+Cold backups stop application services before copying Zeebe state. The stop timeout defaults to 180 seconds and is logged at the start of each backup. For loaded Zeebe instances or long exporter queues, increase it in `.env` to avoid Docker sending SIGKILL before the broker has shut down cleanly:
+
+```env
+BACKUP_STOP_TIMEOUT=300
+```
+
+Use a lower value only for controlled testing. If the timeout is too short, the backup may capture an unclean orchestration volume.
+
 ### Backup says the stack is not running
 
 The backup scripts now count running containers instead of trusting `docker compose ps` exit status. If you see:

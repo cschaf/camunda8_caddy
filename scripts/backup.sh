@@ -134,6 +134,12 @@ main() {
   local cmd
   cmd="$(docker_compose_cmd)"
   BACKUP_COMPOSE_CMD="$cmd"
+  local backup_stop_timeout
+  backup_stop_timeout="${BACKUP_STOP_TIMEOUT:-180}"
+  if [[ ! "$backup_stop_timeout" =~ ^[0-9]+$ || "$backup_stop_timeout" -le 0 ]]; then
+    log "ERROR: BACKUP_STOP_TIMEOUT must be a positive integer (got: $backup_stop_timeout)"
+    exit 1
+  fi
 
   local backup_base_dir="$BACKUP_BASE_DIR"
   if [[ -n "$CUSTOM_BACKUP_DIR" ]]; then
@@ -157,6 +163,7 @@ main() {
 
   log "Starting backup to $backup_dir"
   log "Stage: $stage"
+  log "Application service stop timeout: ${backup_stop_timeout}s"
 
   # Step 3: Check stack status
   log "Checking stack status..."
@@ -209,7 +216,7 @@ main() {
   log "Stopping application services for cold backup..."
   if [[ "$TEST_MODE" == true ]]; then
     log "[TEST] Would collect Elasticsearch state to: $backup_dir/backup-state.json"
-    log "[TEST] Would stop application services: ${BACKUP_APP_SERVICES[*]}"
+    log "[TEST] Would stop application services with timeout ${backup_stop_timeout}s: ${BACKUP_APP_SERVICES[*]}"
     log "[TEST] Would backup Zeebe state from volume 'orchestration'"
     log "[TEST] Would pg_dump Keycloak DB: ${POSTGRES_DB:-}"
     log "[TEST] Would pg_dump Web Modeler DB: ${WEBMODELER_DB_NAME:-}"
@@ -217,8 +224,8 @@ main() {
   else
     collect_es_state "backup" "$backup_dir/backup-state.json" || true
 
-    log "Stopping application services for consistent cold backup..."
-    $cmd stop --timeout 60 "${BACKUP_APP_SERVICES[@]}"
+    log "Stopping application services for consistent cold backup (timeout: ${backup_stop_timeout}s)..."
+    $cmd stop --timeout "$backup_stop_timeout" "${BACKUP_APP_SERVICES[@]}"
     APP_SERVICES_STOPPED=true
     sleep 2
 
