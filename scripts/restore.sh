@@ -4,6 +4,20 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# Pre-parse --env-file so backup-common.sh can honor it
+for ((i=1; i<=$#; i++)); do
+  if [[ "${!i}" == "--env-file" ]]; then
+    next=$((i+1))
+    if [[ $next -le $# ]]; then
+      ENV_FILE="${!next}"
+      export ENV_FILE
+      # Rebuild args without --env-file and its value
+      set -- "${@:1:i-1}" "${@:i+2}"
+      break
+    fi
+  fi
+done
+
 # shellcheck source=/dev/null
 source "$SCRIPT_DIR/lib/backup-common.sh"
 
@@ -26,6 +40,7 @@ usage() {
   echo "  --cross-cluster   Enable cross-cluster restore (skips config overwrite)"
   echo "  --createBackup    Create a fresh backup before restoring"
   echo "  --test            Verify backup integrity without restoring"
+  echo "  --env-file FILE   Use a custom env file instead of .env"
   echo "  -h, --help        Show this help message"
   exit 0
 }
@@ -52,6 +67,9 @@ parse_args() {
       --test)
         TEST_MODE=true
         shift
+        ;;
+      --env-file)
+        shift 2
         ;;
       -h|--help)
         usage
@@ -370,14 +388,16 @@ PYEOF
     # Copy snapshot data from host backup into the Docker volume before restoring
     local es_backup_dir="$BACKUP_DIR/elasticsearch"
     if [[ -d "$es_backup_dir" ]]; then
-      log "Copying snapshot data into Docker volume 'elastic-backup'..."
+      local es_backup_volume
+      es_backup_volume="${ES_BACKUP_VOLUME:-elastic-backup}"
+      log "Copying snapshot data into Docker volume '$es_backup_volume'..."
       docker run --rm \
         -v "$es_backup_dir:/source:ro" \
-        -v "elastic-backup:/dest" \
+        -v "${es_backup_volume}:/dest" \
         alpine sh -c 'rm -rf /dest/* && cp -r /source/. /dest/' > /dev/null 2>&1 || {
           log "WARNING: Could not copy snapshot data to volume"
         }
-      log "Snapshot data copied to volume 'elastic-backup'."
+      log "Snapshot data copied to volume '$es_backup_volume'."
     else
       log "WARNING: Elasticsearch backup directory not found at $es_backup_dir, skipping snapshot copy."
     fi
@@ -385,10 +405,14 @@ PYEOF
     sleep 2
 
     # Register snapshot repo
+    local es_host es_port es_url
+    es_host="${ES_HOST:-localhost}"
+    es_port="${ES_PORT:-9200}"
+    es_url="http://${es_host}:${es_port}"
     local es_repo_body
     es_repo_body='{"type":"fs","settings":{"location":"/usr/share/elasticsearch/backup","compress":true}}'
     local repo_response
-    repo_response="$(curl -s -X PUT "http://localhost:9200/_snapshot/backup-repo" \
+    repo_response="$(curl -s -X PUT "${es_url}/_snapshot/backup-repo" \
       -H 'Content-Type: application/json' \
       -d "$es_repo_body" 2>/dev/null || true)"
     if ! python3 -c "import json,sys; d=json.loads(sys.argv[1]); sys.exit(0 if d.get('acknowledged') else 1)" "$repo_response" > /dev/null 2>&1; then
@@ -398,7 +422,7 @@ PYEOF
     # Verify the snapshot exists BEFORE deleting any indices, so a wrong or
     # incomplete backup directory cannot wipe the live cluster.
     local snapshot_check_code
-    snapshot_check_code="$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:9200/_snapshot/backup-repo/${snapshot_name}" 2>/dev/null || echo "000")"
+    snapshot_check_code="$(curl -s -o /dev/null -w '%{http_code}' "${es_url}/_snapshot/backup-repo/${snapshot_name}" 2>/dev/null || echo "000")"
     if [[ "$snapshot_check_code" != "200" ]]; then
       log "ERROR: Snapshot '$snapshot_name' not found in repository (HTTP $snapshot_check_code). Aborting before deleting any indices."
       exit 1
@@ -413,13 +437,13 @@ PYEOF
     local idx
     while IFS= read -r idx; do
       [[ -z "$idx" ]] && continue
-      curl -s -X DELETE "http://localhost:9200/${idx}" > /dev/null || true
-    done < <(curl -s "http://localhost:9200/_cat/indices?h=index&expand_wildcards=all" 2>/dev/null | grep -E "$camunda_regex" || true)
+      curl -s -X DELETE "${es_url}/${idx}" > /dev/null || true
+    done < <(curl -s "${es_url}/_cat/indices?h=index&expand_wildcards=all" 2>/dev/null | grep -E "$camunda_regex" || true)
 
     log "Clearing Camunda-related Elasticsearch data streams..."
     local ds_tmp
     ds_tmp="$(mktemp)"
-    curl -s "http://localhost:9200/_data_stream?expand_wildcards=all" > "$ds_tmp" 2>/dev/null || true
+    curl -s "${es_url}/_data_stream?expand_wildcards=all" > "$ds_tmp" 2>/dev/null || true
     local data_streams
     data_streams="$(python3 - "$ds_tmp" <<'PYEOF' 2>/dev/null || true
 import json, re, sys
@@ -447,7 +471,7 @@ PYEOF
     log "Restoring snapshot: $snapshot_name"
     local restore_response
     local restore_body='{"indices":"*,-.logs-*,-.ds-.logs-*,-ilm-history-*,-.ds-ilm-history-*","ignore_unavailable":true,"include_global_state":true}'
-    restore_response="$(curl -s -X POST "http://localhost:9200/_snapshot/backup-repo/${snapshot_name}/_restore?wait_for_completion=true" \
+    restore_response="$(curl -s -X POST "${es_url}/_snapshot/backup-repo/${snapshot_name}/_restore?wait_for_completion=true" \
       -H 'Content-Type: application/json' \
       -d "$restore_body" 2>/dev/null || true)"
 

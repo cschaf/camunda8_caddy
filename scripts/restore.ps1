@@ -8,6 +8,16 @@ $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectDir = Resolve-Path (Join-Path $ScriptDir "..")
 
+# Pre-parse --env-file so backup-common.ps1 can honor it
+$EnvFile = Join-Path $ProjectDir ".env"
+for ($i = 0; $i -lt $CliArgs.Count; $i++) {
+    if ($CliArgs[$i] -eq "--env-file" -and ($i + 1) -lt $CliArgs.Count) {
+        $EnvFile = $CliArgs[$i + 1]
+        $CliArgs = $CliArgs[0..($i-1)] + $CliArgs[($i+2)..($CliArgs.Count-1)]
+        break
+    }
+}
+
 . (Join-Path $ScriptDir "lib\backup-common.ps1")
 
 $BackupDir = ""
@@ -29,6 +39,7 @@ function Show-Usage {
     Write-Host "  --cross-cluster   Enable cross-cluster restore (skips config overwrite)"
     Write-Host "  --createBackup    Create a fresh backup before restoring"
     Write-Host "  --test            Verify backup integrity without restoring"
+    Write-Host "  --env-file FILE   Use a custom env file instead of .env"
     Write-Host "  -h, --help        Show this help message"
     exit 0
 }
@@ -43,6 +54,7 @@ function Parse-Args {
             "--cross-cluster" { $script:CrossCluster = $true; break }
             "--createBackup" { $script:CreateBackup = $true; break }
             "--test" { $script:TestMode = $true; break }
+            "--env-file" { $i++; break }
             { $_ -in "-h","--help" } { Show-Usage }
             { $_.StartsWith("-") } {
                 Write-Host "Unknown option: $arg"
@@ -333,13 +345,14 @@ function Main {
             # Copy snapshot data from host backup into the Docker volume before restoring
             $esBackupDir = Join-Path $BackupDir "elasticsearch"
             if (Test-Path $esBackupDir) {
-                Log "Copying snapshot data into Docker volume 'elastic-backup'..."
+                $esBackupVolume = if ($env:ES_BACKUP_VOLUME) { $env:ES_BACKUP_VOLUME } else { "elastic-backup" }
+                Log "Copying snapshot data into Docker volume '$esBackupVolume'..."
                 try {
                     docker run --rm `
                         -v "${esBackupDir}:/source:ro" `
-                        -v "elastic-backup:/dest" `
+                        -v "${esBackupVolume}:/dest" `
                         alpine sh -c 'rm -rf /dest/* && cp -r /source/. /dest/' | Out-Null
-                    Log "Snapshot data copied to volume 'elastic-backup'."
+                    Log "Snapshot data copied to volume '$esBackupVolume'."
                 }
                 catch {
                     Log "WARNING: Could not copy snapshot data to volume: $_"
@@ -351,9 +364,13 @@ function Main {
 
             Start-Sleep -Seconds 2
 
+            $esHost = if ($env:ES_HOST) { $env:ES_HOST } else { "localhost" }
+            $esPort = if ($env:ES_PORT) { $env:ES_PORT } else { "9200" }
+            $esUrl = "http://${esHost}:${esPort}"
+
             $esRepoBody = '{"type":"fs","settings":{"location":"/usr/share/elasticsearch/backup","compress":true}}'
             try {
-                Invoke-RestMethod -Uri "http://localhost:9200/_snapshot/backup-repo" -Method Put -ContentType "application/json" -Body $esRepoBody | Out-Null
+                Invoke-RestMethod -Uri "${esUrl}/_snapshot/backup-repo" -Method Put -ContentType "application/json" -Body $esRepoBody | Out-Null
                 Log "Elasticsearch snapshot repo registered."
             }
             catch {
@@ -364,7 +381,7 @@ function Main {
             # or incomplete backup directory cannot wipe the live cluster.
             $snapshotExists = $false
             try {
-                Invoke-RestMethod -Uri "http://localhost:9200/_snapshot/backup-repo/$snapshotName" -Method Get | Out-Null
+                Invoke-RestMethod -Uri "${esUrl}/_snapshot/backup-repo/$snapshotName" -Method Get | Out-Null
                 $snapshotExists = $true
             }
             catch {
@@ -383,7 +400,7 @@ function Main {
 
             Log "Clearing Camunda-related Elasticsearch indices..."
             try {
-                $catIndices = Invoke-RestMethod -Uri "http://localhost:9200/_cat/indices?h=index&expand_wildcards=all&format=json"
+                $catIndices = Invoke-RestMethod -Uri "${esUrl}/_cat/indices?h=index&expand_wildcards=all&format=json"
                 foreach ($row in $catIndices) {
                     $idx = $row.index
                     if ($idx -match $camundaPattern) {
@@ -402,7 +419,7 @@ function Main {
 
             Log "Clearing Camunda-related Elasticsearch data streams..."
             try {
-                $dsResponse = Invoke-RestMethod -Uri "http://localhost:9200/_data_stream?expand_wildcards=all"
+                $dsResponse = Invoke-RestMethod -Uri "${esUrl}/_data_stream?expand_wildcards=all"
                 if ($dsResponse.data_streams) {
                     foreach ($ds in $dsResponse.data_streams) {
                         if ($ds.name -match $camundaPattern) {
@@ -424,7 +441,7 @@ function Main {
             Log "Restoring snapshot: $snapshotName"
             try {
                 $restoreBody = '{"indices":"*,-.logs-*,-.ds-.logs-*,-ilm-history-*,-.ds-ilm-history-*","ignore_unavailable":true,"include_global_state":true}'
-                $restoreResponse = Invoke-RestMethod -Uri "http://localhost:9200/_snapshot/backup-repo/$snapshotName/_restore?wait_for_completion=true" -Method Post -ContentType "application/json" -Body $restoreBody
+                $restoreResponse = Invoke-RestMethod -Uri "${esUrl}/_snapshot/backup-repo/$snapshotName/_restore?wait_for_completion=true" -Method Post -ContentType "application/json" -Body $restoreBody
                 Log "Elasticsearch snapshot restored successfully."
             }
             catch {

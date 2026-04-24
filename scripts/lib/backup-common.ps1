@@ -2,7 +2,9 @@ $ErrorActionPreference = "Stop"
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectDir = Resolve-Path (Join-Path $ScriptDir "..\..")
-$EnvFile = Join-Path $ProjectDir ".env"
+if (-not $EnvFile) {
+    $EnvFile = Join-Path $ProjectDir ".env"
+}
 $BackupBaseDir = Join-Path $ProjectDir "backups"
 $LockFile = Join-Path $BackupBaseDir ".backup.lock"
 
@@ -52,6 +54,9 @@ function Get-Stage {
 }
 
 function Get-DockerComposeCmd {
+    if ($env:COMPOSE_FILE) {
+        return "docker compose"
+    }
     $stage = Get-Stage
     return "docker compose -f `"$ProjectDir\docker-compose.yaml`" -f `"$ProjectDir\stages\${stage}.yaml`""
 }
@@ -318,9 +323,13 @@ function Collect-ESState {
 
     Log "Collecting Elasticsearch state ($Phase)..."
 
+    $esHost = if ($env:ES_HOST) { $env:ES_HOST } else { "localhost" }
+    $esPort = if ($env:ES_PORT) { $env:ES_PORT } else { "9200" }
+    $esUrl = "http://${esHost}:${esPort}"
+
     $health = $null
     try {
-        $health = Invoke-RestMethod -Uri "http://localhost:9200/_cluster/health" -TimeoutSec 10 -ErrorAction Stop
+        $health = Invoke-RestMethod -Uri "${esUrl}/_cluster/health" -TimeoutSec 10 -ErrorAction Stop
     }
     catch {
         @{ phase = $Phase; reachable = $false } | ConvertTo-Json -Depth 10 | Set-Content -Path $OutputFile
@@ -332,13 +341,13 @@ function Collect-ESState {
 
     $indicesRaw = @()
     try {
-        $indicesRaw = @(Invoke-RestMethod -Uri "http://localhost:9200/_cat/indices?h=index,docs.count,store.size&format=json&expand_wildcards=all" -TimeoutSec 15)
+        $indicesRaw = @(Invoke-RestMethod -Uri "${esUrl}/_cat/indices?h=index,docs.count,store.size&format=json&expand_wildcards=all" -TimeoutSec 15)
     }
     catch { }
 
     $dataStreamsRaw = $null
     try {
-        $dataStreamsRaw = Invoke-RestMethod -Uri "http://localhost:9200/_data_stream?expand_wildcards=all" -TimeoutSec 10
+        $dataStreamsRaw = Invoke-RestMethod -Uri "${esUrl}/_data_stream?expand_wildcards=all" -TimeoutSec 10
     }
     catch { }
 

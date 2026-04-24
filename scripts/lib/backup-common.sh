@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
-ENV_FILE="$PROJECT_DIR/.env"
+ENV_FILE="${ENV_FILE:-$PROJECT_DIR/.env}"
 BACKUP_BASE_DIR="$PROJECT_DIR/backups"
 LOCK_FILE="$BACKUP_BASE_DIR/.backup.lock"
 
@@ -49,9 +49,13 @@ get_stage() {
 }
 
 docker_compose_cmd() {
-  local stage
-  stage="$(get_stage)"
-  echo "docker compose -f $PROJECT_DIR/docker-compose.yaml -f $PROJECT_DIR/stages/${stage}.yaml"
+  if [[ -n "${COMPOSE_FILE:-}" ]]; then
+    echo "docker compose"
+  else
+    local stage
+    stage="$(get_stage)"
+    echo "docker compose -f $PROJECT_DIR/docker-compose.yaml -f $PROJECT_DIR/stages/${stage}.yaml"
+  fi
 }
 
 check_services_health() {
@@ -361,8 +365,13 @@ collect_es_state() {
 
   log "Collecting Elasticsearch state ($phase)..."
 
+  local es_host es_port es_url
+  es_host="${ES_HOST:-localhost}"
+  es_port="${ES_PORT:-9200}"
+  es_url="http://${es_host}:${es_port}"
+
   local health_json indices_json data_streams_json
-  health_json="$(curl -s --max-time 10 http://localhost:9200/_cluster/health 2>/dev/null || true)"
+  health_json="$(curl -s --max-time 10 "${es_url}/_cluster/health" 2>/dev/null || true)"
 
   if [[ -z "$health_json" ]] || ! python3 -c "import json,sys; json.loads(sys.argv[1])" "$health_json" > /dev/null 2>&1; then
     python3 - "$output_file" "$phase" <<'PYEOF' 2>/dev/null || true
@@ -374,8 +383,8 @@ PYEOF
     return 0
   fi
 
-  indices_json="$(curl -s --max-time 15 'http://localhost:9200/_cat/indices?h=index,docs.count,store.size&format=json&expand_wildcards=all' 2>/dev/null || echo '[]')"
-  data_streams_json="$(curl -s --max-time 10 'http://localhost:9200/_data_stream?expand_wildcards=all' 2>/dev/null || echo '{}')"
+  indices_json="$(curl -s --max-time 15 "${es_url}/_cat/indices?h=index,docs.count,store.size&format=json&expand_wildcards=all" 2>/dev/null || echo '[]')"
+  data_streams_json="$(curl -s --max-time 10 "${es_url}/_data_stream?expand_wildcards=all" 2>/dev/null || echo '{}')"
 
   python3 - "$output_file" "$phase" "$health_json" "$indices_json" "$data_streams_json" <<'PYEOF' 2>/dev/null || true
 import json, re, sys

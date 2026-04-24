@@ -10,6 +10,7 @@ This document describes the backup and restore system for the Camunda 8 Self-Man
 - [Backup Scenarios](#backup-scenarios)
 - [Restore Scenarios](#restore-scenarios)
 - [Pre/Post-Restore State Comparison](#prepost-restore-state-comparison)
+- [Restore Drill](#restore-drill)
 - [CLI Reference](#cli-reference)
 - [Troubleshooting](#troubleshooting)
 - [Automation](#automation)
@@ -283,6 +284,112 @@ Use this as a quick sanity check that the restore landed the expected data. Non-
 
 `backup-state.json` uses the same schema as the restore state files, but records the cluster state at backup time and is included in the manifest.
 
+## Restore Drill
+
+The restore drill answers the only question that matters about backups: *can you actually restore from them?* It spins up an **isolated parallel stack**, restores a backup into it, runs smoke tests, and tears everything down — all without touching your live data.
+
+### Why run a drill?
+
+A backup that has never been restored is a hope, not a guarantee. The drill catches problems while you still have time to fix them:
+
+- **Detects backup corruption early** — bad archives, incomplete snapshot data, or manifest mismatches surface immediately instead of during an emergency restore
+- **Validates restore logic after changes** — Docker Compose updates, image version bumps, or script modifications can subtly break the restore flow; the drill proves the end-to-end path still works
+- **Confirms service health after restore** — a backup can be technically valid but leave services in a broken state (e.g., missing indices, unhealthy Keycloak); smoke tests verify the stack is actually usable
+- **Safe to run anytime** — because the drill stack is fully isolated, you can run it while the live stack is serving traffic. The two stacks coexist without interference
+
+### How it works
+
+When you run `restore-drill.sh`, the script:
+
+1. **Generates an isolated environment** — copies your `.env` into `backups/.drill/.env.drill`, overrides `HOST`, `COMPOSE_PROJECT_NAME`, and `ES_PORT`, and creates a compose port-remap override
+2. **Restores the backup into the drill stack** — invokes the real `restore.sh --force` against the isolated project, so you are testing the exact same restore logic you would use in production
+3. **Runs smoke tests** — probes the remapped ports to verify Keycloak, Orchestration, and Web Modeler are healthy
+4. **Tears down unconditionally** — runs `docker compose down --volumes --remove-orphans` and deletes temporary files, even if a previous step failed
+
+If any step fails, the script exits with a non-zero status and still completes teardown, so drills never leak volumes or containers.
+
+### Isolation model
+
+Three independent layers guarantee the drill cannot touch live data:
+
+1. **Compose project name** (`COMPOSE_PROJECT_NAME=camunda-restoredrill`) — Docker prefixes every container and managed volume with the project name. The drill gets its own `camunda-restoredrill_orchestration`, `camunda-restoredrill_postgres`, etc., completely separate from the live stack's volumes.
+2. **Port remap** (`DRILL_PORT_OFFSET`, default `+10000`) — every host-bound port in the drill is shifted by the offset so it never collides with the live stack. Keycloak moves from `18080` to `28080`, Orchestration from `8088` to `18088`, Elasticsearch from `9200` to `19200`, and every other service follows suit.
+3. **Dedicated ES backup volume** (`ES_BACKUP_VOLUME=elastic-backup-drill` via `stages/drill.yaml`) — the drill's Elasticsearch snapshot staging uses its own named volume. Even if something goes wrong mid-drill, the live `elastic-backup` volume is untouched.
+
+All drill-generated files (`backups/.drill/.env.drill`, `backups/.drill/ports.yaml`, and any runtime state) are deleted on teardown.
+
+### Usage
+
+```bash
+# Drill against the most recent backup
+./scripts/restore-drill.sh
+
+# Drill against a specific backup
+./scripts/restore-drill.sh backups/20240115_120000
+```
+
+```powershell
+# PowerShell
+.\scripts\restore-drill.ps1
+.\scripts\restore-drill.ps1 backups\20240115_120000
+```
+
+### What the smoke tests verify
+
+The drill waits up to 120 seconds for each check, polling every 5 seconds:
+
+- **Keycloak realm endpoint** (`http://localhost:<remapped_port>/auth/realms/camunda-platform` returns HTTP 200) — confirms authentication infrastructure is functional
+- **Orchestration health** (`/actuator/health` returns `status: UP`) — confirms Operate, Tasklist, and Zeebe are operational
+- **Web Modeler readiness** (`/health/readiness` returns HTTP 200) — confirms the Web Modeler stack is ready to serve requests
+- **Optional known project check** (only if `DRILL_KNOWN_PROJECT_ID` is set) — verifies a specific project is accessible via `/internal-api/projects/{id}`, proving data integrity beyond generic health checks
+
+### Customizing the drill
+
+| Environment variable | Default | Description |
+|----------------------|---------|-------------|
+| `DRILL_PORT_OFFSET` | `10000` | Added to every host-bound port in the drill stack. Change this if the default offset range is already in use on your machine. |
+| `DRILL_HOST` | `drill.localhost` | Hostname injected into the drill `.env`. Affects OIDC redirect URIs inside the drill stack. |
+| `DRILL_PROJECT_NAME` | `camunda-restoredrill` | Docker Compose project name. All drill containers and volumes are prefixed with this. |
+| `DRILL_KNOWN_PROJECT_ID` | *(none)* | Optional Web Modeler project ID to verify after restore. Set this to a stable project ID from your live stack for deeper data-integrity validation. |
+
+Example with a custom port offset and known project:
+
+```bash
+DRILL_PORT_OFFSET=20000 DRILL_KNOWN_PROJECT_ID=my-project-id ./scripts/restore-drill.sh
+```
+
+### When to run the drill
+
+Run the drill at least weekly, and always after any change that could affect restore behavior:
+
+- After upgrading Camunda, Elasticsearch, Keycloak, or PostgreSQL images
+- After modifying `docker-compose.yaml`, stage files, or application configs
+- After changing backup or restore scripts
+- After any infrastructure change (new volumes, networks, environment variables)
+
+A passing drill means your backup format, restore logic, and stack health checks are all aligned. A failing drill means you have a recoverable problem — fix it before you need the backup for real.
+
+### Troubleshooting drill failures
+
+**Smoke tests time out**
+
+- Check that the drill stack actually started: `docker compose -p camunda-restoredrill ps`
+- Check drill logs: `docker compose -p camunda-restoredrill logs`
+- Some services (especially Keycloak and Web Modeler) can take 2-3 minutes to become healthy on first startup. The 120-second timeout is usually sufficient, but a cold start on a slow machine may need more. The timeout is not currently configurable — if you hit this repeatedly, consider increasing the sleep intervals in `scripts/lib/drill-common.sh`.
+
+**Port conflicts even with the offset**
+
+- If ports in the `+10000` range are already used, set `DRILL_PORT_OFFSET` to a different value (e.g., `20000` or `30000`)
+
+**Drill leaves volumes behind**
+
+- This should not happen — teardown runs on a `trap` (bash) or `finally` (PowerShell). If it does, clean up manually:
+  ```bash
+  docker compose -p camunda-restoredrill down --volumes --remove-orphans
+  docker volume rm elastic-backup-drill 2>/dev/null || true
+  rm -rf backups/.drill
+  ```
+
 ## CLI Reference
 
 ### backup.sh / backup.ps1
@@ -302,6 +409,15 @@ Use this as a quick sanity check that the restore landed the expected data. Non-
 | `--createBackup` | Runs the existing backup script before restore starts |
 | `--test` | Checks backup integrity without restoring |
 | `-h, --help` | Shows help |
+
+### restore-drill.sh / restore-drill.ps1
+
+| Option | Description |
+|--------|-------------|
+| `backup-directory` | Path to backup (default: most recent under `backups/`) |
+| `-h, --help` | Shows help |
+
+The drill also recognizes the environment variables listed in [Restore Drill](#restore-drill).
 
 ### Examples
 
@@ -326,6 +442,12 @@ Use this as a quick sanity check that the restore landed the expected data. Non-
 
 # Dry-run of a restore
 ./scripts/restore.sh --dry-run --force backups/20240115_120000
+
+# Restore drill against the most recent backup
+./scripts/restore-drill.sh
+
+# Restore drill against a specific backup
+./scripts/restore-drill.sh backups/20240115_120000
 ```
 
 ## Troubleshooting
