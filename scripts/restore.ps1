@@ -561,8 +561,8 @@ function Main {
             try {
                 $restoreBody = '{"indices":"*,-.logs-*,-.ds-.logs-*,-ilm-history-*,-.ds-ilm-history-*","ignore_unavailable":true,"include_global_state":true}'
                 $restoreResponse = Invoke-RestMethod -Uri "${esUrl}/_snapshot/backup-repo/$snapshotName/_restore?wait_for_completion=true" -Method Post -ContentType "application/json" -Body $restoreBody
-                if (-not $restoreResponse.snapshot -or $restoreResponse.snapshot.state -ne "SUCCESS") {
-                    Log "ERROR: Elasticsearch restore state: $($restoreResponse.snapshot.state)"
+                if (-not $restoreResponse.snapshot -or $restoreResponse.snapshot.shards.failed -ne 0) {
+                    Log "ERROR: Elasticsearch restore failed shards: $($restoreResponse.snapshot.shards.failed)"
                     exit 1
                 }
                 Log "Elasticsearch snapshot restored successfully."

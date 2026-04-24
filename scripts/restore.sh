@@ -594,8 +594,8 @@ try:
     if 'error' in d:
         reason = d['error'].get('reason', str(d['error']))
         print('ERROR:' + reason)
-    elif 'snapshot' in d:
-        print(d['snapshot'].get('state', 'UNKNOWN'))
+    elif d.get('snapshot', {}).get('shards', {}).get('failed', 0) == 0:
+        print('SUCCESS')
     else:
         print('UNKNOWN')
 except Exception as e:
