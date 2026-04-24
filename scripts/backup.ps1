@@ -21,6 +21,7 @@ for ($i = 0; $i -lt $rawArgs.Count; $i++) {
 $TestMode = $false
 $RetentionDays = 7
 $CustomBackupDir = ""
+$EncryptTo = ""
 $AppServices = @(
     "orchestration",
     "connectors",
@@ -40,6 +41,7 @@ function Show-Usage {
     Write-Host "  --simulate          Simulate backup without modifying data (alias: --test)"
     Write-Host "  --retention-days N  Delete backups older than N days (default: 7)"
     Write-Host "  --backup-dir DIR    Base directory for backups (default: backups\)"
+    Write-Host "  --encrypt-to ID     Also write encrypted backup archive for a gpg or age recipient"
     Write-Host "  --env-file FILE     Use a custom env file instead of .env"
     Write-Host "  -h, --help          Show this help message"
     exit 0
@@ -62,6 +64,11 @@ function Parse-Args {
                 $i++
                 break
             }
+            "--encrypt-to" {
+                $script:EncryptTo = $CliArgs[$i + 1]
+                $i++
+                break
+            }
             "--env-file" { $i++; break }
             { $_ -in "-h","--help" } { Show-Usage }
             default {
@@ -69,6 +76,61 @@ function Parse-Args {
                 Show-Usage
             }
         }
+    }
+}
+
+function New-EncryptedBackupArchive {
+    param(
+        [string]$BackupDir,
+        [string]$BackupBaseDir,
+        [string]$Recipient
+    )
+
+    $encryptedBaseDir = Join-Path (Split-Path -Parent $BackupBaseDir) "backups-encrypted"
+    New-Item -ItemType Directory -Path $encryptedBaseDir -Force | Out-Null
+    $backupName = Split-Path -Leaf $BackupDir
+    $tmpTar = Join-Path $encryptedBaseDir "${backupName}.tar.gz.tmp"
+
+    try {
+        if (Get-Command gpg -ErrorAction SilentlyContinue) {
+            $artifact = Join-Path $encryptedBaseDir "${backupName}.tar.gz.gpg"
+            Log "Creating encrypted backup archive with gpg: $artifact"
+            tar czf $tmpTar -C $BackupBaseDir $backupName
+            if ($LASTEXITCODE -ne 0) {
+                Log "ERROR: Could not create temporary archive for encryption"
+                exit 1
+            }
+            gpg --batch --yes --encrypt --recipient $Recipient --output $artifact $tmpTar *>> $Global:LogFile
+            if ($LASTEXITCODE -ne 0) {
+                Log "ERROR: gpg encryption failed"
+                exit 1
+            }
+            Log "Encrypted backup archive created: $artifact"
+            return
+        }
+
+        if (Get-Command age -ErrorAction SilentlyContinue) {
+            $artifact = Join-Path $encryptedBaseDir "${backupName}.tar.gz.age"
+            Log "Creating encrypted backup archive with age: $artifact"
+            tar czf $tmpTar -C $BackupBaseDir $backupName
+            if ($LASTEXITCODE -ne 0) {
+                Log "ERROR: Could not create temporary archive for encryption"
+                exit 1
+            }
+            age -r $Recipient -o $artifact $tmpTar *>> $Global:LogFile
+            if ($LASTEXITCODE -ne 0) {
+                Log "ERROR: age encryption failed"
+                exit 1
+            }
+            Log "Encrypted backup archive created: $artifact"
+            return
+        }
+
+        Log "ERROR: --encrypt-to requires gpg or age in PATH"
+        exit 1
+    }
+    finally {
+        Remove-Item -Path $tmpTar -Force -ErrorAction SilentlyContinue
     }
 }
 
@@ -323,13 +385,16 @@ function Main {
         }
 
         # Create manifest
-        Log "Creating manifest..."
+            Log "Creating manifest..."
         if ($TestMode) {
             Log "[TEST] Would create manifest.json"
             Log "[TEST] Would start application services: $($AppServices -join ', ')"
         }
         else {
             Create-Manifest -BackupDir $backupDir
+            if ($EncryptTo) {
+                New-EncryptedBackupArchive -BackupDir $backupDir -BackupBaseDir $backupBaseDir -Recipient $EncryptTo
+            }
             $backupDirInProgress = ""
 
             Log "Starting application services..."

@@ -6,6 +6,7 @@ This document describes the backup and restore system for the Camunda 8 Self-Man
 
 - [Data Sources](#data-sources)
 - [Relation to Official Procedure](#relation-to-official-procedure)
+- [Security](#security)
 - [Users and Permissions](#users-and-permissions)
 - [Backup Scenarios](#backup-scenarios)
 - [Restore Scenarios](#restore-scenarios)
@@ -30,6 +31,34 @@ The backup system secures the following data:
 **Not backed up:** `keycloak-theme` volume (initialized automatically by Identity).
 
 **Volume naming:** Docker Compose prefixes managed volume names with the compose project name (for example `camundacomposenvl_orchestration`). The scripts derive the correct prefixed volume names automatically. The Elasticsearch snapshot repository volume is exempt because it is explicitly named `elastic-backup`.
+
+## Security
+
+Backups contain secrets in clear text. This includes the Keycloak realm, OAuth client secrets, database passwords, `.env`, and `connector-secrets.txt`. Access to the backup directory MUST be restricted to trusted users. For off-site storage, use transport encryption and at-rest encryption.
+
+For optional local encryption, pass a recipient to the backup script:
+
+```bash
+./scripts/backup.sh --encrypt-to <gpg-recipient-or-age-recipient>
+```
+
+```powershell
+.\scripts\backup.ps1 --encrypt-to <gpg-recipient-or-age-recipient>
+```
+
+When `gpg` is available, the scripts create `backups-encrypted/<timestamp>.tar.gz.gpg`. If `gpg` is not available but `age` is available, they create `backups-encrypted/<timestamp>.tar.gz.age`. The normal clear-text backup directory remains in `backups/`; encryption is an opt-in copy for stricter storage workflows.
+
+To restore from an encrypted artifact, decrypt it explicitly:
+
+```bash
+./scripts/restore.sh --decrypt backups-encrypted/20240115_120000.tar.gz.gpg
+```
+
+```powershell
+.\scripts\restore.ps1 --decrypt backups-encrypted\20240115_120000.tar.gz.gpg
+```
+
+The restore scripts extract decrypted archives under `backups/decrypted-*` and then run the normal manifest and artifact validation flow.
 
 ## Relation to Official Procedure
 
@@ -500,6 +529,7 @@ A passing drill means your backup format, restore logic, and stack health checks
 | `--simulate` | Simulates the backup flow without modifying data (alias: `--test`) |
 | `--retention-days N` | Deletes backups older than N days (default: `7`) |
 | `--backup-dir DIR` | Base directory for backups (default: `backups/`) |
+| `--encrypt-to ID` | Also writes an encrypted full-backup archive under `backups-encrypted/` using `gpg` or `age` |
 | `--env-file FILE` | Uses a custom env file instead of `.env` |
 | `-h, --help` | Shows help |
 
@@ -512,6 +542,7 @@ A passing drill means your backup format, restore logic, and stack health checks
 | `--cross-cluster` | Enables cross-cluster restore (no config overwrite) |
 | `--no-pre-backup` | Skips the default rollback backup before restore starts |
 | `--create-backup` | Deprecated no-op preference flag; pre-restore backups are already enabled by default (alias: `--createBackup`) |
+| `--decrypt FILE` | Decrypts a `.tar.gz.gpg` or `.tar.gz.age` backup archive before restore |
 | `--rehost-keycloak` | After restoring Keycloak, rewrites selected clients for the current `HOST` and local client secrets |
 | `--components LIST` | Restores only selected components (`all`, `keycloak`, `webmodeler`, `elasticsearch`, `orchestration`, `configs`) |
 | `--verify` | Checks backup integrity without restoring (alias: `--test`) |

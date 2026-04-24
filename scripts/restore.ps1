@@ -29,6 +29,7 @@ $CrossCluster = $false
 $TestMode = $false
 $CreatePreBackup = $true
 $DeprecatedCreateBackupUsed = $false
+$DecryptArchive = ""
 $RehostKeycloak = $false
 $RestoreComponents = "all"
 $RestoreAll = $false
@@ -50,6 +51,7 @@ function Show-Usage {
     Write-Host "  --cross-cluster   Enable cross-cluster restore (skips config overwrite)"
     Write-Host "  --no-pre-backup   Do not create a rollback backup before restoring"
     Write-Host "  --create-backup   Deprecated; pre-restore backups are enabled by default"
+    Write-Host "  --decrypt FILE    Decrypt a .tar.gz.gpg or .tar.gz.age backup archive before restore"
     Write-Host "  --rehost-keycloak Patch restored Keycloak clients to the current HOST and local client secrets"
     Write-Host "  --components LIST Restore only selected components"
     Write-Host "                    Allowed: all,keycloak,webmodeler,elasticsearch,orchestration,configs"
@@ -71,6 +73,15 @@ function Parse-Args {
             "--create-backup" { $script:CreatePreBackup = $true; $script:DeprecatedCreateBackupUsed = $true; break }
             "--createBackup" { $script:CreatePreBackup = $true; $script:DeprecatedCreateBackupUsed = $true; break }
             "--no-pre-backup" { $script:CreatePreBackup = $false; break }
+            "--decrypt" {
+                if (($i + 1) -ge $CliArgs.Count) {
+                    Write-Host "ERROR: --decrypt requires an encrypted archive path"
+                    Show-Usage
+                }
+                $i++
+                $script:DecryptArchive = $CliArgs[$i]
+                break
+            }
             "--rehost-keycloak" { $script:RehostKeycloak = $true; break }
             "--components" {
                 if (($i + 1) -ge $CliArgs.Count) {
@@ -99,6 +110,69 @@ function Parse-Args {
             }
         }
     }
+}
+
+function Expand-EncryptedBackupArchive {
+    param([string]$Archive)
+
+    if (-not [System.IO.Path]::IsPathRooted($Archive)) {
+        $Archive = Join-Path $ProjectDir $Archive
+    }
+    if (-not (Test-Path $Archive)) {
+        Log "ERROR: Encrypted backup archive not found: $Archive"
+        exit 1
+    }
+
+    $archiveName = Split-Path -Leaf $Archive
+    $stem = $archiveName -replace '\.tar\.gz\.gpg$', ''
+    $stem = $stem -replace '\.tar\.gz\.age$', ''
+    $destParent = Join-Path $BackupBaseDir "decrypted-${stem}-$(Get-Date -Format 'yyyyMMdd_HHmmss')"
+    New-Item -ItemType Directory -Path $destParent -Force | Out-Null
+    $tmpTar = Join-Path $destParent "archive.tar.gz"
+
+    if ($Archive -like "*.tar.gz.gpg") {
+        if (-not (Get-Command gpg -ErrorAction SilentlyContinue)) {
+            Log "ERROR: --decrypt requires gpg for $Archive"
+            exit 1
+        }
+        Log "Decrypting gpg backup archive: $Archive"
+        gpg --batch --yes --decrypt --output $tmpTar $Archive | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            Log "ERROR: gpg decryption failed"
+            exit 1
+        }
+    }
+    elseif ($Archive -like "*.tar.gz.age") {
+        if (-not (Get-Command age -ErrorAction SilentlyContinue)) {
+            Log "ERROR: --decrypt requires age for $Archive"
+            exit 1
+        }
+        Log "Decrypting age backup archive: $Archive"
+        age -d -o $tmpTar $Archive | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            Log "ERROR: age decryption failed"
+            exit 1
+        }
+    }
+    else {
+        Log "ERROR: --decrypt supports only .tar.gz.gpg and .tar.gz.age files"
+        exit 1
+    }
+
+    tar xzf $tmpTar -C $destParent
+    if ($LASTEXITCODE -ne 0) {
+        Log "ERROR: Could not extract decrypted backup archive"
+        exit 1
+    }
+    Remove-Item -Path $tmpTar -Force -ErrorAction SilentlyContinue
+
+    $extractedDir = Get-ChildItem -Path $destParent -Directory | Sort-Object Name | Select-Object -First 1
+    if (-not $extractedDir) {
+        Log "ERROR: Decrypted archive did not contain a backup directory"
+        exit 1
+    }
+    Log "Decrypted backup extracted to: $($extractedDir.FullName)"
+    return $extractedDir.FullName
 }
 
 function Invoke-KeycloakRehost {
@@ -373,6 +447,10 @@ function Main {
 
     Parse-Args -CliArgs $CliArgs
     Set-RestoreComponents
+
+    if ($DecryptArchive) {
+        $script:BackupDir = Expand-EncryptedBackupArchive -Archive $DecryptArchive
+    }
 
     if (-not $BackupDir) {
         Write-Host "ERROR: Backup directory is required."

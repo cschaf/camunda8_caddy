@@ -36,6 +36,7 @@ BACKUP_APP_SERVICES=(
 TEST_MODE=false
 RETENTION_DAYS=7
 CUSTOM_BACKUP_DIR=""
+ENCRYPT_TO=""
 BACKUP_DIR_IN_PROGRESS=""
 BACKUP_FAILED_MARKED=false
 
@@ -72,6 +73,7 @@ usage() {
   echo "  --simulate          Simulate backup without modifying data (alias: --test)"
   echo "  --retention-days N  Delete backups older than N days (default: 7)"
   echo "  --backup-dir DIR    Base directory for backups (default: backups/)"
+  echo "  --encrypt-to ID     Also write encrypted backup archive for a gpg or age recipient"
   echo "  --env-file FILE     Use a custom env file instead of .env"
   echo "  -h, --help          Show this help message"
   exit 0
@@ -96,6 +98,10 @@ parse_args() {
         CUSTOM_BACKUP_DIR="$2"
         shift 2
         ;;
+      --encrypt-to)
+        ENCRYPT_TO="$2"
+        shift 2
+        ;;
       --env-file)
         shift 2
         ;;
@@ -108,6 +114,50 @@ parse_args() {
         ;;
     esac
   done
+}
+
+create_encrypted_backup_archive() {
+  local backup_dir="$1"
+  local backup_base_dir="$2"
+  local recipient="$3"
+  local encrypted_base_dir
+  encrypted_base_dir="$(dirname "$backup_base_dir")/backups-encrypted"
+  local backup_name
+  backup_name="$(basename "$backup_dir")"
+  local tmp_tar="$encrypted_base_dir/${backup_name}.tar.gz.tmp"
+
+  mkdir -p "$encrypted_base_dir"
+
+  if command -v gpg >/dev/null 2>&1; then
+    local artifact="$encrypted_base_dir/${backup_name}.tar.gz.gpg"
+    log "Creating encrypted backup archive with gpg: $artifact"
+    tar czf "$tmp_tar" -C "$backup_base_dir" "$backup_name"
+    if gpg --batch --yes --encrypt --recipient "$recipient" --output "$artifact" "$tmp_tar" >>"$LOG_FILE" 2>&1; then
+      rm -f "$tmp_tar"
+      log "Encrypted backup archive created: $artifact"
+      return 0
+    fi
+    rm -f "$tmp_tar"
+    log "ERROR: gpg encryption failed"
+    return 1
+  fi
+
+  if command -v age >/dev/null 2>&1; then
+    local artifact="$encrypted_base_dir/${backup_name}.tar.gz.age"
+    log "Creating encrypted backup archive with age: $artifact"
+    tar czf "$tmp_tar" -C "$backup_base_dir" "$backup_name"
+    if age -r "$recipient" -o "$artifact" "$tmp_tar" >>"$LOG_FILE" 2>&1; then
+      rm -f "$tmp_tar"
+      log "Encrypted backup archive created: $artifact"
+      return 0
+    fi
+    rm -f "$tmp_tar"
+    log "ERROR: age encryption failed"
+    return 1
+  fi
+
+  log "ERROR: --encrypt-to requires gpg or age in PATH"
+  return 1
 }
 
 backup_cleanup_on_error() {
@@ -348,6 +398,9 @@ PYEOF
     log "[TEST] Would start application services: ${BACKUP_APP_SERVICES[*]}"
   else
     create_manifest "$backup_dir"
+    if [[ -n "$ENCRYPT_TO" ]]; then
+      create_encrypted_backup_archive "$backup_dir" "$backup_base_dir" "$ENCRYPT_TO"
+    fi
     BACKUP_DIR_IN_PROGRESS=""
 
     log "Starting application services..."

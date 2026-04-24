@@ -28,6 +28,7 @@ CROSS_CLUSTER=false
 TEST_MODE=false
 CREATE_PRE_BACKUP=true
 DEPRECATED_CREATE_BACKUP_USED=false
+DECRYPT_ARCHIVE=""
 REHOST_KEYCLOAK=false
 RESTORE_COMPONENTS="all"
 RESTORE_ALL=false
@@ -71,6 +72,7 @@ usage() {
   echo "  --cross-cluster   Enable cross-cluster restore (skips config overwrite)"
   echo "  --no-pre-backup   Do not create a rollback backup before restoring"
   echo "  --create-backup   Deprecated; pre-restore backups are enabled by default"
+  echo "  --decrypt FILE    Decrypt a .tar.gz.gpg or .tar.gz.age backup archive before restore"
   echo "  --rehost-keycloak Patch restored Keycloak clients to the current HOST and local client secrets"
   echo "  --components LIST Restore only selected components"
   echo "                    Allowed: all,keycloak,webmodeler,elasticsearch,orchestration,configs"
@@ -109,6 +111,14 @@ parse_args() {
       --no-pre-backup)
         CREATE_PRE_BACKUP=false
         shift
+        ;;
+      --decrypt)
+        if [[ $# -lt 2 ]]; then
+          echo "ERROR: --decrypt requires an encrypted archive path"
+          usage
+        fi
+        DECRYPT_ARCHIVE="$2"
+        shift 2
         ;;
       --rehost-keycloak)
         REHOST_KEYCLOAK=true
@@ -151,6 +161,61 @@ parse_args() {
         ;;
     esac
   done
+}
+
+decrypt_backup_archive() {
+  local archive="$1"
+  if [[ ! "$archive" = /* ]]; then
+    archive="$PROJECT_DIR/$archive"
+  fi
+  if [[ ! -f "$archive" ]]; then
+    log "ERROR: Encrypted backup archive not found: $archive"
+    exit 1
+  fi
+
+  local archive_name stem dest_parent tmp_tar
+  archive_name="$(basename "$archive")"
+  stem="$archive_name"
+  stem="${stem%.tar.gz.gpg}"
+  stem="${stem%.tar.gz.age}"
+  dest_parent="$BACKUP_BASE_DIR/decrypted-${stem}-$(date +%Y%m%d_%H%M%S)"
+  tmp_tar="$dest_parent/archive.tar.gz"
+  mkdir -p "$dest_parent"
+
+  case "$archive" in
+    *.tar.gz.gpg)
+      if ! command -v gpg >/dev/null 2>&1; then
+        log "ERROR: --decrypt requires gpg for $archive"
+        exit 1
+      fi
+      log "Decrypting gpg backup archive: $archive"
+      gpg --batch --yes --decrypt --output "$tmp_tar" "$archive" >/dev/null
+      ;;
+    *.tar.gz.age)
+      if ! command -v age >/dev/null 2>&1; then
+        log "ERROR: --decrypt requires age for $archive"
+        exit 1
+      fi
+      log "Decrypting age backup archive: $archive"
+      age -d -o "$tmp_tar" "$archive" >/dev/null
+      ;;
+    *)
+      log "ERROR: --decrypt supports only .tar.gz.gpg and .tar.gz.age files"
+      exit 1
+      ;;
+  esac
+
+  tar xzf "$tmp_tar" -C "$dest_parent"
+  rm -f "$tmp_tar"
+
+  local extracted_dir
+  extracted_dir="$(find "$dest_parent" -mindepth 1 -maxdepth 1 -type d | sort | head -n 1)"
+  if [[ -z "$extracted_dir" ]]; then
+    log "ERROR: Decrypted archive did not contain a backup directory"
+    exit 1
+  fi
+  log "Decrypted backup extracted to: $extracted_dir"
+  printf '%s\n' "$extracted_dir"
 }
 
 rehost_keycloak_clients() {
@@ -431,6 +496,10 @@ PYEOF
 main() {
   parse_args "$@"
   configure_restore_components
+
+  if [[ -n "$DECRYPT_ARCHIVE" ]]; then
+    BACKUP_DIR="$(decrypt_backup_archive "$DECRYPT_ARCHIVE" | tail -n 1)"
+  fi
 
   if [[ -z "$BACKUP_DIR" ]]; then
     echo "ERROR: Backup directory is required."
