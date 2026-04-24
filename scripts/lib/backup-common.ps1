@@ -344,7 +344,7 @@ function Collect-ESState {
 
     $indicesRaw = @()
     try {
-        $indicesRaw = @(Invoke-RestMethod -Uri "${esUrl}/_cat/indices?h=index,docs.count,store.size&format=json&expand_wildcards=all" -TimeoutSec 15)
+        $indicesRaw = Invoke-RestMethod -Uri "${esUrl}/_cat/indices?h=index,docs.count,store.size&format=json&expand_wildcards=all" -TimeoutSec 15
     }
     catch { }
 
