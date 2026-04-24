@@ -99,6 +99,7 @@ function Main {
     New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
 
     $appServicesStopped = $false
+    $backupDirInProgress = $backupDir
     Acquire-Lock
     try {
         Log "Starting backup to $backupDir"
@@ -160,7 +161,6 @@ function Main {
             Log "[TEST] Would pg_dump Keycloak DB: $env:POSTGRES_DB"
             Log "[TEST] Would pg_dump Web Modeler DB: $env:WEBMODELER_DB_NAME"
             Log "[TEST] Would create Elasticsearch snapshot"
-            Log "[TEST] Would start application services: $($AppServices -join ', ')"
         }
         else {
             $backupStateFile = Join-Path $backupDir "backup-state.json"
@@ -308,19 +308,22 @@ function Main {
                 exit 1
             }
 
-            Log "Starting application services..."
-            Invoke-Expression "$cmd start $($AppServices -join ' ')" | Out-Null
-            $appServicesStopped = $false
-            Start-Sleep -Seconds 2
         }
 
         # Create manifest
         Log "Creating manifest..."
         if ($TestMode) {
             Log "[TEST] Would create manifest.json"
+            Log "[TEST] Would start application services: $($AppServices -join ', ')"
         }
         else {
             Create-Manifest -BackupDir $backupDir
+            $backupDirInProgress = ""
+
+            Log "Starting application services..."
+            Invoke-Expression "$cmd start $($AppServices -join ' ')" | Out-Null
+            $appServicesStopped = $false
+            Start-Sleep -Seconds 2
         }
 
         # Cleanup old backups
@@ -342,9 +345,27 @@ function Main {
     }
     catch {
         Log "ERROR: Backup failed: $_"
+        if (-not $TestMode -and $backupDirInProgress -and (Test-Path $backupDirInProgress) -and ($backupDirInProgress -notlike "*_FAILED*")) {
+            $failedDir = "${backupDirInProgress}_FAILED"
+            $suffix = 1
+            while (Test-Path $failedDir) {
+                $failedDir = "${backupDirInProgress}_FAILED_$suffix"
+                $suffix++
+            }
+            Log "Marking incomplete backup directory as failed: $failedDir"
+            try {
+                Move-Item -Path $backupDirInProgress -Destination $failedDir -ErrorAction Stop
+                $backupDirInProgress = $failedDir
+                $Global:LogFile = Join-Path $failedDir "backup.log"
+                Log "Incomplete backup moved to: $failedDir"
+            }
+            catch {
+                Log "WARNING: Could not mark incomplete backup directory as failed: $backupDirInProgress"
+            }
+        }
         if ($appServicesStopped) {
             Log "Attempting to restart application services after failure..."
-            try { Invoke-Expression "$cmd start $($AppServices -join ' ')" | Out-Null } catch { }
+            try { Invoke-Expression "$cmd start $($AppServices -join ' ')" *>> $Global:LogFile } catch { }
         }
         exit 1
     }

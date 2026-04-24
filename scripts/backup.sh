@@ -36,6 +36,34 @@ BACKUP_APP_SERVICES=(
 TEST_MODE=false
 RETENTION_DAYS=7
 CUSTOM_BACKUP_DIR=""
+BACKUP_DIR_IN_PROGRESS=""
+BACKUP_FAILED_MARKED=false
+
+mark_failed_backup_dir() {
+  if [[ -z "${BACKUP_DIR_IN_PROGRESS:-}" || "$TEST_MODE" == true || "$BACKUP_FAILED_MARKED" == true ]]; then
+    return 0
+  fi
+  if [[ ! -d "$BACKUP_DIR_IN_PROGRESS" || "$BACKUP_DIR_IN_PROGRESS" == *_FAILED* ]]; then
+    return 0
+  fi
+
+  local failed_dir="${BACKUP_DIR_IN_PROGRESS}_FAILED"
+  local suffix=1
+  while [[ -e "$failed_dir" ]]; do
+    failed_dir="${BACKUP_DIR_IN_PROGRESS}_FAILED_${suffix}"
+    suffix=$((suffix + 1))
+  done
+
+  log "Marking incomplete backup directory as failed: $failed_dir"
+  if mv -- "$BACKUP_DIR_IN_PROGRESS" "$failed_dir"; then
+    BACKUP_DIR_IN_PROGRESS="$failed_dir"
+    LOG_FILE="$failed_dir/backup.log"
+    BACKUP_FAILED_MARKED=true
+    log "Incomplete backup moved to: $failed_dir"
+  else
+    log "WARNING: Could not mark incomplete backup directory as failed: $BACKUP_DIR_IN_PROGRESS"
+  fi
+}
 
 usage() {
   echo "Usage: $(basename "$0") [OPTIONS]"
@@ -86,9 +114,10 @@ backup_cleanup_on_error() {
   local exit_code=$?
   if [[ $exit_code -ne 0 ]]; then
     log "ERROR: Backup script failed with exit code $exit_code"
+    mark_failed_backup_dir || true
     if [[ "$APP_SERVICES_STOPPED" == true && -n "$BACKUP_COMPOSE_CMD" ]]; then
       log "Attempting to restart application services after failure..."
-      $BACKUP_COMPOSE_CMD start "${BACKUP_APP_SERVICES[@]}" 2>/dev/null || true
+      $BACKUP_COMPOSE_CMD start "${BACKUP_APP_SERVICES[@]}" >>"$LOG_FILE" 2>&1 || true
     fi
   fi
   release_lock
@@ -122,6 +151,7 @@ main() {
 
   mkdir -p "$backup_dir"
   LOG_FILE="$backup_dir/backup.log"
+  BACKUP_DIR_IN_PROGRESS="$backup_dir"
 
   acquire_lock
 
@@ -184,7 +214,6 @@ main() {
     log "[TEST] Would pg_dump Keycloak DB: ${POSTGRES_DB:-}"
     log "[TEST] Would pg_dump Web Modeler DB: ${WEBMODELER_DB_NAME:-}"
     log "[TEST] Would create Elasticsearch snapshot"
-    log "[TEST] Would start application services: ${BACKUP_APP_SERVICES[*]}"
   else
     collect_es_state "backup" "$backup_dir/backup-state.json" || true
 
@@ -303,18 +332,21 @@ PYEOF
       }
     log "Snapshot data copied to: $es_backup_dir"
 
-    log "Starting application services..."
-    $cmd start "${BACKUP_APP_SERVICES[@]}"
-    APP_SERVICES_STOPPED=false
-    sleep 2
   fi
 
   # Step 11: Create manifest
   log "Creating manifest..."
   if [[ "$TEST_MODE" == true ]]; then
     log "[TEST] Would create manifest.json"
+    log "[TEST] Would start application services: ${BACKUP_APP_SERVICES[*]}"
   else
     create_manifest "$backup_dir"
+    BACKUP_DIR_IN_PROGRESS=""
+
+    log "Starting application services..."
+    $cmd start "${BACKUP_APP_SERVICES[@]}"
+    APP_SERVICES_STOPPED=false
+    sleep 2
   fi
 
   # Step 12: Cleanup old backups
