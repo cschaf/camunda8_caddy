@@ -411,6 +411,9 @@ A passing drill means your backup format, restore logic, and stack health checks
 | Option | Description |
 |--------|-------------|
 | `--simulate` | Simulates the backup flow without modifying data (alias: `--test`) |
+| `--retention-days N` | Deletes backups older than N days (default: `7`) |
+| `--backup-dir DIR` | Base directory for backups (default: `backups/`) |
+| `--env-file FILE` | Uses a custom env file instead of `.env` |
 | `-h, --help` | Shows help |
 
 ### restore.sh / restore.ps1
@@ -441,6 +444,15 @@ The drill also recognizes the environment variables listed in [Restore Drill](#r
 
 # Simulate backup (dry run)
 ./scripts/backup.sh --simulate
+
+# Backup to a custom directory
+./scripts/backup.sh --backup-dir /mnt/backups
+
+# Backup with custom retention (delete backups older than 3 days)
+./scripts/backup.sh --retention-days 3
+
+# Backup using an alternate environment file
+./scripts/backup.sh --env-file .env.prod
 
 # Restore on same cluster
 ./scripts/restore.sh backups/20240115_120000

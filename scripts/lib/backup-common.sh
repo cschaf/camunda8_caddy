@@ -212,9 +212,10 @@ PYEOF
 
 cleanup_old_backups() {
   local retention_days="${1:-7}"
+  local target_dir="${2:-$BACKUP_BASE_DIR}"
   log "Cleaning up backups older than $retention_days days..."
 
-  if [[ ! -d "$BACKUP_BASE_DIR" ]]; then
+  if [[ ! -d "$target_dir" ]]; then
     log "Backup directory does not exist yet, nothing to clean."
     return 0
   fi
@@ -224,7 +225,7 @@ cleanup_old_backups() {
     log "Removing old backup: $dir"
     rm -rf "$dir"
     count=$((count + 1))
-  done < <(find "$BACKUP_BASE_DIR" -maxdepth 1 -type d -name "[0-9]*" -mtime +$retention_days 2>/dev/null || true)
+  done < <(find "$target_dir" -maxdepth 1 -type d -name "[0-9]*" -mtime +$retention_days 2>/dev/null || true)
 
   log "Removed $count old backup(s)."
 }

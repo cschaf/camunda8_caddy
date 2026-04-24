@@ -4,19 +4,37 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# Pre-parse --env-file so backup-common.sh can honor it
+for ((i=1; i<=$#; i++)); do
+  if [[ "${!i}" == "--env-file" ]]; then
+    next=$((i+1))
+    if [[ $next -le $# ]]; then
+      ENV_FILE="${!next}"
+      export ENV_FILE
+      set -- "${@:1:i-1}" "${@:i+2}"
+      break
+    fi
+  fi
+done
+
 # shellcheck source=/dev/null
 source "$SCRIPT_DIR/lib/backup-common.sh"
 
 ORCHESTRATION_STOPPED=false
 BACKUP_COMPOSE_CMD=""
 TEST_MODE=false
+RETENTION_DAYS=7
+CUSTOM_BACKUP_DIR=""
 
 usage() {
   echo "Usage: $(basename "$0") [OPTIONS]"
   echo ""
   echo "Options:"
-  echo "  --simulate Simulate backup without modifying data (alias: --test)"
-  echo "  -h, --help Show this help message"
+  echo "  --simulate          Simulate backup without modifying data (alias: --test)"
+  echo "  --retention-days N  Delete backups older than N days (default: 7)"
+  echo "  --backup-dir DIR    Base directory for backups (default: backups/)"
+  echo "  --env-file FILE     Use a custom env file instead of .env"
+  echo "  -h, --help          Show this help message"
   exit 0
 }
 
@@ -30,6 +48,17 @@ parse_args() {
       --test)
         TEST_MODE=true
         shift
+        ;;
+      --retention-days)
+        RETENTION_DAYS="$2"
+        shift 2
+        ;;
+      --backup-dir)
+        CUSTOM_BACKUP_DIR="$2"
+        shift 2
+        ;;
+      --env-file)
+        shift 2
         ;;
       -h|--help)
         usage
@@ -66,13 +95,18 @@ main() {
   cmd="$(docker_compose_cmd)"
   BACKUP_COMPOSE_CMD="$cmd"
 
-  mkdir -p "$BACKUP_BASE_DIR"
+  local backup_base_dir="$BACKUP_BASE_DIR"
+  if [[ -n "$CUSTOM_BACKUP_DIR" ]]; then
+    backup_base_dir="$CUSTOM_BACKUP_DIR"
+    mkdir -p "$backup_base_dir"
+  fi
+
   local timestamp
   timestamp="$(date +%Y%m%d_%H%M%S)"
-  local backup_dir="$BACKUP_BASE_DIR/$timestamp"
+  local backup_dir="$backup_base_dir/$timestamp"
 
   if [[ "$TEST_MODE" == true ]]; then
-    backup_dir="$BACKUP_BASE_DIR/TEST_${timestamp}"
+    backup_dir="$backup_base_dir/TEST_${timestamp}"
   fi
 
   mkdir -p "$backup_dir"
@@ -262,9 +296,9 @@ PYEOF
   # Step 12: Cleanup old backups
   log "Cleaning up old backups..."
   if [[ "$TEST_MODE" == true ]]; then
-    log "[TEST] Would delete backups older than 7 days"
+    log "[TEST] Would delete backups older than $RETENTION_DAYS days from $backup_base_dir"
   else
-    cleanup_old_backups 7
+    cleanup_old_backups "$RETENTION_DAYS" "$backup_base_dir"
   fi
 
   release_lock

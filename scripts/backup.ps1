@@ -3,25 +3,55 @@ $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectDir = Resolve-Path (Join-Path $ScriptDir "..")
 
+# Pre-parse --env-file so backup-common.ps1 can honor it
+$EnvFile = Join-Path $ProjectDir ".env"
+$rawArgs = $args
+for ($i = 0; $i -lt $rawArgs.Count; $i++) {
+    if ($rawArgs[$i] -eq "--env-file" -and ($i + 1) -lt $rawArgs.Count) {
+        $EnvFile = $rawArgs[$i + 1]
+        $before = if ($i -gt 0) { $rawArgs[0..($i-1)] } else { @() }
+        $after = if (($i + 2) -lt $rawArgs.Count) { $rawArgs[($i+2)..($rawArgs.Count-1)] } else { @() }
+        $rawArgs = $before + $after
+        break
+    }
+}
+
 . (Join-Path $ScriptDir "lib\backup-common.ps1")
 
 $TestMode = $false
+$RetentionDays = 7
+$CustomBackupDir = ""
 
 function Show-Usage {
     Write-Host "Usage: $(Split-Path -Leaf $PSCommandPath) [OPTIONS]"
     Write-Host ""
     Write-Host "Options:"
-    Write-Host "  --simulate Simulate backup without modifying data (alias: --test)"
-    Write-Host "  -h, --help Show this help message"
+    Write-Host "  --simulate          Simulate backup without modifying data (alias: --test)"
+    Write-Host "  --retention-days N  Delete backups older than N days (default: 7)"
+    Write-Host "  --backup-dir DIR    Base directory for backups (default: backups\)"
+    Write-Host "  --env-file FILE     Use a custom env file instead of .env"
+    Write-Host "  -h, --help          Show this help message"
     exit 0
 }
 
 function Parse-Args {
-    param([string[]]$Args)
-    foreach ($arg in $Args) {
+    param([string[]]$CliArgs)
+    for ($i = 0; $i -lt $CliArgs.Count; $i++) {
+        $arg = $CliArgs[$i]
         switch ($arg) {
-            "--simulate" { $script:TestMode = $true }
-            "--test" { $script:TestMode = $true }
+            "--simulate" { $script:TestMode = $true; break }
+            "--test" { $script:TestMode = $true; break }
+            "--retention-days" {
+                $script:RetentionDays = [int]$CliArgs[$i + 1]
+                $i++
+                break
+            }
+            "--backup-dir" {
+                $script:CustomBackupDir = $CliArgs[$i + 1]
+                $i++
+                break
+            }
+            "--env-file" { $i++; break }
             { $_ -in "-h","--help" } { Show-Usage }
             default {
                 Write-Host "Unknown option: $arg"
@@ -32,20 +62,26 @@ function Parse-Args {
 }
 
 function Main {
-    Parse-Args -Args $args
+    Parse-Args -Args $rawArgs
 
     Load-Env
     $stage = Get-Stage
     $cmd = Get-DockerComposeCmd
 
-    New-Item -ItemType Directory -Path $BackupBaseDir -Force | Out-Null
+    $backupBaseDir = $BackupBaseDir
+    if ($CustomBackupDir) {
+        $backupBaseDir = $CustomBackupDir
+        New-Item -ItemType Directory -Path $backupBaseDir -Force | Out-Null
+    }
+
+    New-Item -ItemType Directory -Path $backupBaseDir -Force | Out-Null
     $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
-    $backupDir = Join-Path $BackupBaseDir $timestamp
+    $backupDir = Join-Path $backupBaseDir $timestamp
     $Global:LogFile = Join-Path $backupDir "backup.log"
 
     if ($TestMode) {
         Log "=== TEST MODE: Simulating backup without modifying data ==="
-        $backupDir = Join-Path $BackupBaseDir "TEST_$timestamp"
+        $backupDir = Join-Path $backupBaseDir "TEST_$timestamp"
         $Global:LogFile = Join-Path $backupDir "backup.log"
     }
 
@@ -234,10 +270,10 @@ function Main {
         # Cleanup old backups
         Log "Cleaning up old backups..."
         if ($TestMode) {
-            Log "[TEST] Would delete backups older than 7 days"
+            Log "[TEST] Would delete backups older than $RetentionDays days from $backupBaseDir"
         }
         else {
-            Cleanup-OldBackups -RetentionDays 7
+            Cleanup-OldBackups -RetentionDays $RetentionDays -BackupDir $backupBaseDir
         }
 
         if ($TestMode) {

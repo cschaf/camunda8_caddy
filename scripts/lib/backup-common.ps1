@@ -165,16 +165,19 @@ function Verify-Manifest {
 }
 
 function Cleanup-OldBackups {
-    param([int]$RetentionDays = 7)
+    param(
+        [int]$RetentionDays = 7,
+        [string]$BackupDir = $BackupBaseDir
+    )
     Log "Cleaning up backups older than $RetentionDays days..."
 
-    if (-not (Test-Path $BackupBaseDir)) {
+    if (-not (Test-Path $BackupDir)) {
         Log "Backup directory does not exist yet, nothing to clean."
         return
     }
 
     $cutoff = (Get-Date).AddDays(-$RetentionDays)
-    $oldBackups = Get-ChildItem -Path $BackupBaseDir -Directory | Where-Object {
+    $oldBackups = Get-ChildItem -Path $BackupDir -Directory | Where-Object {
         $_.Name -match '^\d{8}_\d{6}$' -and $_.LastWriteTime -lt $cutoff
     }
 
