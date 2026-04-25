@@ -23,6 +23,8 @@ pwsh -File scripts/stop.ps1
 docker compose logs -f [service-name]
 ```
 
+On Windows, if `bash` is unavailable or WSL cannot start, use Git Bash from `C:\Program Files\Git\git-bash.exe` to run repository Bash scripts.
+
 ### Cluster Changes
 
 Do not write automated tests for cluster changes in this repository. Cluster-related changes should be validated through Docker Compose configuration checks and manual runtime verification instead.
