@@ -38,7 +38,7 @@ usage() {
     echo "  --role <role>         Role: NormalUser or Admin"
     echo ""
     echo "Environment variables:"
-    echo "  ADMIN_USER, ADMIN_PASSWORD, REALM, KEYCLOAK_HOST, KC_UTIL"
+    echo "  ADMIN_USER, ADMIN_PASSWORD, REALM, KEYCLOAK_HOST, ORCHESTRATION_HOST, KC_UTIL"
     exit 0
 }
 
@@ -68,6 +68,53 @@ if [[ "$ROLE" != "NormalUser" && "$ROLE" != "Admin" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+strip_outer_quotes() {
+    local value="$1"
+    value="${value%$'\r'}"
+    if [[ "$value" == \"*\" && "$value" == *\" ]]; then
+        value="${value:1:${#value}-2}"
+    elif [[ "$value" == \'*\' && "$value" == *\' ]]; then
+        value="${value:1:${#value}-2}"
+    fi
+    printf '%s' "$value"
+}
+
+check_host_resolution() {
+    local label="$1"
+    local host="$2"
+
+    if [[ "$host" == "localhost" || "$host" == "127.0.0.1" || "$host" == "::1" ]]; then
+        return 0
+    fi
+
+    if command -v getent >/dev/null 2>&1; then
+        getent hosts "$host" >/dev/null 2>&1 && return 0
+    elif command -v python3 >/dev/null 2>&1; then
+        python3 - "$host" >/dev/null 2>&1 <<'PYEND' && return 0
+import socket
+import sys
+socket.getaddrinfo(sys.argv[1], None)
+PYEND
+    fi
+
+    echo "ERROR: Cannot resolve ${label} host '$host'."
+    echo ""
+    echo "The add-camunda-user script calls the stack through the host/proxy URLs."
+    echo "Run: bash scripts/setup-host.sh"
+    echo ""
+    echo "This adds the required local hosts entries for:"
+    echo "  keycloak.${HOST}"
+    echo "  orchestration.${HOST}"
+    echo ""
+    echo "If this host should be resolved by DNS instead, add the matching DNS record"
+    echo "or override the script host explicitly with KEYCLOAK_HOST/ORCHESTRATION_HOST."
+    exit 1
+}
+
+# ---------------------------------------------------------------------------
 # Read HOST and ORCHESTRATION_CLIENT_SECRET from .env
 # ---------------------------------------------------------------------------
 
@@ -80,18 +127,22 @@ if [[ -f "$ENV_FILE" ]]; then
         if [[ "$line" =~ ^HOST=(.*) ]]; then
             HOST="${BASH_REMATCH[1]}"
             HOST="${HOST//[[:space:]]/}"
+            HOST="$(strip_outer_quotes "$HOST")"
         fi
         if [[ "$line" =~ ^ORCHESTRATION_CLIENT_SECRET=(.*) ]]; then
             ORCHESTRATION_CLIENT_SECRET="${BASH_REMATCH[1]}"
             ORCHESTRATION_CLIENT_SECRET="${ORCHESTRATION_CLIENT_SECRET//[[:space:]]/}"
+            ORCHESTRATION_CLIENT_SECRET="$(strip_outer_quotes "$ORCHESTRATION_CLIENT_SECRET")"
         fi
         if [[ "$line" =~ ^KEYCLOAK_ADMIN_USER=(.*) ]]; then
             ADMIN_USER="${BASH_REMATCH[1]}"
             ADMIN_USER="${ADMIN_USER//[[:space:]]/}"
+            ADMIN_USER="$(strip_outer_quotes "$ADMIN_USER")"
         fi
         if [[ "$line" =~ ^KEYCLOAK_ADMIN_PASSWORD=(.*) ]]; then
             ADMIN_PASSWORD="${BASH_REMATCH[1]}"
             ADMIN_PASSWORD="${ADMIN_PASSWORD//[[:space:]]/}"
+            ADMIN_PASSWORD="$(strip_outer_quotes "$ADMIN_PASSWORD")"
         fi
     done < "$ENV_FILE"
 fi
@@ -99,6 +150,8 @@ fi
 KEYCLOAK_HOST="${KEYCLOAK_HOST:-keycloak.${HOST}}"
 ORCHESTRATION_HOST="${ORCHESTRATION_HOST:-orchestration.${HOST}}"
 [[ -z "$HOST" ]] && echo "ERROR: HOST not found in .env" && exit 1
+check_host_resolution "Keycloak" "$KEYCLOAK_HOST"
+check_host_resolution "Orchestration" "$ORCHESTRATION_HOST"
 
 # ---------------------------------------------------------------------------
 # Role mappings
