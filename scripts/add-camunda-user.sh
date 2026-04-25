@@ -147,7 +147,15 @@ if [[ -f "$ENV_FILE" ]]; then
     done < "$ENV_FILE"
 fi
 
-KEYCLOAK_HOST="${KEYCLOAK_HOST:-keycloak.${HOST}}"
+REQUESTED_KEYCLOAK_HOST="${KEYCLOAK_HOST:-}"
+if [[ -z "$REQUESTED_KEYCLOAK_HOST" || "$REQUESTED_KEYCLOAK_HOST" == "keycloak" ]]; then
+    if [[ "$REQUESTED_KEYCLOAK_HOST" == "keycloak" ]]; then
+        echo "INFO: KEYCLOAK_HOST=keycloak is the internal Docker hostname; using keycloak.${HOST} for host-side Admin API calls."
+    fi
+    KEYCLOAK_HOST="keycloak.${HOST}"
+else
+    KEYCLOAK_HOST="$REQUESTED_KEYCLOAK_HOST"
+fi
 ORCHESTRATION_HOST="${ORCHESTRATION_HOST:-orchestration.${HOST}}"
 [[ -z "$HOST" ]] && echo "ERROR: HOST not found in .env" && exit 1
 check_host_resolution "Keycloak" "$KEYCLOAK_HOST"
@@ -292,7 +300,7 @@ echo "Creating user '$USERNAME' with role '$ROLE'..."
 # Get admin token
 get_token_py=$(mktemp)
 cat > "$get_token_py" <<'PYEND'
-import sys, json, urllib.request, urllib.parse, ssl
+import sys, json, urllib.request, urllib.parse, urllib.error, ssl
 keycloak_host = sys.argv[1]
 admin_user = sys.argv[2]
 admin_password = sys.argv[3]
@@ -302,8 +310,32 @@ ctx.verify_mode = ssl.CERT_NONE
 url = "https://%s/auth/realms/master/protocol/openid-connect/token" % keycloak_host
 data = urllib.parse.urlencode({"grant_type": "password", "username": admin_user, "password": admin_password, "client_id": "admin-cli"}).encode()
 req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/x-www-form-urlencoded"})
-with urllib.request.urlopen(req, context=ctx, timeout=10) as r:
-    print(json.loads(r.read())["access_token"])
+def fail(message, status="", content_type="", body=""):
+    print("ERROR: %s" % message, file=sys.stderr)
+    if status:
+        print("HTTP status: %s" % status, file=sys.stderr)
+    if content_type:
+        print("Content-Type: %s" % content_type, file=sys.stderr)
+    preview = body[:500].replace("\r", "\\r").replace("\n", "\\n")
+    print("Response body preview: %s" % (preview if preview else "(empty)"), file=sys.stderr)
+    sys.exit(1)
+
+try:
+    with urllib.request.urlopen(req, context=ctx, timeout=10) as r:
+        raw = r.read()
+        text = raw.decode("utf-8", errors="replace")
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError:
+            fail("Keycloak token endpoint returned non-JSON from %s" % url, r.status, r.headers.get("Content-Type", ""), text)
+except urllib.error.HTTPError as e:
+    text = e.read().decode("utf-8", errors="replace")
+    fail("Keycloak token endpoint rejected the admin token request at %s" % url, e.code, e.headers.get("Content-Type", ""), text)
+
+token = payload.get("access_token")
+if not token:
+    fail("Keycloak token endpoint response did not contain access_token from %s" % url, body=json.dumps(payload))
+print(token)
 PYEND
 
 KC_TOKEN=$(python3 "$get_token_py" "$KEYCLOAK_HOST" "$ADMIN_USER" "$ADMIN_PASSWORD")
@@ -374,7 +406,7 @@ CAMUNDA_ROLE="${CAMUNDA_ROLE_MAP[$ROLE]}"
 
 orch_token_py=$(mktemp)
 cat > "$orch_token_py" <<'PYEND'
-import sys, json, urllib.request, urllib.parse, ssl
+import sys, json, urllib.request, urllib.parse, urllib.error, ssl
 keycloak_host = sys.argv[1]
 client_secret = sys.argv[2]
 ctx = ssl.create_default_context()
@@ -383,8 +415,32 @@ ctx.verify_mode = ssl.CERT_NONE
 url = "https://%s/auth/realms/camunda-platform/protocol/openid-connect/token" % keycloak_host
 data = urllib.parse.urlencode({"grant_type": "client_credentials", "client_id": "orchestration", "client_secret": client_secret}).encode()
 req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/x-www-form-urlencoded"})
-with urllib.request.urlopen(req, context=ctx, timeout=10) as r:
-    print(json.loads(r.read())["access_token"])
+def fail(message, status="", content_type="", body=""):
+    print("ERROR: %s" % message, file=sys.stderr)
+    if status:
+        print("HTTP status: %s" % status, file=sys.stderr)
+    if content_type:
+        print("Content-Type: %s" % content_type, file=sys.stderr)
+    preview = body[:500].replace("\r", "\\r").replace("\n", "\\n")
+    print("Response body preview: %s" % (preview if preview else "(empty)"), file=sys.stderr)
+    sys.exit(1)
+
+try:
+    with urllib.request.urlopen(req, context=ctx, timeout=10) as r:
+        raw = r.read()
+        text = raw.decode("utf-8", errors="replace")
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError:
+            fail("Keycloak token endpoint returned non-JSON from %s" % url, r.status, r.headers.get("Content-Type", ""), text)
+except urllib.error.HTTPError as e:
+    text = e.read().decode("utf-8", errors="replace")
+    fail("Keycloak token endpoint rejected the orchestration token request at %s" % url, e.code, e.headers.get("Content-Type", ""), text)
+
+token = payload.get("access_token")
+if not token:
+    fail("Keycloak token endpoint response did not contain access_token from %s" % url, body=json.dumps(payload))
+print(token)
 PYEND
 
 ORCH_TOKEN=$(python3 "$orch_token_py" "$KEYCLOAK_HOST" "$ORCHESTRATION_CLIENT_SECRET") && rm -f "$orch_token_py" || { rm -f "$orch_token_py"; echo "WARNING: Could not get orchestration token. Camunda authorization role not assigned."; ORCH_TOKEN=""; }
