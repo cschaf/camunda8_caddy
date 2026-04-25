@@ -8,6 +8,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 ENV_FILE="$PROJECT_DIR/.env"
 CADDYFILE="$PROJECT_DIR/Caddyfile"
+CADDYFILE_TEMPLATE="$PROJECT_DIR/Caddyfile.example"
 
 # Default hosts file path (Linux)
 HOSTS_FILE="/etc/hosts"
@@ -95,6 +96,15 @@ if [[ ! -f "$CADDYFILE" ]]; then
     echo "ERROR: Caddyfile not found at $CADDYFILE"
     exit 1
 fi
+
+if [[ ! -f "$CADDYFILE_TEMPLATE" ]]; then
+    echo "ERROR: Caddyfile template not found at $CADDYFILE_TEMPLATE"
+    exit 1
+fi
+
+# Always render from the committed template. Mutating an already-rendered Caddyfile
+# can leave stale hosts behind after switching domains.
+cp "$CADDYFILE_TEMPLATE" "$CADDYFILE"
 
 # Replace *.localhost with *.$HOST, and standalone localhost with $HOST
 sed -i "s/\b\([a-z]\+\)\.localhost\b/\1.$HOST/g" "$CADDYFILE"
