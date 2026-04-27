@@ -51,9 +51,23 @@
                             <path d="M12 1v6m0 6v6m4.22-10.22l4.24-4.24M6.34 6.34L2.1 2.1m17.8 17.8l-4.24-4.24M6.34 17.66l-4.24 4.24M23 12h-6m-6 0H1m20.07 4.93l-4.24-4.24M6.34 17.66l-4.24 4.24"/>
                         </svg>
                     </div>
-                    <h2>Orchestration</h2>
-                    <p>Operate & Tasklist</p>
+                    <h2>Operate</h2>
+                    <p>Process Operations</p>
                     <span class="url">orchestration.{{env "HOST"}}</span>
+                    <div class="status"><span class="status-led"></span><span class="status-text">Checking...</span></div>
+                </a>
+
+                <a href="https://orchestration.{{env "HOST"}}/tasklist" class="card" target="_blank" rel="noopener noreferrer" data-health-url="https://orchestration.{{env "HOST"}}/health">
+                    <div class="card-accent"></div>
+                    <div class="icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M9 11l3 3L22 4"/>
+                            <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+                        </svg>
+                    </div>
+                    <h2>Tasklist</h2>
+                    <p>User Tasks</p>
+                    <span class="url">orchestration.{{env "HOST"}}/tasklist</span>
                     <div class="status"><span class="status-led"></span><span class="status-text">Checking...</span></div>
                 </a>
 
