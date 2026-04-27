@@ -69,7 +69,7 @@ zeebe:
             numberOfReplicas: 0
           retention:
             enabled: true
-            minimumAge: 30d
+            minimumAge: 90d
             policyName: zeebe-record-retention-policy
       CamundaExporter:
         className: "io.camunda.exporter.CamundaExporter"
@@ -84,7 +84,7 @@ zeebe:
           history:
             retention:
               enabled: true
-              minimumAge: 30d
+              minimumAge: 90d
               policyName: camunda-retention-policy
 
 camunda:
@@ -130,12 +130,12 @@ camunda:
       redirectRootUrl: "https://orchestration.${HOST}/operate"
     archiver:
       ilmEnabled: true
-      ilmMinAgeForDeleteArchivedIndices: 30d
+      ilmMinAgeForDeleteArchivedIndices: 90d
 
   tasklist:
     identity:
       redirectRootUrl: "https://orchestration.${HOST}/tasklist"
     archiver:
       ilmEnabled: true
-      ilmMinAgeForDeleteArchivedIndices: 30d
+      ilmMinAgeForDeleteArchivedIndices: 90d
 

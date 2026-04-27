@@ -15,6 +15,6 @@ ui:
   logoutHidden: true
 historyCleanup:
   cronTrigger: 0 1 * * *
-  ttl: P30D
+  ttl: P365D
   processDataCleanup:
     enabled: true
