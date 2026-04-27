@@ -143,7 +143,7 @@ webmodeler.camunda.dev.local {
     # Health check endpoint for dashboard status LEDs
     handle /health {
         header Access-Control-Allow-Origin "*"
-        reverse_proxy web-modeler-webapp:8070 {
+        reverse_proxy web-modeler-restapi:8081 {
             header_down -Cross-Origin-Resource-Policy
             header_down -Cross-Origin-Embedder-Policy
         }
@@ -152,5 +152,5 @@ webmodeler.camunda.dev.local {
     handle /app/* {
         reverse_proxy web-modeler-websockets:8060
     }
-    reverse_proxy web-modeler-webapp:8070
+    reverse_proxy web-modeler-restapi:8081
 }
