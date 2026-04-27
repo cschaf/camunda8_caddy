@@ -76,6 +76,8 @@ zeebe:
 camunda:
   database:
     type: elasticsearch
+    index:
+      numberOfReplicas: 0
   backup:
     webapps:
       enabled: false
@@ -108,10 +110,6 @@ camunda:
             - connectors
           clients:
             - connectors
-
-  database:
-    index:
-      numberOfReplicas: 0
   data:
     secondary-storage:
       type: elasticsearch
