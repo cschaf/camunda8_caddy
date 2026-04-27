@@ -315,6 +315,8 @@ camunda:
 | `secondaryStorage.type` | `elasticsearch` | `rdbms` (8.9+) | Camunda 8.9 defaults to RDBMS. For existing Elasticsearch-based installations, you must explicitly declare `elasticsearch` to maintain the existing architecture and avoid data migration. |
 | `secondaryStorage.elasticsearch.url` | `http://elasticsearch:9200` | (none) | Internal Elasticsearch endpoint. Uses container DNS name. |
 
+**Migration note:** There is **no automatic migration path** from Elasticsearch to RDBMS in Camunda 8.9. Changing `database.type` or `secondaryStorage.type` to `rdbms` on an existing installation results in empty Operate/Tasklist data. Historical process instances, variables, and incidents remain in Elasticsearch but become invisible to the RDBMS-backed services. The RDBMS option is intended for **fresh installations only**. For upgrades with existing data, stay on Elasticsearch.
+
 ### Operate Archiver ILM
 
 ```yaml

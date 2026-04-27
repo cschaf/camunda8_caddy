@@ -125,6 +125,8 @@ camunda:
 
 **Explanation:** Camunda 8.9 introduces support for RDBMS (H2, PostgreSQL, etc.) as the primary database for Operate and Tasklist runtime data. In 8.8, Elasticsearch was the implicit default. In 8.9, the default has shifted toward RDBMS. For existing Elasticsearch-based installations, you must explicitly declare `database.type: elasticsearch` to maintain the existing architecture and avoid data migration.
 
+> **Can I migrate existing data from Elasticsearch to RDBMS?** No. Camunda 8.9 does **not** provide an automatic migration path from Elasticsearch to RDBMS. Switching `database.type` to `rdbms` on an existing installation starts with empty Operate/Tasklist data. All historical process instances, variables, and incidents remain in Elasticsearch but become invisible to the new RDBMS-backed services. The RDBMS option is intended for **fresh installations** only. For upgrades with existing data, stay on Elasticsearch.
+
 #### 3. Backup Webapps Setting
 
 **Change:**
