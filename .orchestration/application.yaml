@@ -1,6 +1,6 @@
 spring:
   profiles:
-    active: "identity,operate,tasklist,broker,consolidated-auth"
+    active: "admin,operate,tasklist,broker,consolidated-auth"
 
 management:
   server:
@@ -71,23 +71,13 @@ zeebe:
             enabled: true
             minimumAge: 90d
             policyName: zeebe-record-retention-policy
-      CamundaExporter:
-        className: "io.camunda.exporter.CamundaExporter"
-        args:
-          connect:
-            type: elasticsearch
-            url: "http://elasticsearch:9200"
-          createSchema: true
-          index:
-            numberOfShards: 1
-            numberOfReplicas: 0
-          history:
-            retention:
-              enabled: true
-              minimumAge: 90d
-              policyName: camunda-retention-policy
 
 camunda:
+  database:
+    type: elasticsearch
+  backup:
+    webapps:
+      enabled: false
   persistent:
     sessions:
       enabled: true
@@ -95,6 +85,9 @@ camunda:
   rest:
     query:
       enabled: true
+
+  mcp:
+    enabled: true
 
   security:
     authentication:
