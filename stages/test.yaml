@@ -125,16 +125,6 @@ services:
     environment:
       JAVA_TOOL_OPTIONS: "-Xms384m -Xmx384m"
 
-  web-modeler-webapp:
-    deploy:
-      resources:
-        limits:
-          cpus: "0.25"
-          memory: 256M
-        reservations:
-          cpus: "0.05"
-          memory: 64M
-
   web-modeler-websockets:
     deploy:
       resources:
