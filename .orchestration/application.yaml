@@ -40,6 +40,7 @@ zeebe:
 
     # zeebe.broker.data
     data:
+      directory: /usr/local/camunda/data
       snapshotPeriod: 5m
       # Allow running with low disk space (for local development)
       diskUsageCommandWatermark: 0.85
