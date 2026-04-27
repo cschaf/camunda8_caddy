@@ -38,7 +38,14 @@ Write-Host "Configuring for HOST=$EnvHost"
 
 # Update Caddyfile — replace *.localhost with *.$EnvHost, and standalone localhost with $EnvHost
 $CaddyfilePath = Join-Path $PSScriptRoot "..\Caddyfile"
-$CaddyfileContent = Get-Content $CaddyfilePath -Raw
+$CaddyfileTemplatePath = Join-Path $PSScriptRoot "..\Caddyfile.example"
+if (-not (Test-Path $CaddyfilePath)) {
+    Write-Error "Caddyfile not found at $CaddyfilePath"
+}
+if (-not (Test-Path $CaddyfileTemplatePath)) {
+    Write-Error "Caddyfile template not found at $CaddyfileTemplatePath"
+}
+$CaddyfileContent = Get-Content $CaddyfileTemplatePath -Raw
 $updated = $CaddyfileContent -replace '\b(\w+)\.localhost\b', "`$1.$EnvHost"
 $updated = $updated -replace '(?m)^localhost\b', $EnvHost
 

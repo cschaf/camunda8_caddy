@@ -59,7 +59,7 @@ services:
       retries: 5
       start_period: 30s
     volumes:
-      - orchestration:/usr/local/zeebe/data
+      - orchestration:/usr/local/camunda/data
       - "./.orchestration/application.yaml:/usr/local/camunda/config/application.yaml"
     networks:
       - camunda-platform
@@ -306,6 +306,7 @@ services:
       - cluster.routing.allocation.disk.watermark.high=90%
       - cluster.routing.allocation.disk.watermark.flood_stage=95%
       - indices.breaker.total.limit=75%
+      - path.repo=/usr/share/elasticsearch/backup
       - "ES_JAVA_OPTS=-Xms4g -Xmx4g"
     ulimits:
       memlock:
@@ -330,6 +331,7 @@ services:
       start_period: 60s
     volumes:
       - elastic:/usr/share/elasticsearch/data
+      - elastic-backup:/usr/share/elasticsearch/backup
     networks:
       - camunda-platform
     extra_hosts:
@@ -639,6 +641,8 @@ services:
 volumes:
   orchestration:
   elastic:
+  elastic-backup:
+    name: elastic-backup
   postgres:
   keycloak-theme:
   postgres-web:
