@@ -8,7 +8,7 @@ The stack supports three environment stages, selected via the `STAGE` variable i
 |-------|----------|
 | Heavy | orchestration, elasticsearch |
 | Medium | optimize, keycloak, connectors, identity, web-modeler-restapi |
-| Light | postgres, web-modeler-db, console, web-modeler-webapp, web-modeler-websockets, mailpit, reverse-proxy |
+| Light | postgres, web-modeler-db, console, web-modeler-websockets, mailpit, reverse-proxy |
 
 ## Stage Overview
 
@@ -64,9 +64,6 @@ The stack supports three environment stages, selected via the `STAGE` variable i
 | console | prod | 0.5 | 1024M | 0.25 | 512M |
 | console | dev | 0.5 | 512M | 0.125 | 256M |
 | console | test | 0.5 | 512M | 0.125 | 256M |
-| web-modeler-webapp | prod | 0.5 | 512M | 0.1 | 128M |
-| web-modeler-webapp | dev | 0.5 | 256M | 0.05 | 64M |
-| web-modeler-webapp | test | 0.25 | 256M | 0.05 | 64M |
 | web-modeler-websockets | prod | 0.5 | 256M | 0.1 | 64M |
 | web-modeler-websockets | dev | 0.25 | 128M | 0.05 | 32M |
 | web-modeler-websockets | test | 0.25 | 128M | 0.05 | 32M |
@@ -84,7 +81,7 @@ JVM heap sizes are scaled proportionally with memory limits to prevent OOM kills
 - **Elasticsearch:** 50% of memory limit (Lucene needs off-heap memory-mapped files)
 - **All other JVM services:** 75% of memory limit
 
-Services without a JVM heap column (keycloak, postgres, web-modeler-db, web-modeler-webapp, web-modeler-websockets, mailpit, reverse-proxy) do not run a Java VM.
+Services without a JVM heap column (keycloak, postgres, web-modeler-db, web-modeler-websockets, mailpit, reverse-proxy) do not run a Java VM.
 
 ## Total Footprint Estimates
 

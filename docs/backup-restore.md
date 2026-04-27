@@ -23,6 +23,7 @@ The backup system secures the following data:
 | Data Source | Method | Notes |
 |-------------|--------|-------|
 | Zeebe State | Volume dump (`orchestration.tar.gz`) | Cold backup (application services are stopped) |
+| Camunda Runtime Data | Volume dump (`camunda-data.tar.gz`) | Cold backup of runtime files (e.g., H2 DB if RDBMS is used) |
 | Elasticsearch | Snapshot API | FS repository via Docker volume `elastic-backup`, copied to host after snapshot |
 | Keycloak DB | `pg_dump -Fc` | GZIP-compressed (`keycloak.sql.gz`) |
 | Web Modeler DB | `pg_dump -Fc` | GZIP-compressed (`webmodeler.sql.gz`) |
@@ -93,7 +94,7 @@ Users and authorizations created via `scripts/add-camunda-user.sh` / `scripts/ad
 |---|---|---|
 | Keycloak user (credentials, email, first/last name) | `postgres` container, database `bitnami_keycloak` | `pg_dump` → `keycloak.sql.gz` |
 | Realm role mappings (`Default user role`, `Orchestration`, `Optimize`, `Web Modeler`, `Console`, `ManagementIdentity`, `Web Modeler Admin`) | Same Keycloak database | Same `pg_dump` |
-| Camunda internal role assignment (`admin` or `readonly-admin`, via `PUT /v2/roles/{role}/users/{user}`) | Zeebe log → Elasticsearch `camunda-*` indices (via `CamundaExporter` configured in `.orchestration/application.yaml`) | `orchestration.tar.gz` volume dump + Elasticsearch snapshot |
+| Camunda internal role assignment (`admin` or `readonly-admin`, via `PUT /v2/roles/{role}/users/{user}`) | Zeebe log → Elasticsearch `camunda-*` indices (via secondaryStorage configured in `.orchestration/application.yaml`) | `orchestration.tar.gz` volume dump + Elasticsearch snapshot |
 
 On restore, the Keycloak database is restored via `pg_restore --clean --if-exists`, the Zeebe state is restored from the volume archive, and the Elasticsearch snapshot restore recreates the `camunda-*` indices that hold the authorization records (the restore's targeted delete includes the `camunda-` prefix so stale records are wiped before the snapshot is restored).
 
