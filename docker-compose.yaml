@@ -11,6 +11,17 @@
 
 services:
 
+  camunda-data-init:
+    image: camunda/camunda:${CAMUNDA_VERSION:?CAMUNDA_VERSION is required}
+    container_name: camunda-data-init
+    user: "0:0"
+    entrypoint: ["/bin/sh", "-c", "chown -R 1001:1001 /usr/local/camunda/camunda-data && chmod 775 /usr/local/camunda/camunda-data"]
+    volumes:
+      - camunda-data:/usr/local/camunda/camunda-data
+    networks:
+      - camunda-platform
+    restart: "no"
+
   orchestration: # Consolidated Zeebe + Operate + Tasklist - https://docs.camunda.io/docs/self-managed/setup/deploy/other/docker/#zeebe
     image: camunda/camunda:${CAMUNDA_VERSION:?CAMUNDA_VERSION is required}
     container_name: orchestration
@@ -59,13 +70,16 @@ services:
       retries: 5
       start_period: 30s
     volumes:
-      - orchestration:/usr/local/camunda/data
+      - orchestration:/usr/local/zeebe/data
+      - camunda-data:/usr/local/camunda/camunda-data
       - "./.orchestration/application.yaml:/usr/local/camunda/config/application.yaml"
     networks:
       - camunda-platform
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
+      camunda-data-init:
+        condition: service_completed_successfully
       elasticsearch:
         condition: service_healthy
 
@@ -78,7 +92,7 @@ services:
       # Orchestration connection - service addresses and credentials
       CAMUNDA_CLIENT_RESTADDRESS: http://orchestration:8080
       CAMUNDA_CLIENT_GRPCADDRESS: http://orchestration:26500
-      CAMUNDA_CLIENT_AUTH_TOKENURL: http://${KEYCLOAK_HOST:?KEYCLOAK_HOST is required}:18080/auth/realms/camunda-platform/protocol/openid-connect/token
+      CAMUNDA_CLIENT_AUTH_ISSUERURL: http://${KEYCLOAK_HOST:?KEYCLOAK_HOST is required}:18080/auth/realms/camunda-platform
       CAMUNDA_CLIENT_AUTH_CLIENTID: ${CONNECTORS_CLIENT_ID}
       CAMUNDA_CLIENT_AUTH_CLIENTSECRET: ${CONNECTORS_CLIENT_SECRET:?CONNECTORS_CLIENT_SECRET is required}
       JAVA_TOOL_OPTIONS: "-Xmx768m"
@@ -457,6 +471,8 @@ services:
       management.endpoints.web.exposure.include: health,configprops,info
       management.endpoint.health.probes.enabled: true
       MANAGEMENT_ENDPOINT_CONFIGPROPS_SHOW_VALUES: ALWAYS
+      SERVER_HTTPS_ONLY: "false"
+      PLAY_ENABLED: "true"
     networks:
       - web-modeler
       - camunda-platform
@@ -640,6 +656,7 @@ services:
 
 volumes:
   orchestration:
+  camunda-data:
   elastic:
   elastic-backup:
     name: elastic-backup
