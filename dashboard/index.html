@@ -49,106 +49,116 @@
                 </div>
             </header>
 
-            <main class="grid">
-                <a href="https://orchestration.{{env "HOST"}}" class="card" target="_blank" rel="noopener noreferrer" data-health-url="https://orchestration.{{env "HOST"}}/health">
-                    <div class="card-accent"></div>
-                    <div class="icon">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <circle cx="12" cy="12" r="3"/>
-                            <path d="M12 1v6m0 6v6m4.22-10.22l4.24-4.24M6.34 6.34L2.1 2.1m17.8 17.8l-4.24-4.24M6.34 17.66l-4.24 4.24M23 12h-6m-6 0H1m20.07 4.93l-4.24-4.24M6.34 17.66l-4.24 4.24"/>
-                        </svg>
-                    </div>
-                    <h2>Operate</h2>
-                    <p>Process Operations</p>
-                    <span class="url">orchestration.{{env "HOST"}}</span>
-                    <div class="status"><span class="status-led"></span><span class="status-text">Checking...</span></div>
-                </a>
+            <main>
+                <section class="dashboard-section">
+                    <h2 class="section-title">Applications</h2>
+                    <div class="grid">
+                        <a href="https://orchestration.{{env "HOST"}}" class="card" target="_blank" rel="noopener noreferrer" data-health-url="https://orchestration.{{env "HOST"}}/health">
+                            <div class="card-accent"></div>
+                            <div class="icon">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <circle cx="12" cy="12" r="3"/>
+                                    <path d="M12 1v6m0 6v6m4.22-10.22l4.24-4.24M6.34 6.34L2.1 2.1m17.8 17.8l-4.24-4.24M6.34 17.66l-4.24 4.24M23 12h-6m-6 0H1m20.07 4.93l-4.24-4.24M6.34 17.66l-4.24 4.24"/>
+                                </svg>
+                            </div>
+                            <h2>Operate</h2>
+                            <p>Process Operations</p>
+                            <span class="url">orchestration.{{env "HOST"}}</span>
+                            <div class="status"><span class="status-led"></span><span class="status-text">Checking...</span></div>
+                        </a>
 
-                <a href="https://orchestration.{{env "HOST"}}/tasklist" class="card" target="_blank" rel="noopener noreferrer" data-health-url="https://orchestration.{{env "HOST"}}/health">
-                    <div class="card-accent"></div>
-                    <div class="icon">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M9 11l3 3L22 4"/>
-                            <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
-                        </svg>
-                    </div>
-                    <h2>Tasklist</h2>
-                    <p>User Tasks</p>
-                    <span class="url">orchestration.{{env "HOST"}}/tasklist</span>
-                    <div class="status"><span class="status-led"></span><span class="status-text">Checking...</span></div>
-                </a>
+                        <a href="https://orchestration.{{env "HOST"}}/tasklist" class="card" target="_blank" rel="noopener noreferrer" data-health-url="https://orchestration.{{env "HOST"}}/health">
+                            <div class="card-accent"></div>
+                            <div class="icon">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M9 11l3 3L22 4"/>
+                                    <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+                                </svg>
+                            </div>
+                            <h2>Tasklist</h2>
+                            <p>User Tasks</p>
+                            <span class="url">orchestration.{{env "HOST"}}/tasklist</span>
+                            <div class="status"><span class="status-led"></span><span class="status-text">Checking...</span></div>
+                        </a>
 
-                <a href="https://console.{{env "HOST"}}" class="card" target="_blank" rel="noopener noreferrer" data-health-url="https://console.{{env "HOST"}}/health">
-                    <div class="card-accent"></div>
-                    <div class="icon">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <rect x="3" y="3" width="18" height="18" rx="2"/>
-                            <path d="M3 9h18M9 21V9"/>
-                        </svg>
-                    </div>
-                    <h2>Console</h2>
-                    <p>Cluster Management</p>
-                    <span class="url">console.{{env "HOST"}}</span>
-                    <div class="status"><span class="status-led"></span><span class="status-text">Checking...</span></div>
-                </a>
+                        <a href="https://optimize.{{env "HOST"}}" class="card" target="_blank" rel="noopener noreferrer" data-health-url="https://optimize.{{env "HOST"}}/health">
+                            <div class="card-accent"></div>
+                            <div class="icon">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M3 3v18h18"/>
+                                    <path d="M18 17V9M13 17V5M8 17v-3"/>
+                                </svg>
+                            </div>
+                            <h2>Optimize</h2>
+                            <p>Process Analytics</p>
+                            <span class="url">optimize.{{env "HOST"}}</span>
+                            <div class="status"><span class="status-led"></span><span class="status-text">Checking...</span></div>
+                        </a>
 
-                <a href="https://optimize.{{env "HOST"}}" class="card" target="_blank" rel="noopener noreferrer" data-health-url="https://optimize.{{env "HOST"}}/health">
-                    <div class="card-accent"></div>
-                    <div class="icon">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M3 3v18h18"/>
-                            <path d="M18 17V9M13 17V5M8 17v-3"/>
-                        </svg>
+                        <a href="https://webmodeler.{{env "HOST"}}" class="card" target="_blank" rel="noopener noreferrer" data-health-url="https://webmodeler.{{env "HOST"}}/health">
+                            <div class="card-accent"></div>
+                            <div class="icon">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M12 19l7-7 3 3-7 7-3-3z"/>
+                                    <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/>
+                                    <path d="M2 2l7.586 7.586"/>
+                                    <circle cx="11" cy="11" r="2"/>
+                                </svg>
+                            </div>
+                            <h2>Web Modeler</h2>
+                            <p>Process Modeling</p>
+                            <span class="url">webmodeler.{{env "HOST"}}</span>
+                            <div class="status"><span class="status-led"></span><span class="status-text">Checking...</span></div>
+                        </a>
                     </div>
-                    <h2>Optimize</h2>
-                    <p>Process Analytics</p>
-                    <span class="url">optimize.{{env "HOST"}}</span>
-                    <div class="status"><span class="status-led"></span><span class="status-text">Checking...</span></div>
-                </a>
+                </section>
 
-                <a href="https://webmodeler.{{env "HOST"}}" class="card" target="_blank" rel="noopener noreferrer" data-health-url="https://webmodeler.{{env "HOST"}}/health">
-                    <div class="card-accent"></div>
-                    <div class="icon">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M12 19l7-7 3 3-7 7-3-3z"/>
-                            <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/>
-                            <path d="M2 2l7.586 7.586"/>
-                            <circle cx="11" cy="11" r="2"/>
-                        </svg>
-                    </div>
-                    <h2>Web Modeler</h2>
-                    <p>Process Modeling</p>
-                    <span class="url">webmodeler.{{env "HOST"}}</span>
-                    <div class="status"><span class="status-led"></span><span class="status-text">Checking...</span></div>
-                </a>
+                <section class="dashboard-section">
+                    <h2 class="section-title">Administration</h2>
+                    <div class="grid">
+                        <a href="https://console.{{env "HOST"}}" class="card" target="_blank" rel="noopener noreferrer" data-health-url="https://console.{{env "HOST"}}/health">
+                            <div class="card-accent"></div>
+                            <div class="icon">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <rect x="3" y="3" width="18" height="18" rx="2"/>
+                                    <path d="M3 9h18M9 21V9"/>
+                                </svg>
+                            </div>
+                            <h2>Console</h2>
+                            <p>Cluster Management</p>
+                            <span class="url">console.{{env "HOST"}}</span>
+                            <div class="status"><span class="status-led"></span><span class="status-text">Checking...</span></div>
+                        </a>
 
-                <a href="https://identity.{{env "HOST"}}" class="card" target="_blank" rel="noopener noreferrer" data-health-url="https://identity.{{env "HOST"}}/health">
-                    <div class="card-accent"></div>
-                    <div class="icon">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-                            <circle cx="12" cy="7" r="4"/>
-                        </svg>
-                    </div>
-                    <h2>Identity</h2>
-                    <p>User Management</p>
-                    <span class="url">identity.{{env "HOST"}}</span>
-                    <div class="status"><span class="status-led"></span><span class="status-text">Checking...</span></div>
-                </a>
+                        <a href="https://identity.{{env "HOST"}}" class="card" target="_blank" rel="noopener noreferrer" data-health-url="https://identity.{{env "HOST"}}/health">
+                            <div class="card-accent"></div>
+                            <div class="icon">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                                    <circle cx="12" cy="7" r="4"/>
+                                </svg>
+                            </div>
+                            <h2>Identity</h2>
+                            <p>User Management</p>
+                            <span class="url">identity.{{env "HOST"}}</span>
+                            <div class="status"><span class="status-led"></span><span class="status-text">Checking...</span></div>
+                        </a>
 
-                <a href="https://keycloak.{{env "HOST"}}" class="card" target="_blank" rel="noopener noreferrer" data-health-url="https://keycloak.{{env "HOST"}}/health">
-                    <div class="card-accent"></div>
-                    <div class="icon">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-                            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-                        </svg>
+                        <a href="https://keycloak.{{env "HOST"}}" class="card" target="_blank" rel="noopener noreferrer" data-health-url="https://keycloak.{{env "HOST"}}/health">
+                            <div class="card-accent"></div>
+                            <div class="icon">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                                    <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                                </svg>
+                            </div>
+                            <h2>Keycloak</h2>
+                            <p>Identity Provider Admin</p>
+                            <span class="url">keycloak.{{env "HOST"}}</span>
+                            <div class="status"><span class="status-led"></span><span class="status-text">Checking...</span></div>
+                        </a>
                     </div>
-                    <h2>Keycloak</h2>
-                    <p>Identity Provider Admin</p>
-                    <span class="url">keycloak.{{env "HOST"}}</span>
-                    <div class="status"><span class="status-led"></span><span class="status-text">Checking...</span></div>
-                </a>
+                </section>
             </main>
 
             <footer>
