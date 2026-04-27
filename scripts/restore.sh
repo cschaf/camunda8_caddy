@@ -28,7 +28,6 @@ DRY_RUN=false
 CROSS_CLUSTER=false
 TEST_MODE=false
 CREATE_PRE_BACKUP=true
-DEPRECATED_CREATE_BACKUP_USED=false
 DECRYPT_ARCHIVE=""
 SKIP_PULL=false
 REHOST_KEYCLOAK=false
@@ -73,7 +72,6 @@ usage() {
   echo "  --dry-run         Show what would be done without executing"
   echo "  --cross-cluster   Enable cross-cluster restore (skips config overwrite)"
   echo "  --no-pre-backup   Do not create a rollback backup before restoring"
-  echo "  --create-backup   Deprecated; pre-restore backups are enabled by default"
   echo "  --decrypt FILE    Decrypt a .tar.gz.gpg or .tar.gz.age backup archive before restore"
   echo "  --skip-pull       Skip pre-flight docker compose pull for offline/air-gapped restores"
   echo "  --rehost-keycloak Patch restored Keycloak clients to the current HOST and local client secrets"
@@ -99,16 +97,6 @@ parse_args() {
         ;;
       --cross-cluster)
         CROSS_CLUSTER=true
-        shift
-        ;;
-      --create-backup)
-        CREATE_PRE_BACKUP=true
-        DEPRECATED_CREATE_BACKUP_USED=true
-        shift
-        ;;
-      --createBackup)
-        CREATE_PRE_BACKUP=true
-        DEPRECATED_CREATE_BACKUP_USED=true
         shift
         ;;
       --no-pre-backup)
@@ -540,7 +528,6 @@ main() {
   log "Stage: $stage"
   log "Restore components: $RESTORE_COMPONENTS"
   [[ "$REHOST_KEYCLOAK" == true ]] && log "Keycloak rehost: enabled"
-  [[ "$DEPRECATED_CREATE_BACKUP_USED" == true ]] && log "WARNING: --create-backup is deprecated; pre-restore backups are now created by default. Use --no-pre-backup to opt out."
 
   # Step 1: Pre-flight checks
   log "Running pre-flight checks..."

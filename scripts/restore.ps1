@@ -29,7 +29,6 @@ $DryRun = $false
 $CrossCluster = $false
 $TestMode = $false
 $CreatePreBackup = $true
-$DeprecatedCreateBackupUsed = $false
 $DecryptArchive = ""
 $SkipPull = $false
 $RehostKeycloak = $false
@@ -52,7 +51,6 @@ function Show-Usage {
     Write-Host "  --dry-run         Show what would be done without executing"
     Write-Host "  --cross-cluster   Enable cross-cluster restore (skips config overwrite)"
     Write-Host "  --no-pre-backup   Do not create a rollback backup before restoring"
-    Write-Host "  --create-backup   Deprecated; pre-restore backups are enabled by default"
     Write-Host "  --decrypt FILE    Decrypt a .tar.gz.gpg or .tar.gz.age backup archive before restore"
     Write-Host "  --skip-pull       Skip pre-flight docker compose pull for offline/air-gapped restores"
     Write-Host "  --rehost-keycloak Patch restored Keycloak clients to the current HOST and local client secrets"
@@ -73,8 +71,6 @@ function Parse-Args {
             "--force" { $script:Force = $true; break }
             "--dry-run" { $script:DryRun = $true; break }
             "--cross-cluster" { $script:CrossCluster = $true; break }
-            "--create-backup" { $script:CreatePreBackup = $true; $script:DeprecatedCreateBackupUsed = $true; break }
-            "--createBackup" { $script:CreatePreBackup = $true; $script:DeprecatedCreateBackupUsed = $true; break }
             "--no-pre-backup" { $script:CreatePreBackup = $false; break }
             "--decrypt" {
                 if (($i + 1) -ge $CliArgs.Count) {
@@ -486,7 +482,6 @@ function Main {
         Log "Stage: $stage"
         Log "Restore components: $RestoreComponents"
         if ($RehostKeycloak) { Log "Keycloak rehost: enabled" }
-        if ($DeprecatedCreateBackupUsed) { Log "WARNING: --create-backup is deprecated; pre-restore backups are now created by default. Use --no-pre-backup to opt out." }
 
         # Pre-flight checks
         Log "Running pre-flight checks..."

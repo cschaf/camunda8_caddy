@@ -212,7 +212,7 @@ Restores all data on the same host, including configuration files:
 
 **Warning:** This overwrites all current data! The script asks for confirmation.
 
-By default, restore creates a fresh rollback backup with the existing backup script before destructive steps start. The pre-restore backup log is written to `backups/pre-restore-backup.log`. If that pre-backup fails, restore aborts before destructive steps continue. Use `--no-pre-backup` only when you intentionally want to skip this safety net. The legacy `--create-backup` flag is still accepted, but it is deprecated because this behavior is now the default.
+By default, restore creates a fresh rollback backup with the existing backup script before destructive steps start. The pre-restore backup log is written to `backups/pre-restore-backup.log`. If that pre-backup fails, restore aborts before destructive steps continue. Use `--no-pre-backup` only when you intentionally want to skip this safety net.
 
 ### Rollback after failed restore
 
@@ -545,7 +545,6 @@ A passing drill means your backup format, restore logic, and stack health checks
 | `--dry-run` | Shows what would be done without executing |
 | `--cross-cluster` | Enables cross-cluster restore (no config overwrite) |
 | `--no-pre-backup` | Skips the default rollback backup before restore starts |
-| `--create-backup` | Deprecated no-op preference flag; pre-restore backups are already enabled by default (alias: `--createBackup`) |
 | `--decrypt FILE` | Decrypts a `.tar.gz.gpg` or `.tar.gz.age` backup archive before restore |
 | `--skip-pull` | Skips the pre-flight `docker compose pull` for offline or air-gapped restore targets |
 | `--rehost-keycloak` | After restoring Keycloak, rewrites selected clients for the current `HOST` and local client secrets |
