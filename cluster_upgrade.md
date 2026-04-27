@@ -260,6 +260,24 @@ PLAY_ENABLED: "true"
 - `SERVER_HTTPS_ONLY: "false"` — Allows the Web Modeler REST API to operate over HTTP internally while the reverse proxy handles HTTPS termination externally.
 - `PLAY_ENABLED: "true"` — Enables the new "Play" feature in Web Modeler 8.9, which allows simulating and testing BPMN processes directly in the modeler without deploying them.
 
+#### 6. Web Modeler WebApp Discontinued
+
+**Change:** The entire `web-modeler-webapp` service is removed from `docker-compose.yaml`.
+
+**Explanation:** Starting with Camunda 8.9, the `camunda/web-modeler-webapp` Docker image is discontinued. Its functionality is now integrated into `camunda/web-modeler-restapi`. The REST API container now also serves the web application frontend.
+
+**What changed:**
+- `web-modeler-restapi` now exposes port `8070:8081` (previously no host port)
+- Client-facing environment variables moved from `web-modeler-webapp` to `web-modeler-restapi`:
+  - `CLIENT_PUSHER_HOST`
+  - `CLIENT_PUSHER_PORT`
+  - `CLIENT_PUSHER_FORCE_TLS`
+  - `CLIENT_PUSHER_KEY`
+  - `OAUTH2_CLIENT_ID`
+  - `OAUTH2_TOKEN_ISSUER`
+  - `IDENTITY_BASE_URL`
+- The `web-modeler-webapp` service and its resource limits are removed from all stage profiles
+
 ---
 
 ## Console Configuration Changes
@@ -491,7 +509,7 @@ And verify `docker-compose.yaml` mounts the volume at `/usr/local/camunda/data`.
 | `.env` | All Camunda versions bumped to 8.9.x, Elasticsearch to 8.19.11 |
 | `.env.example` | Same version bumps for template |
 | `.orchestration/application.yaml` | Profile `identity` → `admin`, added `database.type: elasticsearch`, `backup.webapps.enabled: false`, `mcp.enabled: true`, removed `CamundaExporter`, added `zeebe.broker.data.directory` |
-| `docker-compose.yaml` | Added `camunda-data-init` service, added `camunda-data` volume, updated orchestration depends_on/volumes, updated connectors auth URL, added Web Modeler flags |
+| `docker-compose.yaml` | Added `camunda-data-init` service, added `camunda-data` volume, updated orchestration depends_on/volumes, updated connectors auth URL, removed `web-modeler-webapp` (merged into restapi), added Web Modeler client flags to restapi |
 | `.console/application.yaml` | Version bumps to 8.9.0, merged WebModeler, renamed Orchestration Gateway, updated Keycloak version |
 | `stages/dev.yaml` | Added `camunda-data-init` resource limits |
 | `stages/test.yaml` | Added `camunda-data-init` resource limits |
