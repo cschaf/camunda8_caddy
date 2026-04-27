@@ -1,6 +1,16 @@
 # Test stage resources.
 # Compact profile for constrained test hosts; heavy and medium services are reduced further.
 services:
+  camunda-data-init:
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128M
+        reservations:
+          cpus: "0.05"
+          memory: 32M
+
   orchestration:
     deploy:
       resources:

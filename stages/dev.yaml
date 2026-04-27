@@ -1,6 +1,16 @@
 # Development stage resources.
 # Reduced profile for developer workstations; heavy and medium services are about half-size.
 services:
+  camunda-data-init:
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128M
+        reservations:
+          cpus: "0.05"
+          memory: 32M
+
   orchestration:
     deploy:
       resources:
