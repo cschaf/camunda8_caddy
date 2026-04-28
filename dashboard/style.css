@@ -296,13 +296,12 @@ body.dark .theme-toggle .icon-sun {
     color: var(--camunda-orange);
     font-weight: 500;
     margin-top: auto;
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
+    display: inline;
 }
 
 .card .url::after {
-    content: "→";
+    content: "\A0→";
+    white-space: nowrap;
     transition: transform 0.2s ease;
 }
 
