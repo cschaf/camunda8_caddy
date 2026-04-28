@@ -140,7 +140,7 @@ fi
 # Update hosts file
 # ---------------------------------------------------------------------------
 
-SUBDOMAINS="keycloak identity console optimize orchestration webmodeler"
+SUBDOMAINS="keycloak identity console optimize orchestration webmodeler zeebe"
 HOSTS_MARKER="# Camunda Compose NVL - $HOST"
 HOSTS_BLOCK="$HOSTS_MARKER\n127.0.0.1 ${HOST}"
 for subdomain in $SUBDOMAINS; do
