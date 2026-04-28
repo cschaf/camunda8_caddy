@@ -138,6 +138,13 @@ orchestration.camunda.dev.local {
     reverse_proxy orchestration:8080
 }
 
+# Zeebe gRPC Gateway
+zeebe.localhost {
+    reverse_proxy h2c://orchestration:26500 {
+        flush_interval -1
+    }
+}
+
 # Web Modeler
 webmodeler.camunda.dev.local {
     # Health check endpoint for dashboard status LEDs
