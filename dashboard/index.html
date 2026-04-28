@@ -176,6 +176,23 @@
                             <span class="url">zeebe.{{env "HOST"}}:443</span>
                             <div class="status online"><span class="status-led"></span><span class="status-text">gRPC via TLS</span></div>
                         </div>
+
+                        <a href="https://orchestration.{{env "HOST"}}/v2" class="card" target="_blank" rel="noopener noreferrer">
+                            <div class="card-accent"></div>
+                            <div class="icon">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M4 7h16"/>
+                                    <path d="M4 12h16"/>
+                                    <path d="M4 17h16"/>
+                                    <path d="M8 7v10"/>
+                                    <path d="M16 7v10"/>
+                                </svg>
+                            </div>
+                            <h2>Orchestration API</h2>
+                            <p>REST API</p>
+                            <span class="url">orchestration.{{env "HOST"}}/v2</span>
+                            <div class="status online"><span class="status-led"></span><span class="status-text">REST via TLS</span></div>
+                        </a>
                     </div>
                 </section>
             </main>
