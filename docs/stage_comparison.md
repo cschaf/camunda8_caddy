@@ -8,7 +8,7 @@ The stack supports three environment stages, selected via the `STAGE` variable i
 |-------|----------|
 | Heavy | orchestration, elasticsearch |
 | Medium | optimize, keycloak, connectors, identity, web-modeler-restapi |
-| Light | postgres, web-modeler-db, console, web-modeler-websockets, mailpit, reverse-proxy |
+| Light | postgres, camunda-db, web-modeler-db, console, web-modeler-websockets, mailpit, reverse-proxy |
 
 ## Stage Overview
 
@@ -58,6 +58,9 @@ The stack supports three environment stages, selected via the `STAGE` variable i
 | postgres | prod | 1.0 | 1024M | 0.25 | 512M |
 | postgres | dev | 0.5 | 512M | 0.125 | 256M |
 | postgres | test | 0.5 | 512M | 0.125 | 256M |
+| camunda-db | prod | 1.0 | 1024M | 0.5 | 512M |
+| camunda-db | dev | 0.5 | 512M | 0.25 | 256M |
+| camunda-db | test | 0.5 | 512M | 0.25 | 256M |
 | web-modeler-db | prod | 0.5 | 512M | 0.1 | 256M |
 | web-modeler-db | dev | 0.25 | 256M | 0.05 | 128M |
 | web-modeler-db | test | 0.25 | 256M | 0.05 | 128M |
@@ -81,15 +84,15 @@ JVM heap sizes are scaled proportionally with memory limits to prevent OOM kills
 - **Elasticsearch:** 50% of memory limit (Lucene needs off-heap memory-mapped files)
 - **All other JVM services:** 75% of memory limit
 
-Services without a JVM heap column (keycloak, postgres, web-modeler-db, web-modeler-websockets, mailpit, reverse-proxy) do not run a Java VM.
+Services without a JVM heap column (keycloak, postgres, camunda-db, web-modeler-db, web-modeler-websockets, mailpit, reverse-proxy) do not run a Java VM.
 
 ## Total Footprint Estimates
 
 | Stage | Aggregate CPU Limits | Total Memory Limits | Min Free RAM Needed |
 |-------|----------------------|---------------------|---------------------|
-| prod | ~17.75 cores | ~28 GB | ~32 GB (with OS overhead) |
-| dev | ~10.5 cores | ~15 GB | ~16 GB (with OS overhead) |
-| test | ~8.25 cores | ~11 GB | ~12 GB (with OS overhead) |
+| prod | ~18.75 cores | ~29 GB | ~33 GB (with OS overhead) |
+| dev | ~11.0 cores | ~15.5 GB | ~17 GB (with OS overhead) |
+| test | ~8.75 cores | ~11.5 GB | ~13 GB (with OS overhead) |
 
 Aggregate CPU limits are the sum of each container's individual `deploy.resources.limits.cpus` values. They are not a guarantee that the host has that many physical cores available at once. The `prod` profile is still intended for a 16 vCPU / 32 GB host, and the current `~17.75` aggregate keeps only a small CPU overcommit buffer on the assumption that not every service will hit its limit simultaneously.
 

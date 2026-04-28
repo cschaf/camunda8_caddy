@@ -33,7 +33,8 @@ This stack deploys a full Camunda 8.9 self-managed platform with:
 | Component | Image | Purpose |
 |-----------|-------|---------|
 | **Orchestration** | `camunda/camunda:8.9.1` | Zeebe broker + Operate + Tasklist in one container |
-| **Elasticsearch** | `docker.elastic.co/elasticsearch/elasticsearch:8.19.11` | Process instance data, export data, Operate/Tasklist/Optimize storage |
+| **Elasticsearch** | `docker.elastic.co/elasticsearch/elasticsearch:8.19.11` | Optimize analytics storage (Optimize requires ES/OpenSearch) |
+| **camunda-db** | `postgres:${POSTGRES_VERSION}` | Camunda core operational data (Zeebe, Operate, Tasklist) |
 | **Identity** | `camunda/identity:8.9.1` | Centralized identity, OIDC provider integration, role management |
 | **Keycloak** | `bitnamilegacy/keycloak:26.3.2` | OIDC identity provider, realm/client setup, user authentication |
 | **Optimize** | `camunda/optimize:8.9.1` | Process analytics and optimization |
@@ -48,7 +49,7 @@ This stack deploys a full Camunda 8.9 self-managed platform with:
 
 Three Docker networks isolate traffic:
 
-- **`camunda-platform`** — Main platform: orchestration, connectors, optimize, console, elasticsearch, keycloak, identity, web-modeler-restapi, reverse-proxy
+- **`camunda-platform`** — Main platform: orchestration, connectors, optimize, console, elasticsearch, keycloak, identity, web-modeler-restapi, camunda-db, reverse-proxy
 - **`identity-network`** — Keycloak ↔ PostgreSQL (identity DB) ↔ Identity
 - **`web-modeler`** — web-modeler-db ↔ mailpit ↔ web-modeler-restapi ↔ web-modeler-websockets; also connects to `camunda-platform` to reach orchestration and identity
 
@@ -107,6 +108,7 @@ The following table shows the **base** resource configuration — what the `prod
 | web-modeler-restapi | 1.0 | 1G | 512m | `-Xmx768m` | 75% of limit; Java REST API + webapp UI (8.9+) |
 | postgres (identity) | 1.0 | 1G | 512m | — | No JVM; PostgreSQL manages own memory |
 | postgres (web-modeler) | 0.5 | 512m | 256m | — | No JVM |
+| camunda-db | 1.0 | 1024M | 512M | — | No JVM; core Camunda operational DB |
 | reverse-proxy | 0.5 | 256m | 64m | — | Caddy Go process |
 | web-modeler-websockets | 0.5 | 256m | 64m | — | Node.js WebSocket server |
 | mailpit | 0.25 | 128m | 32m | — | Go SMTP server |
@@ -142,6 +144,8 @@ Elasticsearch uses Lucene for full-text indexing. Lucene maintains an **off-heap
 ---
 
 ## 4. Elasticsearch Configuration
+
+Elasticsearch is retained for **Optimize only**. Camunda core operational data (Zeebe records, Operate process instances, Tasklist user tasks) is stored in the dedicated `camunda-db` PostgreSQL service. Optimize requires Elasticsearch (or OpenSearch) for its analytics indices.
 
 ### Environment Variables in docker-compose.yaml
 
@@ -248,72 +252,34 @@ data:
 | `freeSpace.processing` | `2GB` | `10GB` | Minimum free disk space for the processing partition. If less than 2GB is available, the broker pauses processing. Set low (2GB) for development servers with limited storage. |
 | `freeSpace.replication` | `3GB` | `10GB` | Minimum free disk space for replication. Set to 3GB to account for snapshot replication requiring temporary disk space. |
 
-### Exporter Bulk Size
+### RDBMS Secondary Storage
 
-```yaml
-exporters:
-  elasticsearch:
-    args:
-      bulk:
-        size: 1000
-```
-
-| Setting | Value | Default | Why |
-|---------|-------|---------|-----|
-| `bulk.size` | `1000` | `1000` | The Elasticsearch exporter batches records before flushing. A value of `1000` means "flush when the batch reaches 1000 records OR the flush interval expires." The old dev value of `1` wrote every event individually, causing Lucene segment explosion and rapid index count growth. 1000 is a production-appropriate batch size that balances latency (flush every ~1s under moderate load) with index efficiency. |
-
-### Exporter Index Shards
-
-```yaml
-exporters:
-  elasticsearch:
-    args:
-      index:
-        numberOfShards: 1
-        numberOfReplicas: 0
-```
-
-| Setting | Value | Default | Why |
-|---------|-------|---------|-----|
-| `elasticsearch.index.numberOfShards` | `1` | `3` | The Zeebe Elasticsearch exporter creates one index per record type per day. The upstream default of 3 shards per index is designed for multi-node clusters where shards are distributed for parallelism. On a single-node deployment, 3 shards provide zero benefit — the node cannot distribute work across itself. Each shard consumes heap for mappings, segments, and caches. Setting this to 1 reduces total shard count by ~67%. |
-| `elasticsearch.index.numberOfReplicas` | `0` | `0` | No replica on a single-node cluster. A replica would reside on the same node as the primary — no failover benefit, but double the disk and heap consumption. Explicitly set for consistency with the database index settings and as protection against default changes in future Camunda versions. |
-| `camunda.database.index.numberOfReplicas` | `0` | `0` | No replicas on a single-node cluster. A replica would reside on the same node as the primary — no failover benefit, but double the disk and heap consumption. Explicitly set for consistency. |
-
-### Exporter Data Retention (Zeebe Elasticsearch Exporter)
-
-```yaml
-exporters:
-  elasticsearch:
-    args:
-      retention:
-        enabled: true
-        minimumAge: 90d
-        policyName: zeebe-record-retention-policy
-```
-
-| Setting | Value | Default | Why |
-|---------|-------|---------|-----|
-| `retention.enabled` | `true` | `false` | Enables an Elasticsearch Index Lifecycle Management (ILM) policy that is automatically created and attached to all index templates generated by the exporter. Without this, `zeebe-record-*` indices grow forever. |
-| `retention.minimumAge` | `90d` | `30d` | Indices older than 90 days are deleted by the ILM policy. 90 days covers an entire quarter of operational history — enough for incident follow-up, audits, and process-instance lookups in Operate/Tasklist — while still bounding shard growth. Adjust based on your compliance requirements. |
-| `retention.policyName` | `zeebe-record-retention-policy` | `zeebe-record-retention-policy` | The name of the ILM policy created in Elasticsearch. Can be changed if you manage multiple Camunda clusters on the same ES instance. |
-
-### Camunda Data Secondary Storage
-
-In Camunda 8.9, the `CamundaExporter` was removed. Its functionality is now controlled via `camunda.data.secondaryStorage`:
+In Camunda 8.9, core operational data (Zeebe records, Operate process instances, Tasklist user tasks, authorizations) is stored in PostgreSQL via `camunda.data.secondary-storage`. The Camunda 8.9 image auto-configures the exporter based on this setting — no manual `zeebe.broker.exporters` block is required.
 
 ```yaml
 camunda:
+  database:
+    type: rdbms
+    index:
+      numberOfReplicas: 0
   data:
     secondary-storage:
-      type: elasticsearch
-      elasticsearch:
-        url: "http://elasticsearch:9200"
+      type: rdbms
+      rdbms:
+        url: "jdbc:postgresql://camunda-db:5432/camunda"
+        username: "camunda"
+        password: "${CAMUNDA_DB_PASSWORD}"
 ```
 
 | Setting | Value | Default | Why |
 |---------|-------|---------|-----|
-| `secondaryStorage.type` | `elasticsearch` | `rdbms` (8.9+) | Camunda 8.9 defaults to RDBMS. For existing Elasticsearch-based installations, you must explicitly declare `elasticsearch` to maintain the existing architecture and avoid data migration. |
-| `secondaryStorage.elasticsearch.url` | `http://elasticsearch:9200` | (none) | Internal Elasticsearch endpoint. Uses container DNS name. |
+| `database.type` | `rdbms` | `rdbms` (8.9+) | Sets the primary Camunda database type. Camunda 8.9 defaults to RDBMS. |
+| `data.secondary-storage.type` | `rdbms` | `rdbms` (8.9+) | Tells the unified orchestration container to use PostgreSQL for Operate/Tasklist data and to auto-configure the exporter for RDBMS. |
+| `data.secondary-storage.rdbms.url` | `jdbc:postgresql://camunda-db:5432/camunda` | (none) | JDBC URL pointing to the dedicated `camunda-db` container. |
+| `data.secondary-storage.rdbms.username` | `camunda` | (none) | PostgreSQL user for the Camunda database. |
+| `data.secondary-storage.rdbms.password` | `${CAMUNDA_DB_PASSWORD}` | (none) | Password injected from `.env`. |
+
+**Why no manual exporter configuration?** Manually configuring `zeebe.broker.exporters.camunda` with `connect.type: rdbms` causes a startup error because the `CamundaExporter` class only supports `ELASTICSEARCH` and `OPENSEARCH`. The orchestration image auto-configures the correct exporter when `secondary-storage.type` is `rdbms`.
 
 **Migration note:** There is **no automatic migration path** from Elasticsearch to RDBMS in Camunda 8.9. Changing `database.type` or `secondaryStorage.type` to `rdbms` on an existing installation results in empty Operate/Tasklist data. Historical process instances, variables, and incidents remain in Elasticsearch but become invisible to the RDBMS-backed services. The RDBMS option is intended for **fresh installations only**. For upgrades with existing data, stay on Elasticsearch.
 
@@ -329,7 +295,7 @@ camunda:
 
 | Setting | Value | Default | Why |
 |---------|-------|---------|-----|
-| `archiver.ilmEnabled` | `true` | `false` | Operate's archiver moves completed process instances from active indices to archived indices (e.g., `operate-list-view-2024.01.01`). Without ILM, these archived indices accumulate indefinitely. Enabling ILM attaches a deletion policy to archived indices. |
+| `archiver.ilmEnabled` | `true` | `false` | Operate's archiver moves completed process instances from active indices to archived indices (e.g., `operate-list-view-2024.01.01`). Without ILM, these archived indices accumulate indefinitely. Enabling ILM attaches a deletion policy to archived indices. **Note:** With RDBMS secondary storage, archiving is handled by the database; these ILM settings apply only when Elasticsearch is the backend. |
 | `archiver.ilmMinAgeForDeleteArchivedIndices` | `90d` | (none) | Archived indices older than 90 days are deleted. Matches the Zeebe and Camunda exporter retention so archived Operate data is never deleted while the raw records still exist. |
 
 ### Tasklist Archiver ILM
@@ -344,7 +310,7 @@ camunda:
 
 | Setting | Value | Default | Why |
 |---------|-------|---------|-----|
-| `archiver.ilmEnabled` | `true` | `false` | Same mechanism as Operate. Tasklist archives completed user tasks and process instances to dated indices. ILM ensures these do not grow without bound. |
+| `archiver.ilmEnabled` | `true` | `false` | Same mechanism as Operate. Tasklist archives completed user tasks and process instances to dated indices. ILM ensures these do not grow without bound. **Note:** With RDBMS secondary storage, archiving is handled by the database; these ILM settings apply only when Elasticsearch is the backend. |
 | `archiver.ilmMinAgeForDeleteArchivedIndices` | `90d` | (none) | 90-day retention for Tasklist archives, consistent with Operate and the exporters. |
 
 ### Optimize Data Retention
@@ -414,13 +380,15 @@ security:
 
 ```yaml
 database:
+  type: rdbms
   index:
     numberOfReplicas: 0
 ```
 
 | Setting | Value | Default | Why |
 |---------|-------|---------|-----|
-| `numberOfReplicas` | `0` | `1` | Elasticsearch index replica count for Camunda's own database indices. 0 because this is a single-node ES with no replica target. In a clustered production setup with 3+ ES nodes, this would be set to `1`. |
+| `database.type` | `rdbms` | `rdbms` (8.9+) | Uses PostgreSQL for Camunda core operational data instead of Elasticsearch. |
+| `index.numberOfReplicas` | `0` | `1` | Index replica count. With `database.type: rdbms`, this applies to any index backend still in use (e.g., if search indices are maintained). Set to 0 for single-node deployments. |
 
 ---
 
@@ -503,6 +471,7 @@ The `generate-secrets.sh` script creates a production-quality `.env` file:
 | `WEBMODELER_PUSHER_KEY` | web-modeler-restapi, web-modeler-websockets | Pusher WebSocket authentication |
 | `WEBMODELER_PUSHER_SECRET` | web-modeler-websockets | Pusher WebSocket authentication |
 | `DEMO_USER_PASSWORD` | Identity (creates demo user) | Password for the demo user account |
+| `CAMUNDA_DB_PASSWORD` | `camunda-db`, orchestration | Database password for the Camunda core PostgreSQL database |
 
 ### Why No Hardcoded Fallbacks?
 
@@ -564,7 +533,7 @@ This distinction is critical: the browser must see the public HTTPS URL in the a
 - `CAMUNDA_OPTIMIZE_IDENTITY_ISSUER_BACKEND_URL=http://${KEYCLOAK_HOST}:18080/...` — Internal issuer URL
 - `SERVER_FORWARD_HEADERS_STRATEGY=framework` — Required behind Caddy proxy for correct URL construction
 
-**Important:** Optimize shares the platform `elasticsearch` container but maintains its own indices under the `optimize-` prefix — it does not use the same index namespace as Operate, Tasklist, or the Zeebe exporter.
+**Important:** Optimize shares the platform `elasticsearch` container but maintains its own indices under the `optimize-` prefix. Camunda core data (Operate, Tasklist, Zeebe) is stored in PostgreSQL (`camunda-db`), so only Optimize uses Elasticsearch indices.
 
 ### Identity
 
@@ -655,6 +624,23 @@ Add:
 ```
 
 This runs the guard twice per hour, writes timestamped output to a dedicated log file, and starts only the services that are missing or stopped.
+
+### camunda-db
+
+**Image:** `postgres:${POSTGRES_VERSION}`
+
+**Port:** 5432 (internal)
+
+**Purpose:** Dedicated PostgreSQL database for Camunda core operational data (Zeebe records, Operate process instances, Tasklist user tasks, and authorizations).
+
+**Key env vars:**
+- `POSTGRES_DB=camunda` — Database name
+- `POSTGRES_USER=camunda` — Database user
+- `POSTGRES_PASSWORD=${CAMUNDA_DB_PASSWORD}` — Password from `.env`
+
+**Health check:** `pg_isready -U camunda -d camunda`
+
+**Volumes:** `camunda-db:/var/lib/postgresql/data`
 
 ### Web Modeler
 
@@ -797,6 +783,7 @@ Container names become DNS hostnames within Docker networks:
 - `identity` → `identity:8084`
 - `elasticsearch` → `elasticsearch:9200`
 - `postgres` → `postgres:5432`
+- `camunda-db` → `camunda-db:5432`
 - `web-modeler-db` → `web-modeler-db:5432`
 
 ### Extra Hosts
@@ -821,10 +808,10 @@ Several settings are intentionally development-oriented and should be reviewed b
 
 | Setting | Current Value | Production Value | Risk if Left |
 |---------|---------------|------------------|--------------|
-| `numberOfReplicas: 0` | orchestration, optimize | `1` | Single failure loses data |
+| `numberOfReplicas: 0` | optimize | `1` | Single failure loses data |
 | `discovery.type=single-node` | elasticsearch | multi-node cluster | No HA, single point of failure |
 | `snapshotPeriod: 5m` | orchestration | `15m` | More frequent snapshots = more IO overhead |
-| ILM / retention policies | Enabled — Zeebe, Camunda, Operate, Tasklist (90d); Optimize (365d) | Disabled by default | Two-tier retention: orchestration data (Zeebe records, Camunda history, Operate/Tasklist archives) is kept for 90 days for incident follow-up and operational history; Optimize is pre-configured in `.optimize/environment-config.yaml` for 365 days to support quarterly and year-over-year analytics. Without retention, historical index data volume grows indefinitely and leads to shard exhaustion, heap pressure, and cluster instability (Operate/Optimize stop displaying data). |
+| ILM / retention policies | Enabled — Optimize (365d) via `.optimize/environment-config.yaml` | Disabled by default | Optimize keeps aggregated analytical data for 365 days to support quarterly and year-over-year analytics. Camunda core operational data (Zeebe, Operate, Tasklist) is stored in PostgreSQL (`camunda-db`) and retention is handled by the RDBMS rather than Elasticsearch ILM. Without retention, Optimize historical index data grows indefinitely and leads to shard exhaustion and cluster instability. |
 
 ### Network/TLS Settings
 

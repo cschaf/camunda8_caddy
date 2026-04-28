@@ -23,8 +23,8 @@ The backup system secures the following data:
 | Data Source | Method | Notes |
 |-------------|--------|-------|
 | Zeebe State | Volume dump (`orchestration.tar.gz`) | Cold backup (application services are stopped) |
-| Camunda Runtime Data | Volume dump (`camunda-data.tar.gz`) | Cold backup of runtime files (e.g., H2 DB if RDBMS is used) |
-| Elasticsearch | Snapshot API | FS repository via Docker volume `elastic-backup`, copied to host after snapshot |
+| Camunda DB | `pg_dump -Fc` | GZIP-compressed (`camunda.sql.gz`) — Camunda core operational data (Zeebe, Operate, Tasklist) |
+| Elasticsearch | Snapshot API | FS repository via Docker volume `elastic-backup`, copied to host after snapshot — Optimize indices only |
 | Keycloak DB | `pg_dump -Fc` | GZIP-compressed (`keycloak.sql.gz`) |
 | Web Modeler DB | `pg_dump -Fc` | GZIP-compressed (`webmodeler.sql.gz`) |
 | Configurations | `tar.gz` | `.env`, `connector-secrets.txt`, `Caddyfile`, `application.yaml` files |
@@ -94,7 +94,7 @@ Users and authorizations created via `scripts/add-camunda-user.sh` / `scripts/ad
 |---|---|---|
 | Keycloak user (credentials, email, first/last name) | `postgres` container, database `bitnami_keycloak` | `pg_dump` → `keycloak.sql.gz` |
 | Realm role mappings (`Default user role`, `Orchestration`, `Optimize`, `Web Modeler`, `Console`, `ManagementIdentity`, `Web Modeler Admin`) | Same Keycloak database | Same `pg_dump` |
-| Camunda internal role assignment (`admin` or `readonly-admin`, via `PUT /v2/roles/{role}/users/{user}`) | Zeebe log → Elasticsearch `camunda-*` indices (via secondaryStorage configured in `.orchestration/application.yaml`) | `orchestration.tar.gz` volume dump + Elasticsearch snapshot |
+| Camunda internal role assignment (`admin` or `readonly-admin`, via `PUT /v2/roles/{role}/users/{user}`) | Zeebe log → PostgreSQL `camunda-db` (via RDBMS secondaryStorage configured in `.orchestration/application.yaml`) | `orchestration.tar.gz` volume dump + `camunda.sql.gz` |
 
 On restore, the Keycloak database is restored via `pg_restore --clean --if-exists`, the Zeebe state is restored from the volume archive, and the Elasticsearch snapshot restore recreates the `camunda-*` indices that hold the authorization records (the restore's targeted delete includes the `camunda-` prefix so stale records are wiped before the snapshot is restored).
 
@@ -125,6 +125,7 @@ backups/20240115_120000/
 ├── elasticsearch/          # Elasticsearch snapshot data
 ├── keycloak.sql.gz         # Keycloak database dump
 ├── manifest.json           # SHA256 checksums and metadata
+├── camunda.sql.gz          # Camunda core database dump
 ├── orchestration.tar.gz    # Zeebe state volume dump
 ├── snapshot-info.json      # Elasticsearch snapshot metadata
 └── webmodeler.sql.gz       # Web Modeler database dump
@@ -303,9 +304,9 @@ The restore scripts intentionally do **not** start the full Camunda stack immedi
 
 Current restore flow:
 
-1. Stop the stack and remove the data volumes (`orchestration`, `elastic`, `postgres`, `postgres-web`)
-2. Start only the core services needed for restore: `postgres`, `web-modeler-db`, `elasticsearch`
-3. Restore the PostgreSQL databases, then run `ANALYZE` on each restored database so the planner has fresh statistics before app services start (without this, the first Web Modeler project load after restore can take ~12 s per query until autovacuum catches up)
+1. Stop the stack and remove the data volumes (`orchestration`, `elastic`, `postgres`, `camunda-db`, `postgres-web`)
+2. Start only the core services needed for restore: `postgres`, `camunda-db`, `web-modeler-db`, `elasticsearch`
+3. Restore the PostgreSQL databases (`postgres`, `camunda-db`, `web-modeler-db`), then run `ANALYZE` on each restored database so the planner has fresh statistics before app services start (without this, the first Web Modeler project load after restore can take ~12 s per query until autovacuum catches up)
 4. Restore the Elasticsearch snapshot while Camunda application services are still stopped
 5. Create the `orchestration` container via Docker Compose and restore Zeebe state into the compose-managed volume
 6. Restore configuration files
@@ -334,10 +335,11 @@ Allowed components:
 | Component | Restores | Notes |
 |---|---|---|
 | `all` | Full stack data and configs | Default; keeps the original disaster-recovery behavior |
+| `camunda` | `camunda.sql.gz` into `camunda-db` | Camunda core operational data (Zeebe, Operate, Tasklist) |
 | `keycloak` | `keycloak.sql.gz` into the `postgres` service | Users, credentials, realm/client config, role mappings |
 | `webmodeler` | `webmodeler.sql.gz` into `web-modeler-db` | Web Modeler projects and database state |
-| `elasticsearch` | Snapshot under `elasticsearch/` | Deletes and restores Camunda-related indices/data streams only |
-| `orchestration` | `orchestration.tar.gz` into the Zeebe volume | Best used together with `elasticsearch` |
+| `elasticsearch` | Snapshot under `elasticsearch/` | Deletes and restores Optimize indices only |
+| `orchestration` | `orchestration.tar.gz` into the Zeebe volume | Best used together with `camunda` |
 | `configs` | `configs.tar.gz` | In `--cross-cluster` mode configs are extracted to `restored-configs/` instead of overwriting local files |
 
 Examples:
@@ -350,10 +352,10 @@ Examples:
 ./scripts/restore.sh --components keycloak,webmodeler backups/20240115_120000
 
 # Restore Camunda runtime state together
-./scripts/restore.sh --components orchestration,elasticsearch backups/20240115_120000
+./scripts/restore.sh --components orchestration,camunda backups/20240115_120000
 
 # Restore everything except local host configuration
-./scripts/restore.sh --cross-cluster --components keycloak,webmodeler,orchestration,elasticsearch backups/20240115_120000
+./scripts/restore.sh --cross-cluster --components keycloak,webmodeler,orchestration,camunda,elasticsearch backups/20240115_120000
 
 # Restore production data into local dev and rewrite Keycloak clients for local HOST
 ./scripts/restore.sh --cross-cluster --rehost-keycloak backups/20240115_120000
@@ -549,7 +551,7 @@ A passing drill means your backup format, restore logic, and stack health checks
 | `--decrypt FILE` | Decrypts a `.tar.gz.gpg` or `.tar.gz.age` backup archive before restore |
 | `--skip-pull` | Skips the pre-flight `docker compose pull` for offline or air-gapped restore targets |
 | `--rehost-keycloak` | After restoring Keycloak, rewrites selected clients for the current `HOST` and local client secrets |
-| `--components LIST` | Restores only selected components (`all`, `keycloak`, `webmodeler`, `elasticsearch`, `orchestration`, `configs`) |
+| `--components LIST` | Restores only selected components (`all`, `camunda`, `keycloak`, `webmodeler`, `elasticsearch`, `orchestration`, `configs`) |
 | `--verify` | Checks backup integrity without restoring (alias: `--test`) |
 | `-h, --help` | Shows help |
 
@@ -683,6 +685,7 @@ If you ever run a manual `pg_restore` (see [Granular Restore](#granular-restore)
 
 ```bash
 docker exec postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "ANALYZE;"
+docker exec camunda-db psql -U "$CAMUNDA_DB_USER" -d "$CAMUNDA_DB_NAME" -c "ANALYZE;"
 docker exec web-modeler-db psql -U "$WEBMODELER_DB_USER" -d "$WEBMODELER_DB_NAME" -c "ANALYZE;"
 ```
 
