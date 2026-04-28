@@ -77,7 +77,7 @@ Set-Content -Path $CaddyfilePath -Value $updated -NoNewline
 Write-Host "Updated Caddyfile (replaced *.localhost -> *.$EnvHost)$(if($useCustomTls){' + added tls directive'})"
 
 # Update hosts file
-$subdomains = @("keycloak", "identity", "console", "optimize", "orchestration", "webmodeler")
+$subdomains = @("keycloak", "identity", "console", "optimize", "orchestration", "webmodeler", "zeebe")
 $hostsEntries = @("127.0.0.1 $EnvHost") + ($subdomains | ForEach-Object { "127.0.0.1 $_.$EnvHost" })
 $hostsBlock = "# Camunda Compose NVL - $EnvHost`n" + ($hostsEntries -join "`n")
 
