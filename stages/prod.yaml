@@ -93,6 +93,16 @@ services:
           cpus: "0.25"
           memory: 512M
 
+  camunda-db:
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1024M
+        reservations:
+          cpus: "0.5"
+          memory: 512M
+
   web-modeler-db:
     deploy:
       resources:

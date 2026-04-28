@@ -23,7 +23,7 @@ source "$SCRIPT_DIR/lib/backup-common.sh"
 APP_SERVICES_STOPPED=false
 BACKUP_COMPOSE_CMD=""
 BACKUP_APP_SERVICES=()
-CORE_SERVICES=(postgres web-modeler-db elasticsearch mailpit reverse-proxy)
+CORE_SERVICES=(postgres camunda-db web-modeler-db elasticsearch mailpit reverse-proxy)
 TEST_MODE=false
 RETENTION_DAYS=7
 CUSTOM_BACKUP_DIR=""
@@ -297,6 +297,7 @@ main() {
     fi
     log "[TEST] Would backup Zeebe state from volume 'orchestration'"
     log "[TEST] Would pg_dump Keycloak DB: ${POSTGRES_DB:-}"
+    log "[TEST] Would pg_dump Camunda DB: ${CAMUNDA_DB_NAME:-}"
     log "[TEST] Would pg_dump Web Modeler DB: ${WEBMODELER_DB_NAME:-}"
     log "[TEST] Would create Elasticsearch snapshot"
   else
@@ -343,6 +344,17 @@ main() {
       exit 1
     fi
     log "Keycloak DB backed up: $backup_dir/keycloak.sql.gz"
+
+    log "Backing up Camunda database..."
+    if ! docker exec camunda-db pg_dump -Fc -U "${CAMUNDA_DB_USER}" "${CAMUNDA_DB_NAME}" 2>>"$LOG_FILE" | gzip > "$backup_dir/camunda.sql.gz"; then
+      log "ERROR: Camunda DB backup failed"
+      exit 1
+    fi
+    if ! gzip -t "$backup_dir/camunda.sql.gz" 2>>"$LOG_FILE"; then
+      log "ERROR: Camunda DB backup produced invalid gzip"
+      exit 1
+    fi
+    log "Camunda DB backed up: $backup_dir/camunda.sql.gz"
 
     log "Backing up Web Modeler database..."
     if ! docker exec web-modeler-db pg_dump -Fc -U "${WEBMODELER_DB_USER}" "${WEBMODELER_DB_NAME}" 2>>"$LOG_FILE" | gzip > "$backup_dir/webmodeler.sql.gz"; then

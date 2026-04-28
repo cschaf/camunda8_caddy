@@ -38,6 +38,7 @@ $RestoreKeycloak = $false
 $RestoreWebmodeler = $false
 $RestoreElasticsearch = $false
 $RestoreOrchestration = $false
+$RestoreCamunda = $false
 $RestoreConfigs = $false
 
 function Show-Usage {
@@ -55,7 +56,7 @@ function Show-Usage {
     Write-Host "  --skip-pull       Skip pre-flight docker compose pull for offline/air-gapped restores"
     Write-Host "  --rehost-keycloak Patch restored Keycloak clients to the current HOST and local client secrets"
     Write-Host "  --components LIST Restore only selected components"
-    Write-Host "                    Allowed: all,keycloak,webmodeler,elasticsearch,orchestration,configs"
+    Write-Host "                    Allowed: all,keycloak,webmodeler,elasticsearch,orchestration,camunda,configs"
     Write-Host "                    Example: --components keycloak,webmodeler"
     Write-Host "  --verify          Verify backup integrity without restoring"
     Write-Host "  --env-file FILE   Use a custom env file instead of .env"
@@ -210,6 +211,7 @@ function Set-RestoreComponents {
     $script:RestoreWebmodeler = $false
     $script:RestoreElasticsearch = $false
     $script:RestoreOrchestration = $false
+    $script:RestoreCamunda = $false
     $script:RestoreConfigs = $false
 
     $normalized = ($script:RestoreComponents.ToLowerInvariant() -replace '\s+', '')
@@ -219,6 +221,7 @@ function Set-RestoreComponents {
         $script:RestoreWebmodeler = $true
         $script:RestoreElasticsearch = $true
         $script:RestoreOrchestration = $true
+        $script:RestoreCamunda = $true
         $script:RestoreConfigs = $true
         $script:RestoreComponents = "all"
         return
@@ -230,6 +233,7 @@ function Set-RestoreComponents {
             { $_ -in "webmodeler","web-modeler" } { $script:RestoreWebmodeler = $true }
             { $_ -in "elasticsearch","elastic" } { $script:RestoreElasticsearch = $true }
             { $_ -in "orchestration","zeebe" } { $script:RestoreOrchestration = $true }
+            "camunda" { $script:RestoreCamunda = $true }
             { $_ -in "configs","config","configuration" } { $script:RestoreConfigs = $true }
             "all" {
                 $script:RestoreAll = $true
@@ -237,6 +241,7 @@ function Set-RestoreComponents {
                 $script:RestoreWebmodeler = $true
                 $script:RestoreElasticsearch = $true
                 $script:RestoreOrchestration = $true
+                $script:RestoreCamunda = $true
                 $script:RestoreConfigs = $true
                 $script:RestoreComponents = "all"
                 return
@@ -304,6 +309,10 @@ function Test-ServiceReadiness {
     switch ($Service) {
         "postgres" {
             docker exec postgres pg_isready -U "$env:POSTGRES_USER" *> $null
+            return ($LASTEXITCODE -eq 0)
+        }
+        "camunda-db" {
+            docker exec camunda-db pg_isready -U "$env:CAMUNDA_DB_USER" *> $null
             return ($LASTEXITCODE -eq 0)
         }
         "web-modeler-db" {
@@ -383,6 +392,7 @@ function Validate-RestoreInputs {
     $requiredFiles = @("manifest.json")
     if ($RestoreConfigs) { $requiredFiles += "configs.tar.gz" }
     if ($RestoreKeycloak) { $requiredFiles += "keycloak.sql.gz" }
+    if ($RestoreCamunda) { $requiredFiles += "camunda.sql.gz" }
     if ($RestoreWebmodeler) { $requiredFiles += "webmodeler.sql.gz" }
     if ($RestoreOrchestration) { $requiredFiles += "orchestration.tar.gz" }
     if ($RestoreElasticsearch) { $requiredFiles += "snapshot-info.json" }
@@ -411,6 +421,11 @@ function Validate-RestoreInputs {
     if ($RestoreKeycloak) {
         gzip -t (Join-Path $BackupDir "keycloak.sql.gz")
         if ($LASTEXITCODE -ne 0) { Log "ERROR: Keycloak dump is not valid gzip"; exit 1 }
+    }
+
+    if ($RestoreCamunda) {
+        gzip -t (Join-Path $BackupDir "camunda.sql.gz")
+        if ($LASTEXITCODE -ne 0) { Log "ERROR: Camunda dump is not valid gzip"; exit 1 }
     }
 
     if ($RestoreWebmodeler) {
@@ -615,9 +630,11 @@ function Main {
         Log "Removing data volumes..."
         if ($DryRun) {
             if ($RestoreAll) {
-                Log "[DRY-RUN] Would remove volumes: orchestration, elastic, postgres, postgres-web"
+                Log "[DRY-RUN] Would remove volumes: orchestration, elastic, postgres, postgres-web, camunda-db"
             } elseif ($RestoreOrchestration) {
                 Log "[DRY-RUN] Would remove volume: orchestration"
+            } elseif ($RestoreCamunda) {
+                Log "[DRY-RUN] Would remove volume: camunda-db"
             } else {
                 Log "[DRY-RUN] Would keep existing Docker data volumes"
             }
@@ -630,10 +647,13 @@ function Main {
                     (Get-ComposeVolumeName "orchestration"),
                     (Get-ComposeVolumeName "elastic"),
                     (Get-ComposeVolumeName "postgres"),
-                    (Get-ComposeVolumeName "postgres-web")
+                    (Get-ComposeVolumeName "postgres-web"),
+                    (Get-ComposeVolumeName "camunda-db")
                 )
             } elseif ($RestoreOrchestration) {
                 $volumes = @((Get-ComposeVolumeName "orchestration"))
+            } elseif ($RestoreCamunda) {
+                $volumes = @((Get-ComposeVolumeName "camunda-db"))
             }
             foreach ($vol in $volumes) {
                 try {
@@ -652,6 +672,7 @@ function Main {
         Log "Starting core services with fresh volumes..."
         $coreServices = @()
         if ($RestoreKeycloak) { $coreServices += "postgres" }
+        if ($RestoreCamunda) { $coreServices += "camunda-db" }
         if ($RestoreWebmodeler) { $coreServices += "web-modeler-db" }
         if ($RestoreElasticsearch) { $coreServices += "elasticsearch" }
         if ($DryRun) {
@@ -670,6 +691,7 @@ function Main {
         # Wait for core services
         if (-not $DryRun) {
             if ($RestoreKeycloak -and -not (Wait-ForService -Service "postgres")) { exit 1 }
+            if ($RestoreCamunda -and -not (Wait-ForService -Service "camunda-db")) { exit 1 }
             if ($RestoreWebmodeler -and -not (Wait-ForService -Service "web-modeler-db")) { exit 1 }
             if ($RestoreElasticsearch -and -not (Wait-ForService -Service "elasticsearch")) { exit 1 }
             Log "Core services are healthy."
@@ -718,6 +740,39 @@ function Main {
             }
             else {
                 Log "ERROR: Keycloak backup not found."
+                exit 1
+            }
+        }
+
+        # Restore Camunda DB
+        $camundaBackup = Join-Path $BackupDir "camunda.sql.gz"
+        if (-not $RestoreCamunda) {
+            Log "Skipping Camunda database restore."
+        } elseif ($DryRun) {
+            Log "Restoring Camunda database..."
+            Log "[DRY-RUN] Would restore Camunda DB from: $camundaBackup"
+            Log "[DRY-RUN] Would run ANALYZE on Camunda DB"
+        }
+        else {
+            Log "Restoring Camunda database..."
+            if (Test-Path $camundaBackup) {
+                $pgStderrFile = [System.IO.Path]::GetTempFileName()
+                $pgRestoreCmd = "gzip -d -c `"$camundaBackup`" | docker exec -i camunda-db pg_restore -U `"$env:CAMUNDA_DB_USER`" -d `"$env:CAMUNDA_DB_NAME`" --clean --if-exists"
+                Invoke-Expression "$pgRestoreCmd 2>$pgStderrFile" | Out-Null
+                if ($LASTEXITCODE -ne 0) {
+                    Log "ERROR: Camunda pg_restore failed (code: $LASTEXITCODE). stderr:"
+                    Get-Content $pgStderrFile -ErrorAction SilentlyContinue | ForEach-Object { Log "  $_" }
+                    Remove-Item $pgStderrFile -ErrorAction SilentlyContinue
+                    exit 1
+                }
+                Remove-Item $pgStderrFile -ErrorAction SilentlyContinue
+                Log "Camunda database restored."
+                Log "Refreshing Camunda DB planner statistics (ANALYZE)..."
+                docker exec camunda-db psql -U "$env:CAMUNDA_DB_USER" -d "$env:CAMUNDA_DB_NAME" -c "ANALYZE;" 2>> $Global:LogFile | Out-Null
+                if ($LASTEXITCODE -ne 0) { Log "ERROR: ANALYZE on Camunda DB failed"; exit 1 }
+            }
+            else {
+                Log "ERROR: Camunda backup not found."
                 exit 1
             }
         }

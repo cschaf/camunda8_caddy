@@ -2,6 +2,12 @@ spring:
   profiles:
     active: "admin,operate,tasklist,broker,consolidated-auth"
 
+  datasource:
+    url: jdbc:postgresql://camunda-db:5432/camunda
+    username: camunda
+    password: ${CAMUNDA_DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+
 management:
   server:
     port: 9600
@@ -56,26 +62,24 @@ zeebe:
 
     # zeebe.broker.exporters
     exporters:
-      elasticsearch:
-        className: "io.camunda.zeebe.exporter.ElasticsearchExporter"
+      camunda:
+        className: "io.camunda.exporter.CamundaExporter"
         args:
-          url: "http://elasticsearch:9200"
-          # Default is 1000; batching avoids excessive Lucene segment churn.
-          # A value of 1 would write every event individually, causing rapid index growth.
-          bulk:
-            size: 1000
+          connect:
+            type: rdbms
+            url: "jdbc:postgresql://camunda-db:5432/camunda"
+            username: "camunda"
+            password: "${CAMUNDA_DB_PASSWORD}"
           index:
-            prefix: "zeebe-record"
-            numberOfShards: 1
-            numberOfReplicas: 0
+            prefix: "camunda-record"
           retention:
             enabled: true
             minimumAge: 90d
-            policyName: zeebe-record-retention-policy
+            policyName: camunda-record-retention-policy
 
 camunda:
   database:
-    type: elasticsearch
+    type: rdbms
     index:
       numberOfReplicas: 0
   backup:
@@ -110,11 +114,6 @@ camunda:
             - connectors
           clients:
             - connectors
-  data:
-    secondary-storage:
-      type: elasticsearch
-      elasticsearch:
-        url: "http://elasticsearch:9200"
 
   operate:
     persistentSessionsEnabled: true
@@ -130,4 +129,3 @@ camunda:
     archiver:
       ilmEnabled: true
       ilmMinAgeForDeleteArchivedIndices: 90d
-

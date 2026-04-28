@@ -22,7 +22,7 @@ $TestMode = $false
 $RetentionDays = 7
 $CustomBackupDir = ""
 $EncryptTo = ""
-$CoreServices = @("postgres", "web-modeler-db", "elasticsearch", "mailpit", "reverse-proxy")
+$CoreServices = @("postgres", "camunda-db", "web-modeler-db", "elasticsearch", "mailpit", "reverse-proxy")
 $AppServices = @()
 
 function Show-Usage {
@@ -254,6 +254,7 @@ function Main {
             }
             Log "[TEST] Would backup Zeebe state from volume 'orchestration'"
             Log "[TEST] Would pg_dump Keycloak DB: $env:POSTGRES_DB"
+            Log "[TEST] Would pg_dump Camunda DB: $env:CAMUNDA_DB_NAME"
             Log "[TEST] Would pg_dump Web Modeler DB: $env:WEBMODELER_DB_NAME"
             Log "[TEST] Would create Elasticsearch snapshot"
         }
@@ -322,6 +323,32 @@ function Main {
                 Remove-Item -Path $tmpDumpFile -Force -ErrorAction SilentlyContinue
             }
             Log "Keycloak DB backed up: $outputFile"
+
+            Log "Backing up Camunda database..."
+            $outputFile = Join-Path $backupDir "camunda.sql.gz"
+            $tmpDumpFile = Join-Path $backupDir "camunda.sql"
+            try {
+                & docker exec camunda-db pg_dump -Fc -U "$env:CAMUNDA_DB_USER" "$env:CAMUNDA_DB_NAME" 2>> $Global:LogFile > $tmpDumpFile
+                $pgDumpExit = $LASTEXITCODE
+                if ($pgDumpExit -ne 0 -or -not (Test-Path $tmpDumpFile) -or (Get-Item $tmpDumpFile).Length -eq 0) {
+                    Log "ERROR: Camunda DB backup failed"
+                    exit 1
+                }
+                gzip -c $tmpDumpFile > $outputFile
+                if ($LASTEXITCODE -ne 0 -or -not (Test-Path $outputFile) -or (Get-Item $outputFile).Length -eq 0) {
+                    Log "ERROR: Camunda DB gzip failed"
+                    exit 1
+                }
+                gzip -t $outputFile 2>> $Global:LogFile
+                if ($LASTEXITCODE -ne 0) {
+                    Log "ERROR: Camunda DB backup produced invalid gzip"
+                    exit 1
+                }
+            }
+            finally {
+                Remove-Item -Path $tmpDumpFile -Force -ErrorAction SilentlyContinue
+            }
+            Log "Camunda DB backed up: $outputFile"
 
             Log "Backing up Web Modeler database..."
             $outputFile = Join-Path $backupDir "webmodeler.sql.gz"

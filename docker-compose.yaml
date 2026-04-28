@@ -47,6 +47,11 @@ services:
       CAMUNDA_IDENTITY_ISSUERBACKENDURL: http://${KEYCLOAK_HOST:?KEYCLOAK_HOST is required}:18080/auth/realms/camunda-platform
       CAMUNDA_IDENTITY_BASEURL: http://identity:8084
       CAMUNDA_IDENTITY_AUDIENCE: orchestration-api
+      # Database configuration (RDBMS)
+      CAMUNDA_DATABASE_TYPE: rdbms
+      SPRING_DATASOURCE_URL: jdbc:postgresql://camunda-db:5432/camunda
+      SPRING_DATASOURCE_USERNAME: camunda
+      SPRING_DATASOURCE_PASSWORD: ${CAMUNDA_DB_PASSWORD:?CAMUNDA_DB_PASSWORD is required}
       # Resource limits
       JAVA_TOOL_OPTIONS: "-Xms4500m -Xmx4500m"
     env_file:
@@ -80,7 +85,7 @@ services:
     depends_on:
       camunda-data-init:
         condition: service_completed_successfully
-      elasticsearch:
+      camunda-db:
         condition: service_healthy
 
   connectors: # https://docs.camunda.io/docs/self-managed/connectors-deployment/connectors-configuration/
@@ -261,6 +266,37 @@ services:
       - postgres:/var/lib/postgresql/data
     networks:
       - identity-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  camunda-db:
+    container_name: camunda-db
+    image: postgres:${POSTGRES_VERSION}
+    environment:
+      POSTGRES_DB: camunda
+      POSTGRES_USER: camunda
+      POSTGRES_PASSWORD: ${CAMUNDA_DB_PASSWORD:?CAMUNDA_DB_PASSWORD is required}
+    labels:
+      - autoheal=true
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          cpus: "0.25"
+          memory: 512m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d camunda -U camunda"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    volumes:
+      - camunda-db:/var/lib/postgresql/data
+    networks:
+      - camunda-platform
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
@@ -622,6 +658,7 @@ volumes:
   postgres:
   keycloak-theme:
   postgres-web:
+  camunda-db:
 
 networks:
   # Note there are three bridge networks: One for Camunda Platform, one for Identity and one for Web Modeler.

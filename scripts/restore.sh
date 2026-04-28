@@ -37,6 +37,7 @@ RESTORE_KEYCLOAK=false
 RESTORE_WEBMODELER=false
 RESTORE_ELASTICSEARCH=false
 RESTORE_ORCHESTRATION=false
+RESTORE_CAMUNDA=false
 RESTORE_CONFIGS=false
 STACK_DOWN_FOR_RESTORE=false
 RESTORE_COMPOSE_CMD=""
@@ -76,7 +77,7 @@ usage() {
   echo "  --skip-pull       Skip pre-flight docker compose pull for offline/air-gapped restores"
   echo "  --rehost-keycloak Patch restored Keycloak clients to the current HOST and local client secrets"
   echo "  --components LIST Restore only selected components"
-  echo "                    Allowed: all,keycloak,webmodeler,elasticsearch,orchestration,configs"
+  echo "                    Allowed: all,keycloak,webmodeler,elasticsearch,orchestration,camunda,configs"
   echo "                    Example: --components keycloak,webmodeler"
   echo "  --verify          Verify backup integrity without restoring"
   echo "  --env-file FILE   Use a custom env file instead of .env"
@@ -248,6 +249,7 @@ configure_restore_components() {
   RESTORE_WEBMODELER=false
   RESTORE_ELASTICSEARCH=false
   RESTORE_ORCHESTRATION=false
+  RESTORE_CAMUNDA=false
   RESTORE_CONFIGS=false
 
   local normalized
@@ -258,6 +260,7 @@ configure_restore_components() {
     RESTORE_WEBMODELER=true
     RESTORE_ELASTICSEARCH=true
     RESTORE_ORCHESTRATION=true
+    RESTORE_CAMUNDA=true
     RESTORE_CONFIGS=true
     RESTORE_COMPONENTS="all"
     return
@@ -279,6 +282,9 @@ configure_restore_components() {
       orchestration|zeebe)
         RESTORE_ORCHESTRATION=true
         ;;
+      camunda)
+        RESTORE_CAMUNDA=true
+        ;;
       configs|config|configuration)
         RESTORE_CONFIGS=true
         ;;
@@ -288,6 +294,7 @@ configure_restore_components() {
         RESTORE_WEBMODELER=true
         RESTORE_ELASTICSEARCH=true
         RESTORE_ORCHESTRATION=true
+        RESTORE_CAMUNDA=true
         RESTORE_CONFIGS=true
         RESTORE_COMPONENTS="all"
         return
@@ -360,6 +367,9 @@ service_readiness_check() {
     postgres)
       docker exec postgres pg_isready -U "${POSTGRES_USER}" >/dev/null 2>&1
       ;;
+    camunda-db)
+      docker exec camunda-db pg_isready -U "${CAMUNDA_DB_USER}" >/dev/null 2>&1
+      ;;
     web-modeler-db)
       docker exec web-modeler-db pg_isready -U "${WEBMODELER_DB_USER}" >/dev/null 2>&1
       ;;
@@ -411,6 +421,7 @@ validate_restore_inputs() {
   local required_files=("manifest.json")
   [[ "$RESTORE_CONFIGS" == true ]] && required_files+=("configs.tar.gz")
   [[ "$RESTORE_KEYCLOAK" == true ]] && required_files+=("keycloak.sql.gz")
+  [[ "$RESTORE_CAMUNDA" == true ]] && required_files+=("camunda.sql.gz")
   [[ "$RESTORE_WEBMODELER" == true ]] && required_files+=("webmodeler.sql.gz")
   [[ "$RESTORE_ORCHESTRATION" == true ]] && required_files+=("orchestration.tar.gz")
   [[ "$RESTORE_ELASTICSEARCH" == true ]] && required_files+=("snapshot-info.json")
@@ -436,6 +447,9 @@ validate_restore_inputs() {
 
   if [[ "$RESTORE_KEYCLOAK" == true ]]; then
     gzip -t "$backup_dir/keycloak.sql.gz" 2>>"$LOG_FILE" || { log "ERROR: Keycloak dump is not valid gzip"; exit 1; }
+  fi
+  if [[ "$RESTORE_CAMUNDA" == true ]]; then
+    gzip -t "$backup_dir/camunda.sql.gz" 2>>"$LOG_FILE" || { log "ERROR: Camunda dump is not valid gzip"; exit 1; }
   fi
   if [[ "$RESTORE_WEBMODELER" == true ]]; then
     gzip -t "$backup_dir/webmodeler.sql.gz" 2>>"$LOG_FILE" || { log "ERROR: Web Modeler dump is not valid gzip"; exit 1; }
@@ -687,11 +701,14 @@ PYEOF
     local proj
     proj="$(get_compose_project_name)"
     if [[ "$RESTORE_ALL" == true ]]; then
-      docker volume rm "${proj}_orchestration" "${proj}_elastic" "${proj}_postgres" "${proj}_postgres-web" 2>>"$LOG_FILE" || true
+      docker volume rm "${proj}_orchestration" "${proj}_elastic" "${proj}_postgres" "${proj}_postgres-web" "${proj}_camunda-db" 2>>"$LOG_FILE" || true
       log "Volumes removed."
     elif [[ "$RESTORE_ORCHESTRATION" == true ]]; then
       docker volume rm "${proj}_orchestration" 2>>"$LOG_FILE" || true
       log "Orchestration volume removed."
+    elif [[ "$RESTORE_CAMUNDA" == true ]]; then
+      docker volume rm "${proj}_camunda-db" 2>>"$LOG_FILE" || true
+      log "Camunda DB volume removed."
     else
       log "No Docker data volumes removed for granular restore."
     fi
@@ -704,6 +721,7 @@ PYEOF
   if [[ "$DRY_RUN" == true ]]; then
     local core_services=()
     [[ "$RESTORE_KEYCLOAK" == true ]] && core_services+=("postgres")
+    [[ "$RESTORE_CAMUNDA" == true ]] && core_services+=("camunda-db")
     [[ "$RESTORE_WEBMODELER" == true ]] && core_services+=("web-modeler-db")
     [[ "$RESTORE_ELASTICSEARCH" == true ]] && core_services+=("elasticsearch")
     if [[ ${#core_services[@]} -gt 0 ]]; then
@@ -714,6 +732,7 @@ PYEOF
   else
     local core_services=()
     [[ "$RESTORE_KEYCLOAK" == true ]] && core_services+=("postgres")
+    [[ "$RESTORE_CAMUNDA" == true ]] && core_services+=("camunda-db")
     [[ "$RESTORE_WEBMODELER" == true ]] && core_services+=("web-modeler-db")
     [[ "$RESTORE_ELASTICSEARCH" == true ]] && core_services+=("elasticsearch")
     if [[ ${#core_services[@]} -gt 0 ]]; then
@@ -725,6 +744,9 @@ PYEOF
   if [[ "$DRY_RUN" == false ]]; then
     if [[ "$RESTORE_KEYCLOAK" == true ]]; then
       wait_for_service "postgres" || exit 1
+    fi
+    if [[ "$RESTORE_CAMUNDA" == true ]]; then
+      wait_for_service "camunda-db" || exit 1
     fi
     if [[ "$RESTORE_WEBMODELER" == true ]]; then
       wait_for_service "web-modeler-db" || exit 1
@@ -779,6 +801,38 @@ PYEOF
   fi
   else
     log "Skipping Keycloak database restore."
+  fi
+
+  if [[ "$RESTORE_CAMUNDA" == true ]]; then
+  log "Restoring Camunda database..."
+  if [[ "$DRY_RUN" == true ]]; then
+    log "[DRY-RUN] Would restore Camunda DB from: $BACKUP_DIR/camunda.sql.gz"
+    log "[DRY-RUN] Would run ANALYZE on Camunda DB"
+  else
+    if [[ -f "$BACKUP_DIR/camunda.sql.gz" ]]; then
+      local pg_stderr
+      pg_stderr="$(mktemp)"
+      if ! gunzip -c "$BACKUP_DIR/camunda.sql.gz" | docker exec -i camunda-db pg_restore \
+        -U "${CAMUNDA_DB_USER}" -d "${CAMUNDA_DB_NAME}" --clean --if-exists 2>"$pg_stderr"; then
+        log "ERROR: Camunda pg_restore failed. stderr:"
+        while IFS= read -r line; do
+          log "  $line"
+        done < "$pg_stderr"
+        rm -f "$pg_stderr"
+        exit 1
+      fi
+      rm -f "$pg_stderr"
+      log "Camunda database restored."
+      log "Refreshing Camunda DB planner statistics (ANALYZE)..."
+      docker exec camunda-db psql -U "${CAMUNDA_DB_USER}" -d "${CAMUNDA_DB_NAME}" \
+        -c "ANALYZE;" >/dev/null 2>>"$LOG_FILE" || { log "ERROR: ANALYZE on Camunda DB failed"; exit 1; }
+    else
+      log "ERROR: Camunda backup not found."
+      exit 1
+    fi
+  fi
+  else
+    log "Skipping Camunda database restore."
   fi
 
   if [[ "$RESTORE_WEBMODELER" == true ]]; then
