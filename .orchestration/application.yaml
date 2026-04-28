@@ -82,6 +82,13 @@ camunda:
     type: rdbms
     index:
       numberOfReplicas: 0
+  data:
+    secondary-storage:
+      type: rdbms
+      rdbms:
+        url: "jdbc:postgresql://camunda-db:5432/camunda"
+        username: "camunda"
+        password: "${CAMUNDA_DB_PASSWORD}"
   backup:
     webapps:
       enabled: false
