@@ -1,9 +1,9 @@
-# Camunda 8.8 Docker Compose — Project Configuration
+# Camunda 8.9 Docker Compose — Project Configuration
 
 This document describes every configuration in this stack, explaining what each setting does, what the default would be, and why this stack's value was chosen. It serves as the authoritative reference for why the stack is configured the way it is.
 
 **Target server:** Depends on environment stage — see [Resource Allocation](#3-resource-allocation)
-**Architecture:** Self-managed Camunda 8.8 on Docker Compose
+**Architecture:** Self-managed Camunda 8.9 on Docker Compose
 **Purpose:** Production-oriented single-node Docker Compose profile with configurable resource tiers (prod / dev / test)
 
 > **Production readiness note:** This is a **single-node Docker Compose profile** — not a highly available production deployment. For production environments, Camunda recommends Kubernetes with Helm (see [Camunda Self-Managed Deployment Overview](https://docs.camunda.io/docs/next/self-managed/setup/overview/)). This profile is suitable for **non-production environments** such as development, testing, and staging. Review the [Development vs Production Trade-offs](#11-development-vs-production-trade-offs) section before using this in any environment where security, durability, or availability matter.
@@ -28,18 +28,18 @@ This document describes every configuration in this stack, explaining what each 
 
 ## 1. Architecture Overview
 
-This stack deploys a full Camunda 8.8 self-managed platform with:
+This stack deploys a full Camunda 8.9 self-managed platform with:
 
 | Component | Image | Purpose |
 |-----------|-------|---------|
-| **Orchestration** | `camunda/camunda:8.8.21` | Zeebe broker + Operate + Tasklist in one container |
-| **Elasticsearch** | `docker.elastic.co/elasticsearch/elasticsearch:8.17.10` | Process instance data, export data, Operate/Tasklist/Optimize storage |
-| **Identity** | `camunda/identity:8.8.10` | Centralized identity, OIDC provider integration, role management |
+| **Orchestration** | `camunda/camunda:8.9.1` | Zeebe broker + Operate + Tasklist in one container |
+| **Elasticsearch** | `docker.elastic.co/elasticsearch/elasticsearch:8.19.11` | Process instance data, export data, Operate/Tasklist/Optimize storage |
+| **Identity** | `camunda/identity:8.9.1` | Centralized identity, OIDC provider integration, role management |
 | **Keycloak** | `bitnamilegacy/keycloak:26.3.2` | OIDC identity provider, realm/client setup, user authentication |
-| **Optimize** | `camunda/optimize:8.8.8` | Process analytics and optimization |
-| **Connectors** | `camunda/connectors-bundle:8.8.10` | Outbound integrations and webhooks |
-| **Web Modeler** | `camunda/web-modeler:*:8.8.12` | BPMN process modeling (REST API + WebApp + WebSockets) |
-| **Console** | `camunda/console:8.8.133` | Cluster overview and management UI |
+| **Optimize** | `camunda/optimize:8.9.1` | Process analytics and optimization |
+| **Connectors** | `camunda/connectors-bundle:8.9.1` | Outbound integrations and webhooks |
+| **Web Modeler** | `camunda/web-modeler-restapi:8.9.1` | BPMN process modeling (REST API serves UI + WebSockets) |
+| **Console** | `camunda/console:8.9.26` | Cluster overview and management UI |
 | **PostgreSQL** (×2) | `postgres:15-alpine3.22` | Identity/Keycloak DB + Web Modeler DB |
 | **Caddy** | `caddy:latest` | Reverse proxy with automatic HTTPS and subdomain routing |
 | **Autoheal** | `willfarrell/autoheal:latest` | Restarts labeled containers when Docker health checks mark them as unhealthy |
@@ -48,9 +48,9 @@ This stack deploys a full Camunda 8.8 self-managed platform with:
 
 Three Docker networks isolate traffic:
 
-- **`camunda-platform`** — Main platform: orchestration, connectors, optimize, console, elasticsearch, keycloak, identity, web-modeler-restapi, web-modeler-webapp, reverse-proxy
+- **`camunda-platform`** — Main platform: orchestration, connectors, optimize, console, elasticsearch, keycloak, identity, web-modeler-restapi, reverse-proxy
 - **`identity-network`** — Keycloak ↔ PostgreSQL (identity DB) ↔ Identity
-- **`web-modeler`** — web-modeler-db ↔ mailpit ↔ web-modeler-restapi ↔ web-modeler-websockets ↔ web-modeler-webapp; also connects to `camunda-platform` to reach orchestration and identity
+- **`web-modeler`** — web-modeler-db ↔ mailpit ↔ web-modeler-restapi ↔ web-modeler-websockets; also connects to `camunda-platform` to reach orchestration and identity
 
 ---
 
@@ -104,9 +104,8 @@ The following table shows the **base** resource configuration — what the `prod
 | connectors | 1.0 | 1G | 512m | `-Xmx768m` | 75% of limit; outbound integrations only |
 | identity | 1.0 | 1G | 256m | `-Xms256m -Xmx768m` | 75% of limit; Spring Boot service |
 | console | 0.5 | 1G | 512m | `-Xms256m -Xmx768m` | 75% of limit; Node.js but has a JVM sidecar for metrics |
-| web-modeler-restapi | 1.0 | 1G | 512m | `-Xmx768m` | 75% of limit; Java REST API |
+| web-modeler-restapi | 1.0 | 1G | 512m | `-Xmx768m` | 75% of limit; Java REST API + webapp UI (8.9+) |
 | postgres (identity) | 1.0 | 1G | 512m | — | No JVM; PostgreSQL manages own memory |
-| web-modeler-webapp | 0.5 | 512m | 128m | — | Node.js React app |
 | postgres (web-modeler) | 0.5 | 512m | 256m | — | No JVM |
 | reverse-proxy | 0.5 | 256m | 64m | — | Caddy Go process |
 | web-modeler-websockets | 0.5 | 256m | 64m | — | Node.js WebSocket server |
@@ -197,12 +196,12 @@ Without cleanup, these indices accumulate indefinitely. The old configuration ha
 | Component | Retention Mechanism | Minimum Age | What Gets Deleted |
 |-----------|-------------------|-------------|-------------------|
 | Zeebe Exporter | ILM policy on index templates | 90 days | Old `zeebe-record-*` daily indices |
-| Camunda Exporter | History retention policy | 90 days | Old Camunda unified history indices |
+| Camunda Data (secondaryStorage) | ILM policy on index templates | 90 days | Old `camunda-*` history indices |
 | Operate | Archiver ILM | 90 days | Archived `operate-*` indices older than 90 days |
 | Tasklist | Archiver ILM | 90 days | Archived `tasklist-*` indices older than 90 days |
 | Optimize | Optimize's built-in cleanup | 365 days (configured in `.optimize/environment-config.yaml`) | Process data older than 365 days |
 
-**Why two tiers?** Orchestration components (Zeebe, Camunda Exporter, Operate, Tasklist) keep operational data for 90 days — enough for incident follow-up, instance history lookups, and Operate/Tasklist troubleshooting. Optimize keeps aggregated analytical data for 365 days (12 months) so year-over-year comparisons and full annual trend reports remain possible. Optimize stores aggregated, compact data; the disk impact at low process volumes (a few thousand instances/year) stays in the single-GB range.
+**Why two tiers?** Orchestration components (Zeebe exporter, secondary storage, Operate, Tasklist) keep operational data for 90 days — enough for incident follow-up, instance history lookups, and Operate/Tasklist troubleshooting. Optimize keeps aggregated analytical data for 365 days (12 months) so year-over-year comparisons and full annual trend reports remain possible. Optimize stores aggregated, compact data; the disk impact at low process volumes (a few thousand instances/year) stays in the single-GB range.
 
 **Shard reduction:** All exporters and Optimize are now configured with `numberOfShards: 1`. On a single-node deployment, multiple shards provide zero parallelism — the node cannot distribute shards to other nodes. Each additional shard only adds heap overhead (mappings, segments, bitsets). Reducing from 3 to 1 cuts total shard count by ~67%.
 
@@ -272,19 +271,13 @@ exporters:
       index:
         numberOfShards: 1
         numberOfReplicas: 0
-  CamundaExporter:
-    args:
-      index:
-        numberOfShards: 1
-        numberOfReplicas: 0
 ```
 
 | Setting | Value | Default | Why |
 |---------|-------|---------|-----|
 | `elasticsearch.index.numberOfShards` | `1` | `3` | The Zeebe Elasticsearch exporter creates one index per record type per day. The upstream default of 3 shards per index is designed for multi-node clusters where shards are distributed for parallelism. On a single-node deployment, 3 shards provide zero benefit — the node cannot distribute work across itself. Each shard consumes heap for mappings, segments, and caches. Setting this to 1 reduces total shard count by ~67%. |
-| `elasticsearch.index.numberOfReplicas` | `0` | `0` | No replica on a single-node cluster. A replica would reside on the same node as the primary — no failover benefit, but double the disk and heap consumption. Explicitly set for consistency with the CamundaExporter and as protection against default changes in future Camunda versions. |
-| `CamundaExporter.index.numberOfShards` | `1` | `3` | Same rationale as above. The Camunda Exporter (new unified exporter in 8.6+) also defaults to 3 shards. Setting it to 1 on a single-node stack eliminates redundant heap overhead. |
-| `CamundaExporter.index.numberOfReplicas` | `0` | `0` | No replicas on a single-node cluster. A replica would live on the same node as the primary, providing no failover benefit while doubling disk and heap usage. |
+| `elasticsearch.index.numberOfReplicas` | `0` | `0` | No replica on a single-node cluster. A replica would reside on the same node as the primary — no failover benefit, but double the disk and heap consumption. Explicitly set for consistency with the database index settings and as protection against default changes in future Camunda versions. |
+| `camunda.database.index.numberOfReplicas` | `0` | `0` | No replicas on a single-node cluster. A replica would reside on the same node as the primary — no failover benefit, but double the disk and heap consumption. Explicitly set for consistency. |
 
 ### Exporter Data Retention (Zeebe Elasticsearch Exporter)
 
@@ -304,24 +297,25 @@ exporters:
 | `retention.minimumAge` | `90d` | `30d` | Indices older than 90 days are deleted by the ILM policy. 90 days covers an entire quarter of operational history — enough for incident follow-up, audits, and process-instance lookups in Operate/Tasklist — while still bounding shard growth. Adjust based on your compliance requirements. |
 | `retention.policyName` | `zeebe-record-retention-policy` | `zeebe-record-retention-policy` | The name of the ILM policy created in Elasticsearch. Can be changed if you manage multiple Camunda clusters on the same ES instance. |
 
-### Camunda Exporter History Retention
+### Camunda Data Secondary Storage
+
+In Camunda 8.9, the `CamundaExporter` was removed. Its functionality is now controlled via `camunda.data.secondaryStorage`:
 
 ```yaml
-exporters:
-  CamundaExporter:
-    args:
-      history:
-        retention:
-          enabled: true
-          minimumAge: 90d
-          policyName: camunda-retention-policy
+camunda:
+  data:
+    secondary-storage:
+      type: elasticsearch
+      elasticsearch:
+        url: "http://elasticsearch:9200"
 ```
 
 | Setting | Value | Default | Why |
 |---------|-------|---------|-----|
-| `history.retention.enabled` | `true` | `false` | The Camunda Exporter writes historical process data to time-based indices. Enabling retention ensures these indices are deleted automatically after the minimum age, preventing unbounded disk growth. |
-| `history.retention.minimumAge` | `90d` | `30d` | Matches the Zeebe exporter retention period so all Camunda historical data has a consistent 90-day lifecycle. |
-| `history.retention.policyName` | `camunda-retention-policy` | (empty) | The ILM policy name for Camunda Exporter indices. Distinct from the Zeebe exporter policy to allow independent tuning. |
+| `secondaryStorage.type` | `elasticsearch` | `rdbms` (8.9+) | Camunda 8.9 defaults to RDBMS. For existing Elasticsearch-based installations, you must explicitly declare `elasticsearch` to maintain the existing architecture and avoid data migration. |
+| `secondaryStorage.elasticsearch.url` | `http://elasticsearch:9200` | (none) | Internal Elasticsearch endpoint. Uses container DNS name. |
+
+**Migration note:** There is **no automatic migration path** from Elasticsearch to RDBMS in Camunda 8.9. Changing `database.type` or `secondaryStorage.type` to `rdbms` on an existing installation results in empty Operate/Tasklist data. Historical process instances, variables, and incidents remain in Elasticsearch but become invisible to the RDBMS-backed services. The RDBMS option is intended for **fresh installations only**. For upgrades with existing data, stay on Elasticsearch.
 
 ### Operate Archiver ILM
 
@@ -506,7 +500,7 @@ The `generate-secrets.sh` script creates a production-quality `.env` file:
 | `POSTGRES_PASSWORD` | PostgreSQL (identity DB), Keycloak | Database password for Keycloak's PostgreSQL |
 | `WEBMODELER_DB_PASSWORD` | PostgreSQL (web-modeler DB), web-modeler-restapi | Database password for Web Modeler's PostgreSQL |
 | `KEYCLOAK_ADMIN_PASSWORD` | Keycloak | Keycloak admin console password |
-| `WEBMODELER_PUSHER_KEY` | web-modeler-webapp, web-modeler-websockets | Pusher WebSocket authentication |
+| `WEBMODELER_PUSHER_KEY` | web-modeler-restapi, web-modeler-websockets | Pusher WebSocket authentication |
 | `WEBMODELER_PUSHER_SECRET` | web-modeler-websockets | Pusher WebSocket authentication |
 | `DEMO_USER_PASSWORD` | Identity (creates demo user) | Password for the demo user account |
 
@@ -668,9 +662,8 @@ Three components:
 
 | Component | Image | Port | JVM Heap | Purpose |
 |-----------|-------|------|----------|---------|
-| web-modeler-restapi | `camunda/web-modeler-restapi:8.8.12` | 8091 | `-Xmx768m` | Java REST API + database access |
-| web-modeler-webapp | `camunda/web-modeler-webapp:8.8.12` | 8070 | — | Node.js React UI |
-| web-modeler-websockets | `camunda/web-modeler-websockets:8.8.12` | 8060 | — | Node.js Pusher WebSocket server for real-time collaboration |
+| web-modeler-restapi | `camunda/web-modeler-restapi:8.9.1` | 8081 (internal) / 8070 (host) | `-Xmx768m` | Java REST API + serves webapp UI (8.9+) |
+| web-modeler-websockets | `camunda/web-modeler-websockets:8.9.1` | 8060 | — | Node.js Pusher WebSocket server for real-time collaboration |
 | web-modeler-db | `postgres:15-alpine3.22` | 5432 | — | PostgreSQL for Web Modeler's own data |
 
 **Key env vars for web-modeler-restapi:**
@@ -701,7 +694,7 @@ The reverse proxy also defines a Docker health check against Caddy's local admin
 | `console.camunda.dev.local` | `console:8080` | Console UI |
 | `optimize.camunda.dev.local` | `optimize:8090` | Optimize UI |
 | `orchestration.camunda.dev.local` | `orchestration:8080` | Operate + Tasklist UIs |
-| `webmodeler.camunda.dev.local` | `web-modeler-webapp:8070` | Web Modeler UI + WebSocket |
+| `webmodeler.camunda.dev.local` | `web-modeler-restapi:8081` | Web Modeler UI + WebSocket |
 
 ### TLS Configuration
 
@@ -792,7 +785,7 @@ Optimize needs `X-Forwarded-Proto: https` to correctly construct OAuth2 redirect
 | keycloak | **18080** | 18080 | HTTP | Direct + via proxy |
 | elasticsearch | **9200**, 9300 | 9200, 9300 | HTTP/REST | Direct (no proxy) |
 | console | **8087**, 9100 | 8080, 9100 | HTTP | Via proxy |
-| web-modeler-webapp | **8070** | 8070 | HTTP | Via proxy |
+| web-modeler-restapi | **8070** | 8081 | HTTP | Via proxy (serves UI + API since 8.9) |
 | web-modeler-websockets | **8060** | 8060 | WebSocket | Via proxy (webmodeler.dev.local/app/*) |
 | mailpit | 1025, 8075 | 1025, 8025 | SMTP/HTTP | Direct (SMTP for web-modeler-restapi) |
 

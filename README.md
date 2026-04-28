@@ -145,11 +145,15 @@ pwsh -File scripts/start.ps1
 
 > **Note:** PowerShell 7+ required on Windows. For PS 5.1, use `docker compose -f docker-compose.yaml -f stages/$STAGE.yaml up -d` directly.
 
-Wait for all services to be healthy (may take 2–3 minutes on first start):
+Wait for all services to be healthy:
 
 ```bash
 docker compose ps
 ```
+
+> **Expect a slow first start (5–10 minutes).** The very first `up` runs a one-time bootstrap regardless of stage: Keycloak imports the realm, Identity provisions all OIDC clients in Keycloak, Postgres and web-modeler-db run schema migrations, and Elasticsearch creates index templates and ILM policies. During this phase `keycloak`, `identity`, and `web-modeler-restapi` are CPU-heavy and the UIs feel unresponsive. Subsequent starts reuse the persisted named volumes (`postgres`, `keycloak-theme`, `elastic`, `postgres-web`, …) and come up in 1–2 minutes. If a *later* start ever feels slow again, a volume was likely wiped (e.g. `docker compose down -v`) and you are paying the bootstrap cost a second time — check `docker volume ls` before assuming a config issue.
+>
+> **Always use the start scripts — not bare `docker compose up -d`.** The scripts read `STAGE` from `.env` and overlay `stages/<stage>.yaml` on top of `docker-compose.yaml`. Plain `docker compose up -d` loads only the base file, which is sized for `prod`. With `STAGE=dev` or `STAGE=test` you must use the wrapper, otherwise the JVM heap settings from the stage overlay are not applied and Java services get the production heap (e.g. `-Xms4500m` for orchestration, `-Xms4g` for Elasticsearch) inside smaller container memory limits — the kernel OOM-killer terminates them on startup (exit 137). At `STAGE=prod` the base and the overlay match, so bare `docker compose up -d` works but bypasses `STAGE` validation; using the wrapper consistently avoids the trap.
 
 The stack also includes an `autoheal` sidecar that watches labeled containers and restarts them when Docker marks them as `unhealthy`. It complements `restart: unless-stopped`, which covers unexpected process exits. `autoheal` does not restart containers that were stopped intentionally with `docker stop` or removed with `docker compose down`.
 
@@ -232,8 +236,8 @@ All configuration is driven by the `HOST` variable in `.env`. To switch domain:
 1. Edit `.env` and set `HOST=your-new-domain`
 2. If you want trusted TLS, place certificate files in `certs/` and set `FULLCHAIN_PEM`/`PRIVATEKEY_PEM` in `.env` (see [Custom TLS certificates](#custom-tls-certificates-optional) above)
 3. Run `scripts/setup-host.sh` (Linux/macOS) or `pwsh -File scripts/setup-host.ps1` **as Administrator** (Windows) to update Caddyfile and hosts file
-4. Start/restart the cluster: `docker compose up -d` (or `docker compose restart reverse-proxy` if already running)
-5. If Keycloak data persists, the redirect URIs from `.identity/application.yaml` are already correct. Only if you see "Invalid redirect_uri" errors after hostname changes, wipe Keycloak's database volume and restart (`docker compose down -v keycloak-theme postgres && docker compose up -d`).
+4. Start/restart the cluster with `bash scripts/start.sh` (Linux/macOS) or `pwsh -File scripts/start.ps1` (Windows) — or `docker compose restart reverse-proxy` if already running
+5. If Keycloak data persists, the redirect URIs from `.identity/application.yaml` are already correct. Only if you see "Invalid redirect_uri" errors after hostname changes, wipe Keycloak's database volume and restart (`docker compose down -v keycloak-theme postgres && bash scripts/start.sh`).
 
 ### Accessing from other machines on the network
 

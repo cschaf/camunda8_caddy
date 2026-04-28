@@ -1,6 +1,16 @@
 # Production stage resources.
 # Full-size profile for production-grade hosts; mirrors docker-compose.yaml resource values.
 services:
+  camunda-data-init:
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128M
+        reservations:
+          cpus: "0.05"
+          memory: 32M
+
   orchestration:
     deploy:
       resources:
@@ -102,16 +112,6 @@ services:
         reservations:
           cpus: "0.25"
           memory: 512M
-
-  web-modeler-webapp:
-    deploy:
-      resources:
-        limits:
-          cpus: "0.5"
-          memory: 512M
-        reservations:
-          cpus: "0.1"
-          memory: 128M
 
   web-modeler-websockets:
     deploy:

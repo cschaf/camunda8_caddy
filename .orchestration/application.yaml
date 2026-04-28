@@ -1,6 +1,6 @@
 spring:
   profiles:
-    active: "identity,operate,tasklist,broker,consolidated-auth"
+    active: "admin,operate,tasklist,broker,consolidated-auth"
 
 management:
   server:
@@ -40,6 +40,7 @@ zeebe:
 
     # zeebe.broker.data
     data:
+      directory: /usr/local/camunda/data
       snapshotPeriod: 5m
       # Allow running with low disk space (for local development)
       diskUsageCommandWatermark: 0.85
@@ -71,23 +72,15 @@ zeebe:
             enabled: true
             minimumAge: 90d
             policyName: zeebe-record-retention-policy
-      CamundaExporter:
-        className: "io.camunda.exporter.CamundaExporter"
-        args:
-          connect:
-            type: elasticsearch
-            url: "http://elasticsearch:9200"
-          createSchema: true
-          index:
-            numberOfShards: 1
-            numberOfReplicas: 0
-          history:
-            retention:
-              enabled: true
-              minimumAge: 90d
-              policyName: camunda-retention-policy
 
 camunda:
+  database:
+    type: elasticsearch
+    index:
+      numberOfReplicas: 0
+  backup:
+    webapps:
+      enabled: false
   persistent:
     sessions:
       enabled: true
@@ -95,6 +88,9 @@ camunda:
   rest:
     query:
       enabled: true
+
+  mcp:
+    enabled: true
 
   security:
     authentication:
@@ -114,10 +110,6 @@ camunda:
             - connectors
           clients:
             - connectors
-
-  database:
-    index:
-      numberOfReplicas: 0
   data:
     secondary-storage:
       type: elasticsearch
