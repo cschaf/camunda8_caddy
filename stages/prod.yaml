@@ -27,11 +27,11 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4.0"
-          memory: 8192M
+          cpus: "2.0"
+          memory: 4096M
         reservations:
-          cpus: "1.0"
-          memory: 6144M
+          cpus: "0.5"
+          memory: 3072M
 
   optimize:
     deploy:
@@ -98,10 +98,10 @@ services:
       resources:
         limits:
           cpus: "1.0"
-          memory: 1024M
+          memory: 1536M
         reservations:
           cpus: "0.5"
-          memory: 512M
+          memory: 768M
 
   web-modeler-db:
     deploy:

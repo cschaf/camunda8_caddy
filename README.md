@@ -16,7 +16,7 @@ For end user usage, please check the official documentation of [Camunda 8 Self-M
 
 ## Documentation
 
-- [`docs/project_configuration.md`](docs/project_configuration.md) - Full configuration reference for this stack, including service settings, resource sizing, reverse proxy behavior, `autoheal`, and the host recovery guard.
+- [`docs/project_configuration.md`](docs/project_configuration.md) - Full configuration reference for this stack, including service settings, resource sizing, reverse proxy behavior, `autoheal`, the host recovery guard, and a decision guide for PostgreSQL vs Elasticsearch as Camunda core data backend.
 - [`docs/stage_comparison.md`](docs/stage_comparison.md) - Side-by-side comparison of the `prod`, `dev`, and `test` stage resource profiles.
 
 ## First Start Setup

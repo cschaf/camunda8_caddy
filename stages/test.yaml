@@ -27,13 +27,13 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "1.5"
-          memory: 3072M
+          cpus: "0.75"
+          memory: 1536M
         reservations:
           cpus: "0.25"
-          memory: 2048M
+          memory: 1024M
     environment:
-      - "ES_JAVA_OPTS=-Xms1536m -Xmx1536m"
+      - "ES_JAVA_OPTS=-Xms768m -Xmx768m"
 
   optimize:
     deploy:

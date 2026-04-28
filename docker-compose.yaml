@@ -283,10 +283,10 @@ services:
       resources:
         limits:
           cpus: "1.0"
-          memory: 1G
+          memory: 1536M
         reservations:
-          cpus: "0.25"
-          memory: 512m
+          cpus: "0.5"
+          memory: 768M
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -d camunda -U camunda"]
       interval: 10s
@@ -357,7 +357,7 @@ services:
       - cluster.routing.allocation.disk.watermark.flood_stage=95%
       - indices.breaker.total.limit=75%
       - path.repo=/usr/share/elasticsearch/backup
-      - "ES_JAVA_OPTS=-Xms4g -Xmx4g"
+      - "ES_JAVA_OPTS=-Xms2g -Xmx2g"
     ulimits:
       memlock:
         soft: -1
@@ -368,11 +368,11 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4.0"
-          memory: 8G
+          cpus: "2.0"
+          memory: 4G
         reservations:
-          cpus: "1.0"
-          memory: 6G
+          cpus: "0.5"
+          memory: 3G
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:9200/_cat/health | grep -q green"]
       interval: 30s

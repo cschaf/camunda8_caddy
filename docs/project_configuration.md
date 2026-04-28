@@ -98,7 +98,7 @@ The following table shows the **base** resource configuration — what the `prod
 
 | Service | CPU limit | Memory limit | Memory reservation | JVM Heap | Heap Rationale |
 |---------|-----------|--------------|-------------------|----------|----------------|
-| elasticsearch | 4.0 | 8G | 6G | `-Xms4g -Xmx4g` | 50% of limit (Lucene uses remaining for OS page cache) |
+| elasticsearch | 2.0 | 4G | 3G | `-Xms2g -Xmx2g` | 50% of limit (Lucene uses remaining for OS page cache); reduced because ES now serves Optimize only |
 | orchestration | 4.0 | 8G | 4G | `-Xms4500m -Xmx4500m` | 57% of limit; Zeebe broker + embedded Operate/Tasklist; leaves 3.5G for RocksDB off-heap, Netty buffers, and OS page cache |
 | optimize | 1.5 | 3G | 1536m | `-Xms2304m -Xmx2304m` | 75% of limit (2304m); JVM-based analytics service |
 | keycloak | 1.5 | 2G | 512m | — | Quarkus-based, no JVM heap setting needed |
@@ -108,7 +108,7 @@ The following table shows the **base** resource configuration — what the `prod
 | web-modeler-restapi | 1.0 | 1G | 512m | `-Xmx768m` | 75% of limit; Java REST API + webapp UI (8.9+) |
 | postgres (identity) | 1.0 | 1G | 512m | — | No JVM; PostgreSQL manages own memory |
 | postgres (web-modeler) | 0.5 | 512m | 256m | — | No JVM |
-| camunda-db | 1.0 | 1024M | 512M | — | No JVM; core Camunda operational DB |
+| camunda-db | 1.0 | 1536M | 768M | — | No JVM; core Camunda operational DB; handles all Zeebe, Operate, Tasklist data since 8.9 |
 | reverse-proxy | 0.5 | 256m | 64m | — | Caddy Go process |
 | web-modeler-websockets | 0.5 | 256m | 64m | — | Node.js WebSocket server |
 | mailpit | 0.25 | 128m | 32m | — | Go SMTP server |
@@ -161,7 +161,7 @@ environment:
   - cluster.routing.allocation.disk.watermark.high=90%
   - cluster.routing.allocation.disk.watermark.flood_stage=95%
   - indices.breaker.total.limit=75%                # Circuit breaker for aggregations
-  - "ES_JAVA_OPTS=-Xms4g -Xmx4g"                  # 4 GB heap
+  - "ES_JAVA_OPTS=-Xms2g -Xmx2g"                  # 2 GB heap
 ```
 
 ### Setting Explanations
@@ -176,7 +176,7 @@ environment:
 | `cluster.routing.allocation.disk.watermark.high=90%` | `90%` | `90%` | Elasticsearch blocks shard allocation entirely above 90%. Combined with flood_stage at 95%, gives two warning thresholds before read-only lock. |
 | `cluster.routing.allocation.disk.watermark.flood_stage=95%` | `95%` | `95%` | At 95%, Elasticsearch marks all indices on the node as read-only (`index.blocks.read_only_allow_delete`). Requires manual intervention to clear. The gap between 90% and 95% gives operators a window to react. |
 | `indices.breaker.total.limit=75%` | `75%` | `70%` | The parent circuit breaker limit for all sub-breakers (fielddata, request, in-flight). 75% of JVM heap. Raised slightly from 70% because Optimize performs large aggregations that can approach the limit. If this trips, it causes `TooManyBookmarks` or aggregation failures in Optimize. |
-| `ES_JAVA_OPTS=-Xms4g -Xmx4g` | `4g` | 50% of container | 4 GB heap (50% of the 8 GB limit) for Lucene to use the other ~4 GB as off-heap page cache. Scaled down proportionally in `dev` and `test` stages. |
+| `ES_JAVA_OPTS=-Xms2g -Xmx2g` | `2g` | 50% of container | 2 GB heap (50% of the 4 GB limit) for Lucene to use the other ~2 GB as off-heap page cache. Scaled down proportionally in `dev` and `test` stages. |
 | `action.auto_create_index=...` | Whitelist (Camunda patterns) | `true` | Prevents rogue services or typos from creating indices outside known patterns. A whitelist (instead of blanket `false`) is safer because Optimize and Web Modeler restapi may auto-create indices on first startup before their templates are registered. All known Camunda index prefixes are explicitly allowed: `zeebe-record*`, `operate-*`, `tasklist-*`, `optimize-*`, `camunda-*`, `web-modeler-*`, `identity-*`. |
 | `indices.memory.index_buffer_size=20%` | `20%` | `10%` | The percentage of JVM heap reserved for the indexing buffer. A larger buffer allows Elasticsearch to batch more in-memory writes before flushing to disk, improving throughput for Camunda's high-volume event stream. 20% is appropriate given the 4 GB heap and write-heavy workload. |
 
@@ -282,6 +282,39 @@ camunda:
 **Why no manual exporter configuration?** Manually configuring `zeebe.broker.exporters.camunda` with `connect.type: rdbms` causes a startup error because the `CamundaExporter` class only supports `ELASTICSEARCH` and `OPENSEARCH`. The orchestration image auto-configures the correct exporter when `secondary-storage.type` is `rdbms`.
 
 **Migration note:** There is **no automatic migration path** from Elasticsearch to RDBMS in Camunda 8.9. Changing `database.type` or `secondaryStorage.type` to `rdbms` on an existing installation results in empty Operate/Tasklist data. Historical process instances, variables, and incidents remain in Elasticsearch but become invisible to the RDBMS-backed services. The RDBMS option is intended for **fresh installations only**. For upgrades with existing data, stay on Elasticsearch.
+
+### PostgreSQL vs Elasticsearch: Decision Guide
+
+Camunda 8 supports two backends for core operational data (Zeebe records, Operate process instances, Tasklist user tasks): **PostgreSQL (RDBMS)** and **Elasticsearch**. This stack uses **PostgreSQL** for core data and retains **Elasticsearch only for Optimize**, which still requires it.
+
+#### PostgreSQL (RDBMS) — Current Stack Choice
+
+| Aspect | Details |
+|--------|---------|
+| **Best for** | Smaller to medium deployments, teams with SQL expertise, simpler operational stacks |
+| **Pros** | Simpler operations (one less technology); ACID transactions; smaller resource footprint; SQL is widely known |
+| **Cons** | Less powerful for complex aggregations and full-text search; horizontal scaling is harder than Elasticsearch; newer feature support may lag behind ES |
+| **When to choose** | Datenvolumen is manageable (e.g., < 1 Mio. Prozessinstanzen/Jahr); team has no Elasticsearch expertise; primary use case is operational process execution rather than deep historical analytics |
+
+#### Elasticsearch
+
+| Aspect | Details |
+|--------|---------|
+| **Best for** | Very large data volumes, complex analytics, full-text search on process variables |
+| **Pros** | Excellent horizontal scalability; mature Camunda integration (longer in use); powerful aggregations and search; Optimize requires it anyway |
+| **Cons** | Higher operational complexity (clustering, shards, ILM); larger RAM/CPU footprint; requires ES-specific expertise |
+| **When to choose** | Millions of process instances; heavy historical data analysis; quarterly/year-over-year trend reporting; team already operates Elasticsearch |
+
+#### Why This Stack Uses PostgreSQL + Elasticsearch
+
+- **PostgreSQL (`camunda-db`)** handles all Camunda core operational data — Zeebe records, Operate instances, Tasklist user tasks, authorizations. This reduces resource pressure on Elasticsearch and simplifies operations for the primary workflow data.
+- **Elasticsearch** is retained solely for **Optimize**, which has no RDBMS backend option. Optimize stores aggregated, compact analytical data, so the ES resource consumption is lower than it would be if ES also indexed all raw operational data.
+
+**Rule of thumb:**
+- Use **PostgreSQL** if you want a leaner stack and your data volumes are moderate.
+- Use **Elasticsearch** if you expect massive scale, need advanced search/aggregations on process data, or already run ES clusters for Optimize and want a single backend.
+
+> **Note:** In Camunda 8.9, switching from Elasticsearch to RDBMS (or back) is only possible on **fresh installations**. There is no migration tool — historical data remains in the old backend and becomes invisible to the new one.
 
 ### Operate Archiver ILM
 
