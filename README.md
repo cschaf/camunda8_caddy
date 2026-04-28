@@ -47,6 +47,18 @@ The `.env.example` file contains known weak values (`admin`, `demo`, `demo-conne
 >
 > **Certificate file paths are independent of HOST:** `FULLCHAIN_PEM` and `PRIVATEKEY_PEM` in `.env` are literal file paths to the actual certificate files on disk. If your certificate files have uppercase characters in their names, keep those paths as-is — only the `HOST` value itself needs to be lowercase.
 
+### Optional: Add a Camunda Self-Managed license
+
+For production use, add the Camunda license key to `.env`. The key is injected into the Camunda containers as `CAMUNDA_LICENSE_KEY`; `.env` is gitignored and must not be committed.
+
+```env
+CAMUNDA_LICENSE_KEY='--------------- BEGIN CAMUNDA LICENSE KEY ---------------
+... complete key from Camunda ...
+--------------- END CAMUNDA LICENSE KEY ---------------'
+```
+
+Restart the stack with the normal stage-aware start script after adding or changing the key. Check `orchestration`, `optimize`, `web-modeler-restapi`, and `console` logs for remaining license warnings.
+
 ### 2. Create the connector secrets file
 
 ```bash

@@ -52,6 +52,13 @@ STAGE=$(Get-EnvVal 'STAGE')
 BANNER_DARKMODE=$(Get-EnvVal 'BANNER_DARKMODE')
 BANNER_LIGHTMODE=$(Get-EnvVal 'BANNER_LIGHTMODE')
 
+## Camunda License (Optional for non-production, required for production use) ##
+# Keep the real key only in .env. For multi-line keys, use single quotes so
+# docker compose and the bash start script keep the value as one variable.
+# CAMUNDA_LICENSE_KEY='--------------- BEGIN CAMUNDA LICENSE KEY ---------------
+# ... complete key from Camunda ...
+# --------------- END CAMUNDA LICENSE KEY ---------------'
+
 ## Backup Configuration ##
 BACKUP_STOP_TIMEOUT=$(Get-EnvVal 'BACKUP_STOP_TIMEOUT')
 ES_HOST=$(Get-EnvVal 'ES_HOST')
