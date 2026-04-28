@@ -1,5 +1,6 @@
 # docs
 docs/superpowers/
+docs/specs/
 # TLS certificates (never commit private keys)
 certs/
 
