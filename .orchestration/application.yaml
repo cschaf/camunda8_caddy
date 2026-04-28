@@ -2,12 +2,6 @@ spring:
   profiles:
     active: "admin,operate,tasklist,broker,consolidated-auth"
 
-  datasource:
-    url: jdbc:postgresql://camunda-db:5432/camunda
-    username: camunda
-    password: ${CAMUNDA_DB_PASSWORD}
-    driver-class-name: org.postgresql.Driver
-
 management:
   server:
     port: 9600
@@ -59,23 +53,6 @@ zeebe:
     threads:
       cpuThreadCount: "4"
       ioThreadCount: "4"
-
-    # zeebe.broker.exporters
-    exporters:
-      camunda:
-        className: "io.camunda.exporter.CamundaExporter"
-        args:
-          connect:
-            type: rdbms
-            url: "jdbc:postgresql://camunda-db:5432/camunda"
-            username: "camunda"
-            password: "${CAMUNDA_DB_PASSWORD}"
-          index:
-            prefix: "camunda-record"
-          retention:
-            enabled: true
-            minimumAge: 90d
-            policyName: camunda-record-retention-policy
 
 camunda:
   database:
