@@ -130,6 +130,19 @@
                             <div class="status"><span class="status-led"></span><span class="status-text">Checking...</span></div>
                         </a>
 
+                        <a href="https://orchestration.{{env "HOST"}}/admin" class="card" target="_blank" rel="noopener noreferrer" data-health-url="https://orchestration.{{env "HOST"}}/health">
+                            <div class="card-accent"></div>
+                            <div class="icon">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                                </svg>
+                            </div>
+                            <h2>Admin</h2>
+                            <p>Cluster Administration</p>
+                            <span class="url">orchestration.{{env "HOST"}}/admin</span>
+                            <div class="status"><span class="status-led"></span><span class="status-text">Checking...</span></div>
+                        </a>
+
                         <a href="https://identity.{{env "HOST"}}" class="card" target="_blank" rel="noopener noreferrer" data-health-url="https://identity.{{env "HOST"}}/health">
                             <div class="card-accent"></div>
                             <div class="icon">
