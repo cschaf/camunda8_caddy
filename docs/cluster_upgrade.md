@@ -258,15 +258,26 @@ CAMUNDA_CLIENT_AUTH_ISSUERURL: http://${KEYCLOAK_HOST}:18080/auth/realms/camunda
 
 **Change:**
 ```yaml
+LOGGING_LEVEL_IO_CAMUNDA_MODELER: INFO
 SERVER_HTTPS_ONLY: "false"
 PLAY_ENABLED: "true"
 ```
 
 **Explanation:**
+- `LOGGING_LEVEL_IO_CAMUNDA_MODELER: INFO` — Keeps Web Modeler logging at production-appropriate verbosity.
 - `SERVER_HTTPS_ONLY: "false"` — Allows the Web Modeler REST API to operate over HTTP internally while the reverse proxy handles HTTPS termination externally.
 - `PLAY_ENABLED: "true"` — Enables the new "Play" feature in Web Modeler 8.9, which allows simulating and testing BPMN processes directly in the modeler without deploying them.
 
-#### 6. Web Modeler WebApp Discontinued
+#### 6. Web Modeler WebSocket Debug Disabled
+
+**Change:**
+```yaml
+APP_DEBUG: "false"
+```
+
+**Explanation:** The WebSocket service runs without debug mode in the base Compose file and in the production stage overlay.
+
+#### 7. Web Modeler WebApp Discontinued
 
 **Change:** The entire `web-modeler-webapp` service is removed from `docker-compose.yaml`.
 

@@ -683,6 +683,13 @@ Three components:
 - `RESTAPI_OAUTH2_TOKEN_ISSUER_BACKEND_URL=http://${KEYCLOAK_HOST}:18080/...` — Internal issuer URL
 - `RESTAPI_PUSHER_*` — Pusher configuration for WebSocket communication with the websockets service
 - `CAMUNDA_MODELER_CLUSTERS_0_URL_WEBAPP=https://orchestration.${HOST}` — Points to the **Orchestration** UI (not Web Modeler itself), because Web Modeler connects to the Zeebe broker running in Orchestration. Uses the browser-reachable HTTPS proxy URL so it works from remote clients on the network, not just the Docker host machine.
+- `LOGGING_LEVEL_IO_CAMUNDA_MODELER=INFO` — Keeps Web Modeler logging at production-appropriate verbosity.
+- `SERVER_HTTPS_ONLY=false` — Allows HTTP on the internal Docker network while Caddy terminates browser-facing HTTPS.
+- `PLAY_ENABLED=true` — Keeps the Web Modeler Play feature enabled.
+
+**Key env vars for web-modeler-websockets:**
+- `APP_DEBUG=false` — Runs the WebSocket service without debug mode.
+- `PUSHER_APP_*` — Pusher app credentials shared with `web-modeler-restapi`.
 
 **WebSocket via proxy:** When `webmodeler.camunda.dev.local` is served over HTTPS, the browser's Pusher client connects to `wss://webmodeler.camunda.dev.local/app/*`. Caddy proxies this to `web-modeler-websockets:8060`. See [Reverse Proxy section](#9-reverse-proxy-caddy) for the `handle /app/*` directive.
 
@@ -695,6 +702,8 @@ Three components:
 **Port:** 443 (HTTPS only)
 
 The reverse proxy also defines a Docker health check against Caddy's local admin endpoint. That probe exists primarily so `autoheal` can distinguish a healthy proxy from one that is still running but no longer serving traffic correctly.
+
+`Caddyfile.example` is production-ready when rendered for the target `HOST`, paired with trusted TLS certificates, and used with hardened environment secrets. If no custom certificate paths are configured, Caddy serves self-signed certificates; that mode is suitable for local or internal validation but should be replaced with corporate CA or Let's Encrypt certificates for production use.
 
 ### Subdomain Routes
 
@@ -867,7 +876,7 @@ All services have `extra_hosts: host.docker.internal:host-gateway` which allows 
 
 ## 11. Development vs Production Trade-offs
 
-Several settings are intentionally development-oriented and should be reviewed before production use.
+The base Compose file and `stages/prod.yaml` are configured as a production-ready single-node profile. The remaining items below are operational trade-offs that still need environment-specific review before production use, especially around TLS, secrets, single-node durability, and hostname exposure.
 
 ### Security-Oriented Settings
 
