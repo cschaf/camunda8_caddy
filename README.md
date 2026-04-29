@@ -247,6 +247,8 @@ The dashboard at `https://{HOST}` provides a landing page with links to all serv
 
 > **TLS warning:** If no custom certificates are configured, Caddy uses a self-signed cert. Your browser will show a security warning — click "Advanced" and proceed. With a trusted certificate (your own or one from mkcert) this warning disappears.
 
+> **Optimize browser console warning:** Optimize 8.9.1 ships a frontend loader for Mixpanel at `//cdn.mxpnl.com/libs/mixpanel-2-latest.min.js`. Browser privacy tools such as uBlock, AdBlock, or Brave Shields commonly block that URL and log `net::ERR_BLOCKED_BY_CLIENT`. This is a client-side blocker message, not a reverse-proxy or Optimize container failure. If Optimize loads normally, the warning can be ignored or removed by allowing `cdn.mxpnl.com` for `optimize.{HOST}`.
+
 ---
 
 ## Changing the hostname

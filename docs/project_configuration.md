@@ -791,6 +791,33 @@ reverse_proxy optimize:8090 {
 
 Optimize needs `X-Forwarded-Proto: https` to correctly construct OAuth2 redirect URIs when behind the HTTPS proxy.
 
+**7. Optimize Mixpanel browser warning**
+
+Optimize 8.9.1's packaged frontend includes the standard Mixpanel loader in `index.html`:
+
+```html
+<script>
+  ...
+  e.src = "//cdn.mxpnl.com/libs/mixpanel-2-latest.min.js";
+  ...
+</script>
+```
+
+Browser privacy tools such as uBlock, AdBlock, or Brave Shields commonly block that request and log:
+
+```text
+mixpanel-2-latest.min.js:1 Failed to load resource: net::ERR_BLOCKED_BY_CLIENT
+```
+
+This message means the browser blocked the request before it reached the stack. It is not a Caddy routing failure, an Optimize health failure, or an Elasticsearch import problem. The Optimize page can still work because the inline Mixpanel stub is created before the external script load. To verify the server path, check that the services are healthy and that the public URL redirects to Keycloak with the Optimize callback URL:
+
+```bash
+docker compose ps optimize reverse-proxy
+curl -k -I https://optimize.camunda.dev.local/
+```
+
+The expected HTTP response before login is a `302 Found` to `https://keycloak.camunda.dev.local/...` with `redirect_uri=https%3A%2F%2Foptimize.camunda.dev.local%2Fapi%2Fauthentication%2Fcallback`. If Optimize loads normally, the Mixpanel console message can be ignored or removed by allowing `cdn.mxpnl.com` for `optimize.camunda.dev.local`.
+
 ---
 
 ## 10. Network Architecture
