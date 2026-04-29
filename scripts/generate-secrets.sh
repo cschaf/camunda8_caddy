@@ -131,14 +131,6 @@ EOF
 
 chmod 600 "$ENV_FILE"
 
-# Generate Optimize environment-config.yaml from template
-ENV_CONFIG_TEMPLATE="$SCRIPT_DIR/../.optimize/environment-config.yaml.example"
-ENV_CONFIG_FILE="$SCRIPT_DIR/../.optimize/environment-config.yaml"
-if [[ -f "$ENV_CONFIG_TEMPLATE" ]]; then
-  sed "s/ELASTIC_PASSWORD_PLACEHOLDER/$ELASTIC_PASSWORD/g" "$ENV_CONFIG_TEMPLATE" > "$ENV_CONFIG_FILE"
-  chmod 600 "$ENV_CONFIG_FILE"
-fi
-
 echo "Generated .env with strong random secrets (chmod 600)."
 echo ""
 echo "Generated secrets for:"

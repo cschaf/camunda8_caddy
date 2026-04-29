@@ -25,7 +25,6 @@ identity:
           root-url: "https://console.${HOST}"
           redirect-uris:
             - "/"
-            - "http://${HOST}:8087/"
       apis:
         - name: Console API
           audience: "console-api"
@@ -66,7 +65,6 @@ identity:
           root-url: "https://orchestration.${HOST}"
           redirect-uris:
             - "/sso-callback"
-            - "http://${HOST}:8088/sso-callback"
       apis:
         - name: "Orchestration API"
           audience: "orchestration-api"
@@ -92,7 +90,6 @@ identity:
           root-url: "https://optimize.${HOST}"
           redirect-uris:
             - "/api/authentication/callback"
-            - "http://${HOST}:8083/api/authentication/callback"
       apis:
         - name: Optimize API
           audience: "optimize-api"
@@ -115,7 +112,6 @@ identity:
           root-url: "https://webmodeler.${HOST}"
           redirect-uris:
             - "/login-callback"
-            - "http://${HOST}:8070/login-callback"
       apis:
         - name: Web Modeler Internal API
           audience: "web-modeler-api"
@@ -180,7 +176,6 @@ keycloak:
         redirect-uris:
           - "/auth/login-callback"
           - "https://identity.${HOST}/auth/login-callback"
-          - "http://${HOST}:8084/auth/login-callback"
   users:
     - username: "demo"
       password: "${DEMO_USER_PASSWORD}"

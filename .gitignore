@@ -23,6 +23,9 @@ Caddyfile
 # Optimize config with secrets (generated from .env)
 .optimize/environment-config.yaml
 
+# Console config (rendered from template by start scripts)
+.console/application.yaml
+
 # IDE / editor
 .vscode/
 .idea/

@@ -30,5 +30,23 @@ case "$stage" in
     ;;
 esac
 
+# Render console config from template
+CONSOLE_TEMPLATE="$PROJECT_DIR/.console/application.yaml.template"
+CONSOLE_CONFIG="$PROJECT_DIR/.console/application.yaml"
+if [[ -f "$CONSOLE_TEMPLATE" ]]; then
+  if command -v envsubst >/dev/null 2>&1; then
+    envsubst '$HOST' < "$CONSOLE_TEMPLATE" > "$CONSOLE_CONFIG"
+  else
+    sed "s/\\\${HOST}/$HOST/g" "$CONSOLE_TEMPLATE" > "$CONSOLE_CONFIG"
+  fi
+fi
+
+# Render optimize config from template
+OPTIMIZE_TEMPLATE="$PROJECT_DIR/.optimize/environment-config.yaml.example"
+OPTIMIZE_CONFIG="$PROJECT_DIR/.optimize/environment-config.yaml"
+if [[ -f "$OPTIMIZE_TEMPLATE" ]]; then
+  sed "s/ELASTIC_PASSWORD_PLACEHOLDER/$ELASTIC_PASSWORD/g" "$OPTIMIZE_TEMPLATE" > "$OPTIMIZE_CONFIG"
+fi
+
 echo "Starting Camunda stack with STAGE=$stage"
 docker compose -f "$PROJECT_DIR/docker-compose.yaml" -f "$PROJECT_DIR/stages/${stage}.yaml" up -d

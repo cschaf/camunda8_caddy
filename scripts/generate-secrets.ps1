@@ -128,23 +128,6 @@ RESOURCE_AUTHORIZATIONS_ENABLED=$(Get-EnvVal 'RESOURCE_AUTHORIZATIONS_ENABLED')
 
 [System.IO.File]::WriteAllText($EnvFile, $content, [System.Text.Encoding]::UTF8)
 
-# Generate Optimize environment-config.yaml from template
-$envConfigTemplate = Join-Path $ScriptDir '..' '.optimize' 'environment-config.yaml.example'
-$envConfigFile = Join-Path $ScriptDir '..' '.optimize' 'environment-config.yaml'
-if (Test-Path $envConfigTemplate) {
-    $templateContent = Get-Content $envConfigTemplate -Raw
-    $templateContent = $templateContent -replace 'ELASTIC_PASSWORD_PLACEHOLDER', $elasticPassword
-    [System.IO.File]::WriteAllText($envConfigFile, $templateContent, [System.Text.Encoding]::UTF8)
-    $configAcl = Get-Acl $envConfigFile
-    $configAcl.SetAccessRuleProtection($true, $false)
-    $configRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
-        [System.Security.Principal.WindowsIdentity]::GetCurrent().Name,
-        'Read,Write', 'Allow'
-    )
-    $configAcl.AddAccessRule($configRule)
-    Set-Acl $envConfigFile $configAcl
-}
-
 # Restrict permissions on Windows (owner read/write only)
 $acl = Get-Acl $EnvFile
 $acl.SetAccessRuleProtection($true, $false)
