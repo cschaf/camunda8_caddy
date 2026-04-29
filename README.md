@@ -67,6 +67,12 @@ cp connector-secrets.txt.example connector-secrets.txt
 
 `connector-secrets.txt` is mounted into the Connectors container as an env file. Add any connector secrets you need in `NAME=VALUE` format. The file is gitignored — never commit it.
 
+### Management endpoints and secret exposure
+
+Runtime services receive OAuth client secrets, database passwords, Keycloak admin credentials, and connector credentials through environment variables. Do not expose `/actuator/configprops` in committed configuration, and do not enable `MANAGEMENT_ENDPOINT_CONFIGPROPS_SHOW_VALUES=ALWAYS` or `management.endpoint.configprops.show-values: ALWAYS`.
+
+Only expose the actuator endpoints required for health checks and monitoring, such as `health`, `info`, `metrics`, and `prometheus`. If `configprops` is temporarily needed for local debugging, keep it bound to localhost and use `show-values: NEVER`.
+
 ### 3. Create the Caddyfile
 
 ```bash

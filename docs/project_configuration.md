@@ -850,7 +850,7 @@ Several settings are intentionally development-oriented and should be reviewed b
 | `POSTGRES_PASSWORD` | `demo-postgres-password` | Strong random password |
 | All `*_CLIENT_SECRET` | Weak demo values | Strong random passwords |
 
-Management endpoint policy: expose only the endpoints needed for health checks and monitoring. `health`, `info`, `metrics`, and `prometheus` are acceptable where used by the stack. Do not expose `configprops` in committed configuration because this stack injects database passwords, OAuth client secrets, Keycloak admin credentials, and connector credentials via environment variables.
+Management endpoint policy: expose only the endpoints needed for health checks and monitoring. `health`, `info`, `metrics`, and `prometheus` are acceptable where used by the stack. Do not expose `configprops` in committed configuration because this stack injects database passwords, OAuth client secrets, Keycloak admin credentials, and connector credentials via environment variables. If `configprops` is temporarily enabled for local debugging, use `show-values: NEVER`, keep the port loopback-only, and remove the setting before committing.
 
 ### Recommended Production Changes
 
