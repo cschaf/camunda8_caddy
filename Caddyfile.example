@@ -84,6 +84,15 @@ console.camunda.dev.local {
             header_down -Cross-Origin-Embedder-Policy
         }
     }
+    # Console 8.9 ships CSS with unresolved IBM Plex font URLs. Without this,
+    # the Express SPA fallback returns index.html for those .woff2 requests,
+    # which browsers then try to parse as fonts.
+    @console-fonts {
+        path_regexp ^/assets/~@ibm/plex/.+\.woff2$
+    }
+    handle @console-fonts {
+        respond "Console font asset not bundled" 404
+    }
     reverse_proxy console:8080
 }
 
