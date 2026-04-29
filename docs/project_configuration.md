@@ -42,8 +42,8 @@ This stack deploys a full Camunda 8.9 self-managed platform with:
 | **Web Modeler** | `camunda/web-modeler-restapi:8.9.1` | BPMN process modeling (REST API serves UI + WebSockets) |
 | **Console** | `camunda/console:8.9.26` | Cluster overview and management UI |
 | **PostgreSQL** (×2) | `postgres:15-alpine3.22` | Identity/Keycloak DB + Web Modeler DB |
-| **Caddy** | `caddy:latest` | Reverse proxy with automatic HTTPS and subdomain routing |
-| **Autoheal** | `willfarrell/autoheal:latest` | Restarts labeled containers when Docker health checks mark them as unhealthy |
+| **Caddy** | `caddy:2.11.2@sha256:25cdc846626b62d05f6b633b9b40c2c9f6ef89b515dc76133cefd920f7dbe562` | Reverse proxy with automatic HTTPS and subdomain routing |
+| **Autoheal** | `willfarrell/autoheal@sha256:75c28b0020543e8eb49fe6514d012e7d2691f095dd622309d045da8647c8bb83` | Restarts labeled containers when Docker health checks mark them as unhealthy |
 
 ### Container Networks
 
@@ -598,9 +598,13 @@ Console is **Node.js**, not Spring Boot. This means Spring Boot configuration go
 
 ### Autoheal
 
-**Image:** `willfarrell/autoheal:latest`
+**Image:** `willfarrell/autoheal@sha256:75c28b0020543e8eb49fe6514d012e7d2691f095dd622309d045da8647c8bb83`
+
+This digest pins the Docker Hub `willfarrell/autoheal:latest` image index that was current on 2026-04-29. Keep it pinned and update it deliberately after review instead of using the moving `latest` tag directly.
 
 `autoheal` is a small operational sidecar that watches Docker health states over `/var/run/docker.sock`. When a labeled container transitions to `unhealthy`, `autoheal` issues a Docker restart for that container.
+
+**Security risk accepted:** `autoheal` mounts `/var/run/docker.sock` so it can call the Docker API. Docker socket access is host-critical: if the `autoheal` container or its image supply chain is compromised, an attacker can effectively gain host-admin-level control by using the Docker daemon to start containers, mount host paths, or alter other containers. The stack keeps `autoheal` because it provides automatic recovery for containers that remain running but become `unhealthy`; this is an explicit operational tradeoff, not a security boundary.
 
 **What it does in this stack:**
 - Monitors services labeled with `autoheal=true`
@@ -686,7 +690,7 @@ Three components:
 
 ## 9. Reverse Proxy (Caddy)
 
-**Image:** `caddy:latest`
+**Image:** `caddy:2.11.2@sha256:25cdc846626b62d05f6b633b9b40c2c9f6ef89b515dc76133cefd920f7dbe562`
 
 **Port:** 443 (HTTPS only)
 
