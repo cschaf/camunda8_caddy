@@ -242,6 +242,8 @@ The dashboard at `https://{HOST}` provides a landing page with links to all serv
 | Optimize | https://optimize.{HOST} |
 | Web Modeler | https://webmodeler.{HOST} |
 | Keycloak Admin | https://keycloak.{HOST}/auth/ (admin / admin) |
+| Zeebe Gateway | https://zeebe.{HOST} |
+| Admin | https://orchestration.{HOST}/admin |
 
 > **TLS warning:** If no custom certificates are configured, Caddy uses a self-signed cert. Your browser will show a security warning — click "Advanced" and proceed. With a trusted certificate (your own or one from mkcert) this warning disappears.
 

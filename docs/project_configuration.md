@@ -582,6 +582,12 @@ Keycloak is the OIDC provider. On first startup, Identity calls the Keycloak Adm
 - `KEYCLOAK_INTERNAL_BASE_URL=http://${KEYCLOAK_HOST}:18080/auth` — Internal URL for Node.js service-to-service calls
 - `NODE_ENV=production` — Runs Console in production mode (disables some dev-only features)
 
+**Configuration:** Console reads its cluster layout from `.console/application.yaml`, which is generated from `.console/application.yaml.template` by the start scripts on every run. The template defines the components Console displays, including:
+
+- **Orchestration cluster** (`id: orchestration`) — Zeebe gateway with `urls.grpc` and `urls.http`. These must use browser-accessible proxy addresses (`https://zeebe.${HOST}` for gRPC and `https://orchestration.${HOST}` for the REST API), not internal container DNS names.
+- **Orchestration Admin** (`id: orchestrationIdentity`) — Renders the **Admin** application card in Console. Without this component the card appears with no link.
+- **Operate**, **Tasklist**, **Optimize**, **Connectors**, **Identity**, **Keycloak**, **WebModeler** — Individual service cards with external URLs and internal readiness probes.
+
 Console is **Node.js**, not Spring Boot. This means Spring Boot configuration gotchas (CSRF origin checking, `SERVER_FORWARD_HEADERS_STRATEGY`, font CORS issues) do not apply. It uses different env vars (`KEYCLOAK_BASE_URL` vs Spring's `issuer-url` style).
 
 **Health checks and autoheal:** Console exposes its readiness probe on port 9100. Docker uses that probe to set the container health state, and the `autoheal` sidecar watches the `autoheal=true` label and restarts Console if it becomes `unhealthy` while still running.
@@ -692,6 +698,7 @@ The reverse proxy also defines a Docker health check against Caddy's local admin
 | `console.camunda.dev.local` | `console:8080` | Console UI |
 | `optimize.camunda.dev.local` | `optimize:8090` | Optimize UI |
 | `orchestration.camunda.dev.local` | `orchestration:8080` | Operate + Tasklist UIs |
+| `zeebe.camunda.dev.local` | `orchestration:26500` | Zeebe gRPC gateway (h2c) |
 | `webmodeler.camunda.dev.local` | `web-modeler-restapi:8081` | Web Modeler UI + WebSocket |
 
 ### TLS Configuration

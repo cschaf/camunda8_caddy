@@ -136,7 +136,9 @@ A Caddy reverse proxy provides subdomain routing on standard HTTPS port 443.
 - `https://identity.{HOST}/` — Identity UI
 - `https://console.{HOST}/` — Console UI
 - `https://orchestration.{HOST}/` — Operate and Tasklist UIs
+- `https://optimize.{HOST}/` — Optimize UI
 - `https://webmodeler.{HOST}/` — Web Modeler UI (with WebSocket/Pusher support)
+- `https://zeebe.{HOST}/` — Zeebe gRPC gateway (h2c via Caddy)
 - `https://{HOST}/` — Dashboard landing page with links to all services
 
 **Hosts file entries required** (added automatically by `setup-host` scripts):
@@ -148,6 +150,7 @@ A Caddy reverse proxy provides subdomain routing on standard HTTPS port 443.
 127.0.0.1 optimize.{HOST}
 127.0.0.1 orchestration.{HOST}
 127.0.0.1 webmodeler.{HOST}
+127.0.0.1 zeebe.{HOST}
 ```
 
 **Key configuration files:**
@@ -265,3 +268,7 @@ Also add `SERVER_FORWARD_HEADERS_STRATEGY: framework` to the service's environme
 22. **Do not expose `/actuator/configprops`** — Runtime services receive OAuth client secrets, database passwords, Keycloak admin credentials, and connector credentials through environment variables. Keep `configprops` out of `management.endpoints.web.exposure.include`, and never commit `MANAGEMENT_ENDPOINT_CONFIGPROPS_SHOW_VALUES=ALWAYS` or `management.endpoint.configprops.show-values: ALWAYS`. If temporary local debugging needs it, use `show-values: NEVER` and keep access loopback-only.
 
 23. **Edit template files, not rendered configs** — `.console/application.yaml` and `.optimize/environment-config.yaml` are generated from `.template` / `.example` by the start scripts on every run. Changes made directly to the rendered files are lost on the next start. Always edit the template files (`.console/application.yaml.template` and `.optimize/environment-config.yaml.example`) so the next startup picks them up.
+
+24. **Console Zeebe endpoints must use external proxy URLs** — `.console/application.yaml.template` defines the components displayed in Console. The `urls` block under the `orchestration` component (Zeebe gRPC and HTTP REST API) must use browser-accessible proxy addresses (`https://zeebe.${HOST}` and `https://orchestration.${HOST}`), not internal Docker DNS names like `orchestration:26500`. Internal names work only inside the container network and produce broken, non-copyable links in the Console UI.
+
+25. **Console Admin card requires `orchestrationIdentity`** — Console renders the **Admin** application card from a component with `id: orchestrationIdentity`. Without this entry in `.console/application.yaml.template`, the Admin card appears with no link. The component should point to the admin UI URL (e.g. `https://orchestration.${HOST}/admin`).
