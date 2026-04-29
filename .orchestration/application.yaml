@@ -63,18 +63,18 @@ camunda:
           bulk:
             delay: 5
             size: 1000
-            memoryLimit: 10485760
+            memory-limit: 10485760
           retention:
             enabled: true
-            minimumAge: 90d
-            policyName: zeebe-records-retention-policy
+            minimum-age: 90d
+            policy-name: zeebe-records-retention-policy
           index:
             prefix: zeebe-record
-            createTemplate: true
-            indexSuffixDatePattern: "yyyy-MM-dd"
-            numberOfShards: 1
-            numberOfReplicas: 0
-            optimizeModeEnabled: true
+            create-template: true
+            index-suffix-date-pattern: "yyyy-MM-dd"
+            number-of-shards: 1
+            number-of-replicas: 0
+            optimize-mode-enabled: true
   backup:
     webapps:
       enabled: false
@@ -112,13 +112,7 @@ camunda:
     persistentSessionsEnabled: true
     identity:
       redirectRootUrl: "https://orchestration.${HOST}/operate"
-    archiver:
-      ilmEnabled: true
-      ilmMinAgeForDeleteArchivedIndices: 90d
 
   tasklist:
     identity:
       redirectRootUrl: "https://orchestration.${HOST}/tasklist"
-    archiver:
-      ilmEnabled: true
-      ilmMinAgeForDeleteArchivedIndices: 90d

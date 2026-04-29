@@ -5,6 +5,8 @@ es:
       number_of_replicas: 0
 zeebe:
   enabled: true
+  name: zeebe-record
+  partitionCount: 1
 enterprise: false
 security:
   auth:

@@ -114,18 +114,23 @@ spring:
 
 **Explanation:** In Camunda 8.9, the `identity` profile is renamed to `admin`. This profile controls the management/identity features within the orchestration container. Using the old profile name will cause the application to fail to load identity-related beans.
 
-#### 2. Explicit Database Type Configuration
+#### 2. Unified Secondary Storage Configuration
 
 **Change:**
 ```yaml
 camunda:
-  database:
-    type: elasticsearch
+  data:
+    secondary-storage:
+      type: rdbms
+      rdbms:
+        url: "jdbc:postgresql://camunda-db:5432/camunda"
+        username: "camunda"
+        password: "${CAMUNDA_DB_PASSWORD}"
 ```
 
-**Explanation:** Camunda 8.9 introduces support for RDBMS (H2, PostgreSQL, etc.) as the primary database for Operate and Tasklist runtime data. In 8.8, Elasticsearch was the implicit default. In 8.9, the default has shifted toward RDBMS. For existing Elasticsearch-based installations, you must explicitly declare `database.type: elasticsearch` to maintain the existing architecture and avoid data migration.
+**Explanation:** This stack uses Camunda 8.9 unified configuration with PostgreSQL as RDBMS secondary storage for Operate, Tasklist, authorizations, and API query data. Elasticsearch is still retained for Optimize and for `zeebe-record-*` indices that Optimize imports, but it is no longer the secondary-storage backend for Operate/Tasklist.
 
-> **Can I migrate existing data from Elasticsearch to RDBMS?** No. Camunda 8.9 does **not** provide an automatic migration path from Elasticsearch to RDBMS. Switching `database.type` to `rdbms` on an existing installation starts with empty Operate/Tasklist data. All historical process instances, variables, and incidents remain in Elasticsearch but become invisible to the new RDBMS-backed services. The RDBMS option is intended for **fresh installations** only. For upgrades with existing data, stay on Elasticsearch.
+> **Can I migrate existing data from Elasticsearch/OpenSearch secondary storage to RDBMS?** Camunda 8.9 does **not** provide an automatic in-place migration path between secondary-storage backend families. Switching `camunda.data.secondary-storage.type` to `rdbms` makes Operate/Tasklist/API query data come from PostgreSQL; historical data that exists only in Elasticsearch/OpenSearch is not automatically moved. Validate this as a fresh secondary-store setup or a planned migration procedure in a non-production environment.
 
 #### 3. Backup Webapps Setting
 
@@ -154,27 +159,26 @@ camunda:
 
 **Change:** The `CamundaExporter` block under `zeebe.broker.exporters` is removed.
 
-**Explanation:** In Camunda 8.8, the `CamundaExporter` was responsible for exporting process data to Elasticsearch for the unified Camunda API. In 8.9, this functionality is integrated into the core platform and controlled via `camunda.data.secondaryStorage`. The explicit exporter configuration is no longer needed. The `elasticsearch` exporter (for Zeebe records) is retained.
+**Explanation:** In Camunda 8.8, the `CamundaExporter` was responsible for exporting process data to Elasticsearch for the unified Camunda API. In 8.9, this functionality is integrated into the core platform and controlled via `camunda.data.secondary-storage`. The explicit `CamundaExporter` configuration is no longer needed. The Elasticsearch exporter for `zeebe-record-*` is retained because Optimize imports from those records.
 
-#### 6. Zeebe Data Directory
+#### 6. Primary Storage Data Directory
 
 **Change:**
 ```yaml
-zeebe:
-  broker:
-    data:
+camunda:
+  data:
+    primary-storage:
       directory: /usr/local/camunda/data
 ```
 
-**Explanation:** The Camunda 8.9 image internally defaults to `/usr/local/zeebe/data` for Zeebe broker data. However, to preserve existing data in production environments without requiring a data migration, we explicitly configure the data directory to match the existing mount path `/usr/local/camunda/data`. This ensures backward compatibility.
+**Explanation:** The broker's primary storage is configured through the Camunda 8.9 unified `camunda.data.primary-storage` namespace. The directory remains `/usr/local/camunda/data` to preserve the existing Docker volume layout.
 
 #### 7. Kept Unchanged (Important)
 
 The following settings are intentionally retained from 8.8:
 
 - `server.forward-headers-strategy: framework` — Required for correct operation behind the Caddy reverse proxy
-- `camunda.data.secondaryStorage.type: elasticsearch` — Maintains Elasticsearch as secondary storage
-- Retention policies (`minimumAge: 90d`, `ilmMinAgeForDeleteArchivedIndices: 90d`) — Preserve data lifecycle management
+- Zeebe Elasticsearch exporter retention (`minimum-age: 90d`) — Keeps `zeebe-record-*` indices bounded while preserving Optimize import source data
 - `camunda.operate.identity.redirectRootUrl` and `camunda.tasklist.identity.redirectRootUrl` — Keep proxy-aware HTTPS URLs
 
 ---
@@ -494,9 +498,9 @@ camunda:
 
 **Fix:** Verify `.orchestration/application.yaml` has:
 ```yaml
-zeebe:
-  broker:
-    data:
+camunda:
+  data:
+    primary-storage:
       directory: /usr/local/camunda/data
 ```
 
@@ -510,7 +514,7 @@ And verify `docker-compose.yaml` mounts the volume at `/usr/local/camunda/data`.
 |------|-------------|
 | `.env` | All Camunda versions bumped to 8.9.x, Elasticsearch to 8.19.11 |
 | `.env.example` | Same version bumps for template |
-| `.orchestration/application.yaml` | Profile `identity` → `admin`, added `database.type: elasticsearch`, `backup.webapps.enabled: false`, `mcp.enabled: true`, removed `CamundaExporter`, added `zeebe.broker.data.directory` |
+| `.orchestration/application.yaml` | Profile `identity` → `admin`, configured `camunda.data.secondary-storage.type: rdbms`, `backup.webapps.enabled: false`, `mcp.enabled: true`, removed `CamundaExporter`, retained primary storage at `/usr/local/camunda/data` |
 | `docker-compose.yaml` | Added `camunda-data-init` service, added `camunda-data` volume, updated orchestration depends_on/volumes, updated connectors auth URL, removed `web-modeler-webapp` (merged into restapi), added Web Modeler client flags to restapi |
 | `.console/application.yaml` | Version bumps to 8.9.0, merged WebModeler, renamed Orchestration Gateway, updated Keycloak version |
 | `stages/dev.yaml` | Added `camunda-data-init` resource limits |

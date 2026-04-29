@@ -145,7 +145,7 @@ Elasticsearch uses Lucene for full-text indexing. Lucene maintains an **off-heap
 
 ## 4. Elasticsearch Configuration
 
-Elasticsearch is retained for **Optimize only**. Camunda core operational data (Zeebe records, Operate process instances, Tasklist user tasks) is stored in the dedicated `camunda-db` PostgreSQL service. Optimize requires Elasticsearch (or OpenSearch) for its analytics indices.
+Elasticsearch is retained for **Optimize**. Camunda core operational query data (Operate process instances, Tasklist user tasks, authorizations, and API search data) is stored in the dedicated `camunda-db` PostgreSQL service via RDBMS secondary storage. Elasticsearch still stores Optimize's own `optimize-*` indices and the Zeebe exporter's `zeebe-record-*` indices, which Optimize imports as its source data.
 
 ### Environment Variables in docker-compose.yaml
 
@@ -182,34 +182,29 @@ environment:
 
 ### Index Lifecycle Management (ILM) and Data Retention
 
-Camunda 8 creates a large number of time-based indices:
+This stack creates two Elasticsearch index families:
 
-- **Zeebe exporter** writes one index per record type per day (`zeebe-record-*`)
-- **Operate** archives completed process instances to dated indices (`operate-list-view-*`, `operate-operation-*`)
-- **Tasklist** archives similarly (`tasklist-list-view-*`, `tasklist-operation-*`)
-- **Optimize** maintains its own time-based indices under the `optimize-` prefix
+- **Zeebe exporter** writes one index per record type per day (`zeebe-record-*`) so Optimize can import process, variable, incident, and user task data.
+- **Optimize** maintains its own analytics indices under the `optimize-` prefix.
 
 Without cleanup, these indices accumulate indefinitely. The old configuration had **no retention policies**, which led to:
 
 1. **Shard exhaustion** — Each daily index defaults to 3 shards (Zeebe exporter). With ~15 record types, that is ~45 new shards per day. In 30 days: ~1,350 shards. The old `max_shards_per_node=3000` merely delayed the failure instead of preventing it.
-2. **Disk bloat** — Archived process data, historical variables, and incident records accumulate forever.
+2. **Disk bloat** — Zeebe exporter records and Optimize analytics data accumulate forever.
 3. **Query degradation** — Elasticsearch must keep metadata for every shard in heap. Beyond ~500–800 shards on an 8 GB node, query latency degrades and the node becomes unstable.
 
-**The fix: ILM + retention everywhere.**
+**The fix: retention on each remaining Elasticsearch data family.**
 
 | Component | Retention Mechanism | Minimum Age | What Gets Deleted |
 |-----------|-------------------|-------------|-------------------|
 | Zeebe Exporter | ILM policy on index templates | 90 days | Old `zeebe-record-*` daily indices |
-| Camunda Data (secondaryStorage) | ILM policy on index templates | 90 days | Old `camunda-*` history indices |
-| Operate | Archiver ILM | 90 days | Archived `operate-*` indices older than 90 days |
-| Tasklist | Archiver ILM | 90 days | Archived `tasklist-*` indices older than 90 days |
 | Optimize | Optimize's built-in cleanup | 365 days (configured in `.optimize/environment-config.yaml`) | Process data older than 365 days |
 
-**Why two tiers?** Orchestration components (Zeebe exporter, secondary storage, Operate, Tasklist) keep operational data for 90 days — enough for incident follow-up, instance history lookups, and Operate/Tasklist troubleshooting. Optimize keeps aggregated analytical data for 365 days (12 months) so year-over-year comparisons and full annual trend reports remain possible. Optimize stores aggregated, compact data; the disk impact at low process volumes (a few thousand instances/year) stays in the single-GB range.
+**Why two tiers?** Raw Zeebe exporter records are kept for 90 days as Optimize import source data. Optimize keeps analytical data for 365 days (12 months) so year-over-year comparisons and full annual trend reports remain possible. Operate and Tasklist query PostgreSQL through Camunda 8.9 RDBMS secondary storage, so their retention is no longer controlled by Elasticsearch archiver ILM in this stack.
 
-**Shard reduction:** All exporters and Optimize are now configured with `numberOfShards: 1`. On a single-node deployment, multiple shards provide zero parallelism — the node cannot distribute shards to other nodes. Each additional shard only adds heap overhead (mappings, segments, bitsets). Reducing from 3 to 1 cuts total shard count by ~67%.
+**Shard reduction:** The Zeebe exporter and Optimize are configured with one shard per index. On a single-node deployment, multiple shards provide zero parallelism — the node cannot distribute shards to other nodes. Each additional shard only adds heap overhead (mappings, segments, bitsets). Reducing from 3 to 1 cuts total shard count by ~67%.
 
-> **Note:** These settings only affect **newly created indices**. Existing indices retain their original shard count. The ILM policies are applied to index templates and will take effect on the next rollover or daily index creation. To force an immediate cleanup of old indices, use the Elasticsearch Delete Index API or reduce `minimumAge` temporarily in a dev environment.
+> **Note:** These settings only affect **newly created indices**. Existing indices retain their original shard count. The ILM policies are applied to index templates and will take effect on the next rollover or daily index creation. To force an immediate cleanup of old indices, use the Elasticsearch Delete Index API or reduce `minimum-age` temporarily in a dev environment.
 
 ### Previously Removed: `cluster.routing.allocation.disk.threshold_enabled=false`
 
@@ -278,7 +273,7 @@ camunda:
 
 **Why no manual exporter configuration?** Manually configuring `zeebe.broker.exporters.camunda` with `connect.type: rdbms` causes a startup error because the `CamundaExporter` class only supports `ELASTICSEARCH` and `OPENSEARCH`. The orchestration image auto-configures the correct exporter when `secondary-storage.type` is `rdbms`.
 
-**Migration note:** There is **no automatic migration path** from Elasticsearch to RDBMS in Camunda 8.9. Changing `database.type` or `secondaryStorage.type` to `rdbms` on an existing installation results in empty Operate/Tasklist data. Historical process instances, variables, and incidents remain in Elasticsearch but become invisible to the RDBMS-backed services. The RDBMS option is intended for **fresh installations only**. For upgrades with existing data, stay on Elasticsearch.
+**Migration note:** There is **no automatic in-place migration path** from document-store secondary storage to RDBMS secondary storage in Camunda 8.9. Changing `camunda.data.secondary-storage.type` to `rdbms` on an existing installation starts reading Operate/Tasklist/API query data from the RDBMS backend; historical data that only exists in Elasticsearch/OpenSearch is not automatically moved. Plan this as a fresh secondary-store setup or a validated migration procedure in a non-production environment.
 
 ### PostgreSQL vs Elasticsearch: Decision Guide
 
@@ -313,35 +308,9 @@ Camunda 8 supports two backends for core operational data (Zeebe records, Operat
 
 > **Note:** In Camunda 8.9, switching from Elasticsearch to RDBMS (or back) is only possible on **fresh installations**. There is no migration tool — historical data remains in the old backend and becomes invisible to the new one.
 
-### Operate Archiver ILM
+### Operate and Tasklist Retention
 
-```yaml
-camunda:
-  operate:
-    archiver:
-      ilmEnabled: true
-      ilmMinAgeForDeleteArchivedIndices: 90d
-```
-
-| Setting | Value | Default | Why |
-|---------|-------|---------|-----|
-| `archiver.ilmEnabled` | `true` | `false` | Operate's archiver moves completed process instances from active indices to archived indices (e.g., `operate-list-view-2024.01.01`). Without ILM, these archived indices accumulate indefinitely. Enabling ILM attaches a deletion policy to archived indices. **Note:** With RDBMS secondary storage, archiving is handled by the database; these ILM settings apply only when Elasticsearch is the backend. |
-| `archiver.ilmMinAgeForDeleteArchivedIndices` | `90d` | (none) | Archived indices older than 90 days are deleted. Matches the Zeebe and Camunda exporter retention so archived Operate data is never deleted while the raw records still exist. |
-
-### Tasklist Archiver ILM
-
-```yaml
-camunda:
-  tasklist:
-    archiver:
-      ilmEnabled: true
-      ilmMinAgeForDeleteArchivedIndices: 90d
-```
-
-| Setting | Value | Default | Why |
-|---------|-------|---------|-----|
-| `archiver.ilmEnabled` | `true` | `false` | Same mechanism as Operate. Tasklist archives completed user tasks and process instances to dated indices. ILM ensures these do not grow without bound. **Note:** With RDBMS secondary storage, archiving is handled by the database; these ILM settings apply only when Elasticsearch is the backend. |
-| `archiver.ilmMinAgeForDeleteArchivedIndices` | `90d` | (none) | 90-day retention for Tasklist archives, consistent with Operate and the exporters. |
+Operate and Tasklist run on Camunda 8.9 RDBMS secondary storage in this stack. Their query data is stored in PostgreSQL (`camunda-db`), not in `operate-*` or `tasklist-*` Elasticsearch archive indices. For that reason, `.orchestration/application.yaml` intentionally does not configure `camunda.operate.archiver.*` or `camunda.tasklist.archiver.*` keys. Those archiver ILM settings are only relevant when Operate/Tasklist use Elasticsearch/OpenSearch as their secondary-storage backend.
 
 ### Optimize Data Retention
 
@@ -408,19 +377,25 @@ security:
 | `unprotectedApi` | `false` | `false` | No endpoints are left unauthenticated |
 | `authorizations.enabled` | `true` | `false` | Enables Camunda's resource-based authorization (users/groups can be scoped to specific process definitions). **Required for production** — prevents users from seeing processes they shouldn't access. |
 
-### Database Configuration
+### Unified Secondary Storage Configuration
 
 ```yaml
-database:
-  type: rdbms
-  index:
-    numberOfReplicas: 0
+camunda:
+  data:
+    secondary-storage:
+      type: rdbms
+      rdbms:
+        url: "jdbc:postgresql://camunda-db:5432/camunda"
+        username: "camunda"
+        password: "${CAMUNDA_DB_PASSWORD}"
 ```
 
 | Setting | Value | Default | Why |
 |---------|-------|---------|-----|
-| `database.type` | `rdbms` | `rdbms` (8.9+) | Uses PostgreSQL for Camunda core operational data instead of Elasticsearch. |
-| `index.numberOfReplicas` | `0` | `1` | Index replica count. With `database.type: rdbms`, this applies to any index backend still in use (e.g., if search indices are maintained). Set to 0 for single-node deployments. |
+| `camunda.data.secondary-storage.type` | `rdbms` | varies by distribution/profile | Uses PostgreSQL for Camunda core operational query data instead of Elasticsearch/OpenSearch. |
+| `camunda.data.secondary-storage.rdbms.url` | `jdbc:postgresql://camunda-db:5432/camunda` | none | Points Orchestration, Operate, Tasklist, and query APIs at the dedicated Camunda PostgreSQL database. |
+| `camunda.data.secondary-storage.rdbms.username` | `camunda` | none | PostgreSQL user for the Camunda database. |
+| `camunda.data.secondary-storage.rdbms.password` | `${CAMUNDA_DB_PASSWORD}` | none | Password injected from `.env`; no hardcoded fallback. |
 
 ---
 
@@ -840,10 +815,10 @@ Several settings are intentionally development-oriented and should be reviewed b
 
 | Setting | Current Value | Production Value | Risk if Left |
 |---------|---------------|------------------|--------------|
-| `numberOfReplicas: 0` | optimize | `1` | Single failure loses data |
+| `number-of-replicas: 0` / `number_of_replicas: 0` | Zeebe exporter and Optimize Elasticsearch indices | `1` in multi-node ES clusters | Single-node Elasticsearch cannot allocate replicas; in a multi-node ES deployment, replicas improve durability and availability. |
 | `discovery.type=single-node` | elasticsearch | multi-node cluster | No HA, single point of failure |
 | `camunda.data.primary-storage.snapshot-period: 5m` | orchestration | `15m` | More frequent snapshots = more IO overhead |
-| ILM / retention policies | Enabled — Optimize (365d) via `.optimize/environment-config.yaml` | Disabled by default | Optimize keeps aggregated analytical data for 365 days to support quarterly and year-over-year analytics. Camunda core operational data (Zeebe, Operate, Tasklist) is stored in PostgreSQL (`camunda-db`) and retention is handled by the RDBMS rather than Elasticsearch ILM. Without retention, Optimize historical index data grows indefinitely and leads to shard exhaustion and cluster instability. |
+| ILM / retention policies | Enabled — Zeebe exporter records (90d) and Optimize data (365d) | Disabled by default | Optimize keeps analytical data for 365 days to support quarterly and year-over-year analytics. Zeebe `zeebe-record-*` indices are retained for 90 days as Optimize import source data. Operate and Tasklist query data is stored in PostgreSQL (`camunda-db`) rather than Elasticsearch archive indices. |
 
 ### Network/TLS Settings
 
@@ -868,7 +843,7 @@ Several settings are intentionally development-oriented and should be reviewed b
 2. **Set `HOST`** to your actual production hostname (must be lowercase)
 3. **Replace self-signed TLS certs** with certificates from a corporate CA or Let's Encrypt
 4. **Set `xpack.security.enabled=true`** in Elasticsearch and configure credentials
-5. **Set `numberOfReplicas=1`** in orchestration and optimize for data durability
+5. **Set Elasticsearch-backed index replicas to `1`** for the Zeebe exporter and Optimize only when Elasticsearch has at least two data nodes
 6. **Remove `MANAGEMENT_ENDPOINT_CONFIGPROPS_SHOW_VALUES=ALWAYS`** from all services
 7. **Change `LOGGING_LEVEL_IO_CAMUNDA_MODELER`** from `DEBUG` to `INFO`
 8. **Consider multi-node Elasticsearch** for HA production deployments
