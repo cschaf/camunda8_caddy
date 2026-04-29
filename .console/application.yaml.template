@@ -26,8 +26,8 @@ camunda:
               # renovate: datasource=docker depName=camunda/camunda
               version: "8.9.1"
               urls:
-                grpc: "grpc://orchestration:26500"
-                http: "http://orchestration:8080"
+                grpc: "https://zeebe.${HOST}"
+                http: "https://orchestration.${HOST}"
               readiness: "http://orchestration:9600/health"
               metrics: "http://orchestration:9600/prometheus"
             - name: "Operate"
@@ -42,6 +42,13 @@ camunda:
               # renovate: datasource=docker depName=camunda/tasklist
               version: "8.9.1"
               url: "https://orchestration.${HOST}/tasklist"
+              readiness: "http://orchestration:9600/actuator/health/readiness"
+              metrics: "http://orchestration:9600/actuator/prometheus"
+            - name: "Orchestration Admin"
+              id: "orchestrationIdentity"
+              # renovate: datasource=docker depName=camunda/camunda
+              version: "8.9.1"
+              url: "https://orchestration.${HOST}/admin"
               readiness: "http://orchestration:9600/actuator/health/readiness"
               metrics: "http://orchestration:9600/actuator/prometheus"
             - name: "Optimize"
