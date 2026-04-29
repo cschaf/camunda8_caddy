@@ -52,6 +52,7 @@ services:
       SPRING_DATASOURCE_USERNAME: camunda
       SPRING_DATASOURCE_PASSWORD: ${CAMUNDA_DB_PASSWORD:?CAMUNDA_DB_PASSWORD is required}
       # Resource limits
+      ELASTIC_PASSWORD: ${ELASTIC_PASSWORD}
       CAMUNDA_LICENSE_KEY: ${CAMUNDA_LICENSE_KEY:-}
       JAVA_TOOL_OPTIONS: "-Xms4500m -Xmx4500m"
     env_file:
@@ -139,6 +140,7 @@ services:
       # Elasticsearch connection
       OPTIMIZE_ELASTICSEARCH_HOST: elasticsearch
       OPTIMIZE_ELASTICSEARCH_HTTP_PORT: "9200"
+      ELASTIC_PASSWORD: ${ELASTIC_PASSWORD}
       SPRING_PROFILES_ACTIVE: ccsm
       # Identity integration - URLs and credentials
       CAMUNDA_OPTIMIZE_IDENTITY_ISSUER_URL: https://keycloak.${HOST:?HOST is required}/auth/realms/camunda-platform
@@ -349,7 +351,8 @@ services:
     environment:
       - bootstrap.memory_lock=true
       - discovery.type=single-node
-      - xpack.security.enabled=false
+      - xpack.security.enabled=true
+      - ELASTIC_PASSWORD=${ELASTIC_PASSWORD:?ELASTIC_PASSWORD is required}
       - cluster.max_shards_per_node=1000
       - "action.auto_create_index=.security*,zeebe-record*,operate-*,tasklist-*,optimize-*,camunda-*,web-modeler-*,identity-*"
       - indices.memory.index_buffer_size=20%
@@ -375,7 +378,7 @@ services:
           cpus: "0.5"
           memory: 3G
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cat/health | grep -q green"]
+      test: ["CMD-SHELL", "curl -f -u elastic:$${ELASTIC_PASSWORD} http://localhost:9200/_cat/health | grep -q green"]
       interval: 30s
       timeout: 5s
       retries: 5

@@ -25,6 +25,16 @@ function Get-EnvVal([string]$Key) {
 
 $renovateLine = (Get-Content $EnvExample | Where-Object { $_ -match '^# renovate:' } | Select-Object -First 1) ?? ''
 
+# Pre-generate secrets that are needed both in .env and for file generation
+$elasticPassword = gen
+$postgresPassword = gen
+$camundaDbPassword = gen
+$webmodelerDbPassword = gen
+$keycloakAdminPassword = gen
+$webmodelerPusherKey = gen
+$webmodelerPusherSecret = gen
+$demoUserPassword = gen
+
 $content = @"
 ## Image versions ##
 $renovateLine
@@ -82,38 +92,58 @@ OPTIMIZE_CLIENT_SECRET=$(gen)
 
 CAMUNDA_IDENTITY_CLIENT_SECRET=$(gen)
 
+## Elasticsearch Configuration ##
+ELASTIC_PASSWORD=$elasticPassword
+
 ## Database Configuration ##
 POSTGRES_DB=$(Get-EnvVal 'POSTGRES_DB')
 POSTGRES_USER=$(Get-EnvVal 'POSTGRES_USER')
-POSTGRES_PASSWORD=$(gen)
+POSTGRES_PASSWORD=$postgresPassword
 
 CAMUNDA_DB_NAME=$(Get-EnvVal 'CAMUNDA_DB_NAME')
 CAMUNDA_DB_USER=$(Get-EnvVal 'CAMUNDA_DB_USER')
-CAMUNDA_DB_PASSWORD=$(gen)
+CAMUNDA_DB_PASSWORD=$camundaDbPassword
 
 WEBMODELER_DB_NAME=$(Get-EnvVal 'WEBMODELER_DB_NAME')
 WEBMODELER_DB_USER=$(Get-EnvVal 'WEBMODELER_DB_USER')
-WEBMODELER_DB_PASSWORD=$(gen)
+WEBMODELER_DB_PASSWORD=$webmodelerDbPassword
 
 ## Keycloak Admin Credentials ##
 KEYCLOAK_ADMIN_USER=$(Get-EnvVal 'KEYCLOAK_ADMIN_USER')
-KEYCLOAK_ADMIN_PASSWORD=$(gen)
+KEYCLOAK_ADMIN_PASSWORD=$keycloakAdminPassword
 
 ## Web Modeler Configuration ##
 WEBMODELER_PUSHER_APP_ID=$(Get-EnvVal 'WEBMODELER_PUSHER_APP_ID')
-WEBMODELER_PUSHER_KEY=$(gen)
-WEBMODELER_PUSHER_SECRET=$(gen)
+WEBMODELER_PUSHER_KEY=$webmodelerPusherKey
+WEBMODELER_PUSHER_SECRET=$webmodelerPusherSecret
 
 WEBMODELER_MAIL_FROM_ADDRESS=$(Get-EnvVal 'WEBMODELER_MAIL_FROM_ADDRESS')
 
 ## Demo User ##
-DEMO_USER_PASSWORD=$(gen)
+DEMO_USER_PASSWORD=$demoUserPassword
 
 ## Feature Flags ##
 RESOURCE_AUTHORIZATIONS_ENABLED=$(Get-EnvVal 'RESOURCE_AUTHORIZATIONS_ENABLED')
 "@
 
 [System.IO.File]::WriteAllText($EnvFile, $content, [System.Text.Encoding]::UTF8)
+
+# Generate Optimize environment-config.yaml from template
+$envConfigTemplate = Join-Path $ScriptDir '..' '.optimize' 'environment-config.yaml.example'
+$envConfigFile = Join-Path $ScriptDir '..' '.optimize' 'environment-config.yaml'
+if (Test-Path $envConfigTemplate) {
+    $templateContent = Get-Content $envConfigTemplate -Raw
+    $templateContent = $templateContent -replace 'ELASTIC_PASSWORD_PLACEHOLDER', $elasticPassword
+    [System.IO.File]::WriteAllText($envConfigFile, $templateContent, [System.Text.Encoding]::UTF8)
+    $configAcl = Get-Acl $envConfigFile
+    $configAcl.SetAccessRuleProtection($true, $false)
+    $configRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+        [System.Security.Principal.WindowsIdentity]::GetCurrent().Name,
+        'Read,Write', 'Allow'
+    )
+    $configAcl.AddAccessRule($configRule)
+    Set-Acl $envConfigFile $configAcl
+}
 
 # Restrict permissions on Windows (owner read/write only)
 $acl = Get-Acl $EnvFile
@@ -130,6 +160,7 @@ Write-Host ""
 Write-Host "Generated secrets for:"
 Write-Host "  ORCHESTRATION_CLIENT_SECRET, CONNECTORS_CLIENT_SECRET, CONSOLE_CLIENT_SECRET"
 Write-Host "  OPTIMIZE_CLIENT_SECRET, CAMUNDA_IDENTITY_CLIENT_SECRET"
+Write-Host "  ELASTIC_PASSWORD"
 Write-Host "  POSTGRES_PASSWORD, WEBMODELER_DB_PASSWORD, CAMUNDA_DB_PASSWORD"
 Write-Host "  KEYCLOAK_ADMIN_PASSWORD, WEBMODELER_PUSHER_KEY, WEBMODELER_PUSHER_SECRET"
 Write-Host "  DEMO_USER_PASSWORD"

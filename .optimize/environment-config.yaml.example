@@ -3,6 +3,9 @@ es:
     index:
       number_of_shards: 1
       number_of_replicas: 0
+  security:
+    username: elastic
+    password: "ELASTIC_PASSWORD_PLACEHOLDER"
 zeebe:
   enabled: true
   name: zeebe-record

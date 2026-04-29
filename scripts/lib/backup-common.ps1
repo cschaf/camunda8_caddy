@@ -352,10 +352,17 @@ function Collect-ESState {
     $esHost = if ($env:ES_HOST) { $env:ES_HOST } else { "localhost" }
     $esPort = if ($env:ES_PORT) { $env:ES_PORT } else { "9200" }
     $esUrl = "http://${esHost}:${esPort}"
+    $esCredential = $null
+    if ($env:ELASTIC_PASSWORD) {
+        $esSecurePassword = ConvertTo-SecureString $env:ELASTIC_PASSWORD -AsPlainText -Force
+        $esCredential = New-Object System.Management.Automation.PSCredential("elastic", $esSecurePassword)
+    }
 
     $health = $null
     try {
-        $health = Invoke-RestMethod -Uri "${esUrl}/_cluster/health" -TimeoutSec 10 -ErrorAction Stop
+        $healthParams = @{ Uri = "${esUrl}/_cluster/health"; TimeoutSec = 10; ErrorAction = 'Stop' }
+        if ($esCredential) { $healthParams.Credential = $esCredential }
+        $health = Invoke-RestMethod @healthParams
     }
     catch {
         @{ phase = $Phase; reachable = $false } | ConvertTo-Json -Depth 10 | Set-Content -Path $OutputFile
@@ -367,13 +374,17 @@ function Collect-ESState {
 
     $indicesRaw = @()
     try {
-        $indicesRaw = Invoke-RestMethod -Uri "${esUrl}/_cat/indices?h=index,docs.count,store.size&format=json&expand_wildcards=all" -TimeoutSec 15
+        $idxParams = @{ Uri = "${esUrl}/_cat/indices?h=index,docs.count,store.size&format=json&expand_wildcards=all"; TimeoutSec = 15 }
+        if ($esCredential) { $idxParams.Credential = $esCredential }
+        $indicesRaw = Invoke-RestMethod @idxParams
     }
     catch { }
 
     $dataStreamsRaw = $null
     try {
-        $dataStreamsRaw = Invoke-RestMethod -Uri "${esUrl}/_data_stream?expand_wildcards=all" -TimeoutSec 10
+        $dsParams = @{ Uri = "${esUrl}/_data_stream?expand_wildcards=all"; TimeoutSec = 10 }
+        if ($esCredential) { $dsParams.Credential = $esCredential }
+        $dataStreamsRaw = Invoke-RestMethod @dsParams
     }
     catch { }
 

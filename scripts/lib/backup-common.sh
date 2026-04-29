@@ -391,7 +391,7 @@ collect_es_state() {
   es_url="http://${es_host}:${es_port}"
 
   local health_json indices_json data_streams_json
-  health_json="$(curl -sS --max-time 10 "${es_url}/_cluster/health" 2>>"$LOG_FILE" || true)"
+  health_json="$(curl -sS -u "elastic:${ELASTIC_PASSWORD}" --max-time 10 "${es_url}/_cluster/health" 2>>"$LOG_FILE" || true)"
 
   if [[ -z "$health_json" ]] || ! python3 -c "import json,sys; json.loads(sys.argv[1])" "$health_json" > /dev/null 2>&1; then
     python3 - "$output_file" "$phase" <<'PYEOF' 2>>"$LOG_FILE" || true
@@ -403,8 +403,8 @@ PYEOF
     return 0
   fi
 
-  indices_json="$(curl -sS --max-time 15 "${es_url}/_cat/indices?h=index,docs.count,store.size&format=json&expand_wildcards=all" 2>>"$LOG_FILE" || echo '[]')"
-  data_streams_json="$(curl -sS --max-time 10 "${es_url}/_data_stream?expand_wildcards=all" 2>>"$LOG_FILE" || echo '{}')"
+  indices_json="$(curl -sS -u "elastic:${ELASTIC_PASSWORD}" --max-time 15 "${es_url}/_cat/indices?h=index,docs.count,store.size&format=json&expand_wildcards=all" 2>>"$LOG_FILE" || echo '[]')"
+  data_streams_json="$(curl -sS -u "elastic:${ELASTIC_PASSWORD}" --max-time 10 "${es_url}/_data_stream?expand_wildcards=all" 2>>"$LOG_FILE" || echo '{}')"
 
   python3 - "$output_file" "$phase" "$health_json" "$indices_json" "$data_streams_json" <<'PYEOF' 2>>"$LOG_FILE" || true
 import json, re, sys

@@ -374,7 +374,7 @@ service_readiness_check() {
       docker exec web-modeler-db pg_isready -U "${WEBMODELER_DB_USER}" >/dev/null 2>&1
       ;;
     elasticsearch)
-      curl -sf --max-time 6 "http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s" >/dev/null
+      curl -sf -u "elastic:${ELASTIC_PASSWORD}" --max-time 6 "http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s" >/dev/null
       ;;
     orchestration)
       curl -sf --max-time 6 "http://localhost:8088/actuator/health/readiness" >/dev/null
@@ -943,7 +943,7 @@ PYEOF
     local repo_response repo_attempt
     repo_response=""
     for repo_attempt in {1..10}; do
-      repo_response="$(curl -sS -X PUT "${es_url}/_snapshot/backup-repo" \
+      repo_response="$(curl -sS -u "elastic:${ELASTIC_PASSWORD}" -X PUT "${es_url}/_snapshot/backup-repo" \
         -H 'Content-Type: application/json' \
         -d "$es_repo_body" 2>>"$LOG_FILE" || true)"
       if python3 -c "import json,sys; d=json.loads(sys.argv[1]); sys.exit(0 if d.get('acknowledged') else 1)" "$repo_response" > /dev/null 2>&1; then
@@ -960,7 +960,7 @@ PYEOF
     # Verify the snapshot exists BEFORE deleting any indices, so a wrong or
     # incomplete backup directory cannot wipe the live cluster.
     local snapshot_check_code
-    snapshot_check_code="$(curl -sS -o /dev/null -w '%{http_code}' "${es_url}/_snapshot/backup-repo/${snapshot_name}" 2>>"$LOG_FILE" || echo "000")"
+    snapshot_check_code="$(curl -sS -u "elastic:${ELASTIC_PASSWORD}" -o /dev/null -w '%{http_code}' "${es_url}/_snapshot/backup-repo/${snapshot_name}" 2>>"$LOG_FILE" || echo "000")"
     if [[ "$snapshot_check_code" != "200" ]]; then
       log "ERROR: Snapshot '$snapshot_name' not found in repository (HTTP $snapshot_check_code). Aborting before deleting any indices."
       exit 1
@@ -976,17 +976,17 @@ PYEOF
     index_delete_failures=0
     while IFS= read -r idx; do
       [[ -z "$idx" ]] && continue
-      if ! curl -s -X DELETE "${es_url}/${idx}" > /dev/null 2>>"$LOG_FILE"; then
+      if ! curl -s -u "elastic:${ELASTIC_PASSWORD}" -X DELETE "${es_url}/${idx}" > /dev/null 2>>"$LOG_FILE"; then
         index_delete_failures=$((index_delete_failures + 1))
       fi
-    done < <(curl -s "${es_url}/_cat/indices?h=index&expand_wildcards=all" 2>>"$LOG_FILE" | grep -E "$camunda_regex" || true)
+    done < <(curl -s -u "elastic:${ELASTIC_PASSWORD}" "${es_url}/_cat/indices?h=index&expand_wildcards=all" 2>>"$LOG_FILE" | grep -E "$camunda_regex" || true)
     if [[ "$index_delete_failures" -gt 0 ]]; then
       log "WARNING: $index_delete_failures Camunda-related Elasticsearch index delete request(s) failed; verifying remaining indices."
     fi
 
     log "Verifying deletion of Camunda-related Elasticsearch indices..."
     local remaining_indices
-    remaining_indices="$(curl -s "${es_url}/_cat/indices?h=index&expand_wildcards=all" 2>>"$LOG_FILE" | grep -E "$camunda_regex" || true)"
+    remaining_indices="$(curl -s -u "elastic:${ELASTIC_PASSWORD}" "${es_url}/_cat/indices?h=index&expand_wildcards=all" 2>>"$LOG_FILE" | grep -E "$camunda_regex" || true)"
     if [[ -n "$remaining_indices" ]]; then
       log "ERROR: Camunda-related Elasticsearch indices remain after delete:"
       while IFS= read -r idx; do
@@ -999,7 +999,7 @@ PYEOF
     log "Clearing Camunda-related Elasticsearch data streams..."
     local ds_tmp
     ds_tmp="$(mktemp)"
-    curl -s "${es_url}/_data_stream?expand_wildcards=all" > "$ds_tmp" 2>>"$LOG_FILE" || true
+    curl -s -u "elastic:${ELASTIC_PASSWORD}" "${es_url}/_data_stream?expand_wildcards=all" > "$ds_tmp" 2>>"$LOG_FILE" || true
     local data_streams
     data_streams="$(python3 - "$ds_tmp" <<'PYEOF' 2>>"$LOG_FILE" || true
 import json, re, sys
@@ -1020,7 +1020,7 @@ PYEOF
       data_stream_delete_failures=0
       while IFS= read -r ds; do
         [[ -z "$ds" ]] && continue
-        if ! curl -s -X DELETE "${es_url}/_data_stream/${ds}" > /dev/null 2>>"$LOG_FILE"; then
+        if ! curl -s -u "elastic:${ELASTIC_PASSWORD}" -X DELETE "${es_url}/_data_stream/${ds}" > /dev/null 2>>"$LOG_FILE"; then
           data_stream_delete_failures=$((data_stream_delete_failures + 1))
         fi
       done <<< "$data_streams"
@@ -1031,7 +1031,7 @@ PYEOF
 
     log "Verifying deletion of Camunda-related Elasticsearch data streams..."
     ds_tmp="$(mktemp)"
-    curl -s "${es_url}/_data_stream?expand_wildcards=all" > "$ds_tmp" 2>>"$LOG_FILE" || true
+    curl -s -u "elastic:${ELASTIC_PASSWORD}" "${es_url}/_data_stream?expand_wildcards=all" > "$ds_tmp" 2>>"$LOG_FILE" || true
     local remaining_data_streams
     remaining_data_streams="$(python3 - "$ds_tmp" <<'PYEOF' 2>>"$LOG_FILE" || true
 import json, re, sys
@@ -1061,7 +1061,7 @@ PYEOF
     log "Restoring snapshot: $snapshot_name"
     local restore_response
     local restore_body='{"indices":"*,-.logs-*,-.ds-.logs-*,-ilm-history-*,-.ds-ilm-history-*","ignore_unavailable":true,"include_global_state":true}'
-    restore_response="$(curl -sS -X POST "${es_url}/_snapshot/backup-repo/${snapshot_name}/_restore?wait_for_completion=true" \
+    restore_response="$(curl -sS -u "elastic:${ELASTIC_PASSWORD}" -X POST "${es_url}/_snapshot/backup-repo/${snapshot_name}/_restore?wait_for_completion=true" \
       -H 'Content-Type: application/json' \
       -d "$restore_body" 2>>"$LOG_FILE" || true)"
 

@@ -321,7 +321,12 @@ function Test-ServiceReadiness {
         }
         "elasticsearch" {
             try {
-                Invoke-RestMethod -Uri "http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s" -TimeoutSec 6 | Out-Null
+                $esHealthParams = @{ Uri = "http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s"; TimeoutSec = 6 }
+                if ($env:ELASTIC_PASSWORD) {
+                    $esHealthSecure = ConvertTo-SecureString $env:ELASTIC_PASSWORD -AsPlainText -Force
+                    $esHealthParams.Credential = New-Object System.Management.Automation.PSCredential("elastic", $esHealthSecure)
+                }
+                Invoke-RestMethod @esHealthParams | Out-Null
                 return $true
             }
             catch { return $false }
@@ -881,11 +886,23 @@ chmod -R 777 /dest
             $esUrl = "http://${esHost}:${esPort}"
 
             $esRepoBody = '{"type":"fs","settings":{"location":"/usr/share/elasticsearch/backup","compress":true}}'
+            $esCredential = $null
+            if ($env:ELASTIC_PASSWORD) {
+                $esSecurePassword = ConvertTo-SecureString $env:ELASTIC_PASSWORD -AsPlainText -Force
+                $esCredential = New-Object System.Management.Automation.PSCredential("elastic", $esSecurePassword)
+            }
             $repoRegistered = $false
             $repoError = $null
             for ($attempt = 1; $attempt -le 10; $attempt++) {
                 try {
-                    $repoResponse = Invoke-RestMethod -Uri "${esUrl}/_snapshot/backup-repo" -Method Put -ContentType "application/json" -Body $esRepoBody
+                    $repoParams = @{
+                        Uri = "${esUrl}/_snapshot/backup-repo"
+                        Method = 'Put'
+                        ContentType = 'application/json'
+                        Body = $esRepoBody
+                    }
+                    if ($esCredential) { $repoParams.Credential = $esCredential }
+                    $repoResponse = Invoke-RestMethod @repoParams
                     if ($repoResponse.acknowledged) {
                         $repoRegistered = $true
                         break
@@ -907,7 +924,9 @@ chmod -R 777 /dest
             # or incomplete backup directory cannot wipe the live cluster.
             $snapshotExists = $false
             try {
-                Invoke-RestMethod -Uri "${esUrl}/_snapshot/backup-repo/$snapshotName" -Method Get | Out-Null
+                $snapParams = @{ Uri = "${esUrl}/_snapshot/backup-repo/$snapshotName"; Method = 'Get' }
+                if ($esCredential) { $snapParams.Credential = $esCredential }
+                Invoke-RestMethod @snapParams | Out-Null
                 $snapshotExists = $true
             }
             catch {
@@ -927,12 +946,16 @@ chmod -R 777 /dest
             Log "Clearing Camunda-related Elasticsearch indices..."
             $indexDeleteFailures = 0
             try {
-                $catIndices = Invoke-RestMethod -Uri "${esUrl}/_cat/indices?h=index&expand_wildcards=all&format=json"
+                $catParams = @{ Uri = "${esUrl}/_cat/indices?h=index&expand_wildcards=all&format=json" }
+                if ($esCredential) { $catParams.Credential = $esCredential }
+                $catIndices = Invoke-RestMethod @catParams
                 foreach ($row in $catIndices) {
                     $idx = $row.index
                     if ($idx -match $camundaPattern) {
                         try {
-                            Invoke-RestMethod -Uri "${esUrl}/$idx" -Method Delete | Out-Null
+                            $delParams = @{ Uri = "${esUrl}/$idx"; Method = 'Delete' }
+                            if ($esCredential) { $delParams.Credential = $esCredential }
+                            Invoke-RestMethod @delParams | Out-Null
                         }
                         catch {
                             $indexDeleteFailures++
@@ -951,8 +974,10 @@ chmod -R 777 /dest
 
             Log "Verifying deletion of Camunda-related Elasticsearch indices..."
             try {
+                $verifyParams = @{ Uri = "${esUrl}/_cat/indices?h=index&expand_wildcards=all&format=json" }
+                if ($esCredential) { $verifyParams.Credential = $esCredential }
                 $remainingIndices = @(
-                    Invoke-RestMethod -Uri "${esUrl}/_cat/indices?h=index&expand_wildcards=all&format=json" |
+                    Invoke-RestMethod @verifyParams |
                         Where-Object { $_.index -match $camundaPattern } |
                         ForEach-Object { $_.index }
                 )
@@ -971,12 +996,16 @@ chmod -R 777 /dest
             Log "Clearing Camunda-related Elasticsearch data streams..."
             $dataStreamDeleteFailures = 0
             try {
-                $dsResponse = Invoke-RestMethod -Uri "${esUrl}/_data_stream?expand_wildcards=all"
+                $dsListParams = @{ Uri = "${esUrl}/_data_stream?expand_wildcards=all" }
+                if ($esCredential) { $dsListParams.Credential = $esCredential }
+                $dsResponse = Invoke-RestMethod @dsListParams
                 if ($dsResponse.data_streams) {
                     foreach ($ds in $dsResponse.data_streams) {
                         if ($ds.name -match $camundaPattern) {
                             try {
-                                Invoke-RestMethod -Uri "${esUrl}/_data_stream/$($ds.name)" -Method Delete | Out-Null
+                                $dsDelParams = @{ Uri = "${esUrl}/_data_stream/$($ds.name)"; Method = 'Delete' }
+                                if ($esCredential) { $dsDelParams.Credential = $esCredential }
+                                Invoke-RestMethod @dsDelParams | Out-Null
                             }
                             catch {
                                 $dataStreamDeleteFailures++
@@ -997,7 +1026,9 @@ chmod -R 777 /dest
             Log "Verifying deletion of Camunda-related Elasticsearch data streams..."
             try {
                 $remainingDataStreams = @()
-                $dsVerifyResponse = Invoke-RestMethod -Uri "${esUrl}/_data_stream?expand_wildcards=all"
+                $dsVerifyParams = @{ Uri = "${esUrl}/_data_stream?expand_wildcards=all" }
+                if ($esCredential) { $dsVerifyParams.Credential = $esCredential }
+                $dsVerifyResponse = Invoke-RestMethod @dsVerifyParams
                 if ($dsVerifyResponse.data_streams) {
                     $remainingDataStreams = @(
                         $dsVerifyResponse.data_streams |
@@ -1021,7 +1052,14 @@ chmod -R 777 /dest
             Log "Restoring snapshot: $snapshotName"
             try {
                 $restoreBody = '{"indices":"*,-.logs-*,-.ds-.logs-*,-ilm-history-*,-.ds-ilm-history-*","ignore_unavailable":true,"include_global_state":true}'
-                $restoreResponse = Invoke-RestMethod -Uri "${esUrl}/_snapshot/backup-repo/$snapshotName/_restore?wait_for_completion=true" -Method Post -ContentType "application/json" -Body $restoreBody
+                $restoreParams = @{
+                    Uri = "${esUrl}/_snapshot/backup-repo/$snapshotName/_restore?wait_for_completion=true"
+                    Method = 'Post'
+                    ContentType = 'application/json'
+                    Body = $restoreBody
+                }
+                if ($esCredential) { $restoreParams.Credential = $esCredential }
+                $restoreResponse = Invoke-RestMethod @restoreParams
                 if (-not $restoreResponse.snapshot -or $restoreResponse.snapshot.shards.failed -ne 0) {
                     Log "ERROR: Elasticsearch restore failed shards: $($restoreResponse.snapshot.shards.failed)"
                     exit 1

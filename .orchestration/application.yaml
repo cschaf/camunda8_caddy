@@ -57,6 +57,9 @@ camunda:
         class-name: io.camunda.zeebe.exporter.ElasticsearchExporter
         args:
           url: "http://elasticsearch:9200"
+          authentication:
+            username: "elastic"
+            password: "${ELASTIC_PASSWORD}"
           bulk:
             delay: 5
             size: 1000
@@ -72,6 +75,11 @@ camunda:
             number-of-shards: 1
             number-of-replicas: 0
             optimize-mode-enabled: true
+  database:
+    elasticsearch:
+      url: "http://elasticsearch:9200"
+      username: "elastic"
+      password: "${ELASTIC_PASSWORD}"
   backup:
     webapps:
       enabled: false

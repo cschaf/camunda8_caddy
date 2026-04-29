@@ -389,8 +389,20 @@ function Main {
             $esHost = if ($env:ES_HOST) { $env:ES_HOST } else { "localhost" }
             $esPort = if ($env:ES_PORT) { $env:ES_PORT } else { "9200" }
             $esUrl = "http://${esHost}:${esPort}"
+            $esCredential = $null
+            if ($env:ELASTIC_PASSWORD) {
+                $esSecurePassword = ConvertTo-SecureString $env:ELASTIC_PASSWORD -AsPlainText -Force
+                $esCredential = New-Object System.Management.Automation.PSCredential("elastic", $esSecurePassword)
+            }
             try {
-                Invoke-RestMethod -Uri "${esUrl}/_snapshot/backup-repo" -Method Put -ContentType "application/json" -Body $esRepoBody | Out-Null
+                $invokeParams = @{
+                    Uri = "${esUrl}/_snapshot/backup-repo"
+                    Method = 'Put'
+                    ContentType = 'application/json'
+                    Body = $esRepoBody
+                }
+                if ($esCredential) { $invokeParams.Credential = $esCredential }
+                Invoke-RestMethod @invokeParams | Out-Null
                 Log "Elasticsearch snapshot repo registered."
             }
             catch {
@@ -403,7 +415,14 @@ function Main {
             $snapshotInfoFile = Join-Path $backupDir "snapshot-info.json"
             $esSuccess = $false
             try {
-                $response = Invoke-RestMethod -Uri "${esUrl}/_snapshot/backup-repo/${snapshotName}?wait_for_completion=true" -Method Put -ContentType "application/json" -Body $snapshotBody
+                $snapshotParams = @{
+                    Uri = "${esUrl}/_snapshot/backup-repo/${snapshotName}?wait_for_completion=true"
+                    Method = 'Put'
+                    ContentType = 'application/json'
+                    Body = $snapshotBody
+                }
+                if ($esCredential) { $snapshotParams.Credential = $esCredential }
+                $response = Invoke-RestMethod @snapshotParams
                 $response | ConvertTo-Json -Depth 10 | Set-Content -Path $snapshotInfoFile
 
                 $state = $response.snapshot.state

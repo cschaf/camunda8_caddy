@@ -20,6 +20,9 @@ connector-secrets.txt
 # Runtime-generated (use Caddyfile.example as template)
 Caddyfile
 
+# Optimize config with secrets (generated from .env)
+.optimize/environment-config.yaml
+
 # IDE / editor
 .vscode/
 .idea/

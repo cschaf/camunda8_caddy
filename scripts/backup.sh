@@ -379,7 +379,7 @@ main() {
     # Register snapshot repository
     local es_repo_body
     es_repo_body='{"type":"fs","settings":{"location":"/usr/share/elasticsearch/backup","compress":true}}'
-    curl -fsS -X PUT "${es_url}/_snapshot/backup-repo" \
+    curl -fsS -u "elastic:${ELASTIC_PASSWORD}" -X PUT "${es_url}/_snapshot/backup-repo" \
       -H 'Content-Type: application/json' \
       -d "$es_repo_body" > /dev/null || {
         log "ERROR: Could not register snapshot repo"
@@ -391,7 +391,7 @@ main() {
     local snapshot_info_file="$backup_dir/snapshot-info.json"
     local es_success=false
     local snapshot_body='{"indices":"*,-.logs-*,-.ds-.logs-*,-ilm-history-*,-.ds-ilm-history-*","ignore_unavailable":true,"include_global_state":true,"feature_states":["none"]}'
-    curl -sS -X PUT "${es_url}/_snapshot/backup-repo/${snapshot_name}?wait_for_completion=true" \
+    curl -sS -u "elastic:${ELASTIC_PASSWORD}" -X PUT "${es_url}/_snapshot/backup-repo/${snapshot_name}?wait_for_completion=true" \
       -H 'Content-Type: application/json' \
       -d "$snapshot_body" > "$snapshot_info_file" 2>>"$LOG_FILE" || true
 
