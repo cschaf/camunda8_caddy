@@ -48,7 +48,6 @@ services:
       CAMUNDA_IDENTITY_BASEURL: http://identity:8084
       CAMUNDA_IDENTITY_AUDIENCE: orchestration-api
       # Database configuration (RDBMS)
-      CAMUNDA_DATABASE_TYPE: rdbms
       SPRING_DATASOURCE_URL: jdbc:postgresql://camunda-db:5432/camunda
       SPRING_DATASOURCE_USERNAME: camunda
       SPRING_DATASOURCE_PASSWORD: ${CAMUNDA_DB_PASSWORD:?CAMUNDA_DB_PASSWORD is required}

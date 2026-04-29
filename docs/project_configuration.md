@@ -224,33 +224,35 @@ Configuration lives in `.orchestration/application.yaml`, mounted into the orche
 ### Thread Configuration
 
 ```yaml
-threads:
-  cpuThreadCount: "4"
-  ioThreadCount: "4"
+camunda:
+  system:
+    cpu-thread-count: 4
+    io-thread-count: 4
 ```
 
 | Setting | Value | Default | Why |
 |---------|-------|---------|-----|
-| `cpuThreadCount` | `4` | `2` (was `3`) | Number of threads for processing workflow commands. With 4 CPU cores allocated, using 4 threads maximizes throughput. The Zeebe upstream default is 2; this stack previously used 3. |
-| `ioThreadCount` | `4` | `2` (was `3`) | Number of threads for IO-bound operations (network, disk). Having 4 IO threads allows the broker to handle many concurrent export/disk operations without blocking the CPU threads. The Zeebe upstream default is 2; this stack previously used 3. |
+| `camunda.system.cpu-thread-count` | `4` | `2` | Number of threads for processing workflow commands. With 4 CPU cores allocated, using 4 threads maximizes throughput. |
+| `camunda.system.io-thread-count` | `4` | `2` | Number of threads for IO-bound operations (network, disk). Having 4 IO threads allows the broker to handle concurrent export/disk operations without blocking CPU threads. |
 
 ### Disk Watermarks
 
 ```yaml
-data:
-  diskUsageCommandWatermark: 0.85
-  diskUsageReplicationWatermark: 0.90
-  freeSpace:
-    processing: 2GB
-    replication: 3GB
+camunda:
+  data:
+    primary-storage:
+      disk:
+        free-space:
+          processing: 2GB
+          replication: 1GB
 ```
 
 | Setting | Value | Default | Why |
 |---------|-------|---------|-----|
-| `diskUsageCommandWatermark` | `0.85` | `0.80` | Broker refuses new commands when disk usage exceeds 85%. Prevents the broker from accepting work it cannot complete. Set to 85% (not lower) to give Elasticsearch enough disk space for its own writes. |
-| `diskUsageReplicationWatermark` | `0.90` | `0.85` | Partition replication is rejected above 90%. Gives replication slightly more headroom than command processing. |
-| `freeSpace.processing` | `2GB` | `10GB` | Minimum free disk space for the processing partition. If less than 2GB is available, the broker pauses processing. Set low (2GB) for development servers with limited storage. |
-| `freeSpace.replication` | `3GB` | `10GB` | Minimum free disk space for replication. Set to 3GB to account for snapshot replication requiring temporary disk space. |
+| `camunda.data.primary-storage.disk.free-space.processing` | `2GB` | `2GB` | Minimum free disk space before the broker rejects client commands and pauses processing. This is intentionally low enough for local/dev Docker volumes while still leaving space for log compaction and snapshots. |
+| `camunda.data.primary-storage.disk.free-space.replication` | `1GB` | `1GB` | Minimum free disk space before the broker stops receiving replicated events. Camunda 8.9 validates that `processing` is greater than `replication`; `2GB/1GB` matches that rule and the upstream defaults. |
+
+The free-space thresholds are not stage-specific. The `prod`, `dev`, and `test` overlays scale CPU/RAM/JVM heap, but they do not change Docker volume capacity. On the current Docker Desktop volume, Orchestration sees roughly 63 GB total and 38 GB free, so `2GB/1GB` leaves ample headroom.
 
 ### RDBMS Secondary Storage
 
@@ -258,10 +260,6 @@ In Camunda 8.9, core operational data (Zeebe records, Operate process instances,
 
 ```yaml
 camunda:
-  database:
-    type: rdbms
-    index:
-      numberOfReplicas: 0
   data:
     secondary-storage:
       type: rdbms
@@ -273,7 +271,6 @@ camunda:
 
 | Setting | Value | Default | Why |
 |---------|-------|---------|-----|
-| `database.type` | `rdbms` | `rdbms` (8.9+) | Sets the primary Camunda database type. Camunda 8.9 defaults to RDBMS. |
 | `data.secondary-storage.type` | `rdbms` | `rdbms` (8.9+) | Tells the unified orchestration container to use PostgreSQL for Operate/Tasklist data and to auto-configure the exporter for RDBMS. |
 | `data.secondary-storage.rdbms.url` | `jdbc:postgresql://camunda-db:5432/camunda` | (none) | JDBC URL pointing to the dedicated `camunda-db` container. |
 | `data.secondary-storage.rdbms.username` | `camunda` | (none) | PostgreSQL user for the Camunda database. |
@@ -384,13 +381,15 @@ Without this configuration, `optimize-*` indices grow indefinitely. Shard exhaus
 ### Snapshot Period
 
 ```yaml
-data:
-  snapshotPeriod: 5m
+camunda:
+  data:
+    primary-storage:
+      snapshot-period: 5m
 ```
 
 | Setting | Value | Default | Why |
 |---------|-------|---------|-----|
-| `snapshotPeriod` | `5m` | `5m` | snapshots are taken every 5 minutes. A shorter period means more frequent snapshots but higher IO. 5m is a standard production interval that balances recovery time (RTO) against IO overhead. |
+| `camunda.data.primary-storage.snapshot-period` | `5m` | `5m` | Snapshots are taken every 5 minutes. A shorter period means more frequent snapshots but higher IO. 5m balances recovery time (RTO) against IO overhead. |
 
 ### Security and Authentication
 
@@ -843,7 +842,7 @@ Several settings are intentionally development-oriented and should be reviewed b
 |---------|---------------|------------------|--------------|
 | `numberOfReplicas: 0` | optimize | `1` | Single failure loses data |
 | `discovery.type=single-node` | elasticsearch | multi-node cluster | No HA, single point of failure |
-| `snapshotPeriod: 5m` | orchestration | `15m` | More frequent snapshots = more IO overhead |
+| `camunda.data.primary-storage.snapshot-period: 5m` | orchestration | `15m` | More frequent snapshots = more IO overhead |
 | ILM / retention policies | Enabled — Optimize (365d) via `.optimize/environment-config.yaml` | Disabled by default | Optimize keeps aggregated analytical data for 365 days to support quarterly and year-over-year analytics. Camunda core operational data (Zeebe, Operate, Tasklist) is stored in PostgreSQL (`camunda-db`) and retention is handled by the RDBMS rather than Elasticsearch ILM. Without retention, Optimize historical index data grows indefinitely and leads to shard exhaustion and cluster instability. |
 
 ### Network/TLS Settings

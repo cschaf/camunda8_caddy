@@ -23,49 +23,58 @@ zeebe:
     level: "info"
 
   broker:
-    # zeebe.broker.gateway
     gateway:
       enable: true
-      network:
-        host: 0.0.0.0
-        port: 26500
-
-    # zeebe.broker.network
-    network:
-      host: 0.0.0.0
-      commandApi:
-        port: 26501
-      internalApi:
-        port: 26502
-
-    # zeebe.broker.data
-    data:
-      directory: /usr/local/camunda/data
-      snapshotPeriod: 5m
-      # Allow running with low disk space (for local development)
-      diskUsageCommandWatermark: 0.85
-      diskUsageReplicationWatermark: 0.90
-      freeSpace:
-        processing: 2GB
-        replication: 3GB
-
-    # zeebe.broker.threads
-    threads:
-      cpuThreadCount: "4"
-      ioThreadCount: "4"
 
 camunda:
-  database:
-    type: rdbms
-    index:
-      numberOfReplicas: 0
+  api:
+    grpc:
+      address: 0.0.0.0
+      port: 26500
+  cluster:
+    network:
+      host: 0.0.0.0
+      command-api:
+        port: 26501
+      internal-api:
+        port: 26502
+  system:
+    cpu-thread-count: 4
+    io-thread-count: 4
   data:
+    primary-storage:
+      directory: /usr/local/camunda/data
+      snapshot-period: 5m
+      disk:
+        free-space:
+          processing: 2GB
+          replication: 1GB
     secondary-storage:
       type: rdbms
       rdbms:
         url: "jdbc:postgresql://camunda-db:5432/camunda"
         username: "camunda"
         password: "${CAMUNDA_DB_PASSWORD}"
+    exporters:
+      elasticsearch:
+        class-name: io.camunda.zeebe.exporter.ElasticsearchExporter
+        args:
+          url: "http://elasticsearch:9200"
+          bulk:
+            delay: 5
+            size: 1000
+            memoryLimit: 10485760
+          retention:
+            enabled: true
+            minimumAge: 90d
+            policyName: zeebe-records-retention-policy
+          index:
+            prefix: zeebe-record
+            createTemplate: true
+            indexSuffixDatePattern: "yyyy-MM-dd"
+            numberOfShards: 1
+            numberOfReplicas: 0
+            optimizeModeEnabled: true
   backup:
     webapps:
       enabled: false
