@@ -41,3 +41,4 @@ Thumbs.db
 # Local development notes
 AGENT.md
 CLAUDE.md
+.worktrees/
