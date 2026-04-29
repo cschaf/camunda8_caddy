@@ -814,7 +814,7 @@ Several settings are intentionally development-oriented and should be reviewed b
 
 | Setting | Current Value | Production Value | Risk if Left |
 |---------|---------------|------------------|--------------|
-| `MANAGEMENT_ENDPOINT_CONFIGPROPS_SHOW_VALUES=ALWAYS` | All services | `NEVER` | Exposes all config including secrets in `/actuator/configprops` |
+| `/actuator/configprops` exposure | Disabled for runtime services | Keep disabled; if temporarily needed, use `show-values: NEVER` | Exposing config properties can leak OAuth client secrets, database passwords, and connector credentials |
 | `LOGGING_LEVEL_IO_CAMUNDA_MODELER=DEBUG` | web-modeler-restapi | `INFO` | Verbose logging, performance impact |
 | `xpack.security.enabled=false` | elasticsearch | `true` | No authentication on Elasticsearch API |
 
@@ -845,6 +845,8 @@ Several settings are intentionally development-oriented and should be reviewed b
 | `POSTGRES_PASSWORD` | `demo-postgres-password` | Strong random password |
 | All `*_CLIENT_SECRET` | Weak demo values | Strong random passwords |
 
+Management endpoint policy: expose only the endpoints needed for health checks and monitoring. `health`, `info`, `metrics`, and `prometheus` are acceptable where used by the stack. Do not expose `configprops` in committed configuration because this stack injects database passwords, OAuth client secrets, Keycloak admin credentials, and connector credentials via environment variables.
+
 ### Recommended Production Changes
 
 1. **Run `scripts/generate-secrets.sh --force`** to regenerate all secrets with cryptographically random values
@@ -852,6 +854,6 @@ Several settings are intentionally development-oriented and should be reviewed b
 3. **Replace self-signed TLS certs** with certificates from a corporate CA or Let's Encrypt
 4. **Set `xpack.security.enabled=true`** in Elasticsearch and configure credentials
 5. **Set Elasticsearch-backed index replicas to `1`** for the Zeebe exporter and Optimize only when Elasticsearch has at least two data nodes
-6. **Remove `MANAGEMENT_ENDPOINT_CONFIGPROPS_SHOW_VALUES=ALWAYS`** from all services
+6. **Keep `/actuator/configprops` disabled** for all runtime services; if temporarily enabled for debugging, set `show-values: NEVER` and restrict access to localhost.
 7. **Change `LOGGING_LEVEL_IO_CAMUNDA_MODELER`** from `DEBUG` to `INFO`
 8. **Consider multi-node Elasticsearch** for HA production deployments

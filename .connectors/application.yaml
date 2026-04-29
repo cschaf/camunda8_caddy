@@ -17,10 +17,8 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics,prometheus,configprops
+        include: health,info,metrics,prometheus
   endpoint:
-    configprops:
-      show-values: ALWAYS
     health:
       probes:
         enabled: true

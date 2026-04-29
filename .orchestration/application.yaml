@@ -8,10 +8,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics,prometheus,configprops
-  endpoint:
-    configprops:
-      show-values: ALWAYS
+        include: health,info,metrics,prometheus
 
 server:
   forward-headers-strategy: framework

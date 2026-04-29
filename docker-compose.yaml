@@ -150,8 +150,7 @@ services:
       # Trust X-Forwarded headers from reverse proxy (required for correct URL construction behind HTTPS proxy)
       SERVER_FORWARD_HEADERS_STRATEGY: framework
       # Management endpoints
-      management.endpoints.web.exposure.include: health,configprops
-      MANAGEMENT_ENDPOINT_CONFIGPROPS_SHOW_VALUES: ALWAYS
+      management.endpoints.web.exposure.include: health
       management.endpoint.health.probes.enabled: "true"
       CAMUNDA_LICENSE_KEY: ${CAMUNDA_LICENSE_KEY:-}
       JAVA_TOOL_OPTIONS: "-Xms2304m -Xmx2304m"
@@ -205,9 +204,8 @@ services:
       KEYCLOAK_HOST: ${KEYCLOAK_HOST:?KEYCLOAK_HOST is required}
       RESOURCE_PERMISSIONS_ENABLED: ${RESOURCE_AUTHORIZATIONS_ENABLED:?RESOURCE_AUTHORIZATIONS_ENABLED is required}
       SERVER_FORWARD_HEADERS_STRATEGY: framework
-      management.endpoints.web.exposure.include: health,configprops
+      management.endpoints.web.exposure.include: health
       management.endpoint.health.probes.enabled: true
-      MANAGEMENT_ENDPOINT_CONFIGPROPS_SHOW_VALUES: ALWAYS
       CAMUNDA_IDENTITY_CLIENT_SECRET: ${CAMUNDA_IDENTITY_CLIENT_SECRET:?CAMUNDA_IDENTITY_CLIENT_SECRET is required}
       DEMO_USER_PASSWORD: ${DEMO_USER_PASSWORD:?DEMO_USER_PASSWORD is required}
       CAMUNDA_LICENSE_KEY: ${CAMUNDA_LICENSE_KEY:-}
@@ -509,9 +507,8 @@ services:
       CAMUNDA_MODELER_CLUSTERS_0_URL_WEBAPP: https://orchestration.${HOST:?HOST is required}
       CAMUNDA_MODELER_CLUSTERS_0_AUTHENTICATION: BEARER_TOKEN
       CAMUNDA_MODELER_CLUSTERS_0_AUTHORIZATIONS_ENABLED: ${RESOURCE_AUTHORIZATIONS_ENABLED:?RESOURCE_AUTHORIZATIONS_ENABLED is required}
-      management.endpoints.web.exposure.include: health,configprops,info
+      management.endpoints.web.exposure.include: health,info
       management.endpoint.health.probes.enabled: true
-      MANAGEMENT_ENDPOINT_CONFIGPROPS_SHOW_VALUES: ALWAYS
       SERVER_HTTPS_ONLY: "false"
       PLAY_ENABLED: "true"
       CLIENT_PUSHER_HOST: webmodeler.${HOST:?HOST is required}
