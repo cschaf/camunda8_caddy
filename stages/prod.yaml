@@ -82,6 +82,9 @@ services:
         reservations:
           cpus: "0.25"
           memory: 512M
+    environment:
+      LOGGING_LEVEL_IO_CAMUNDA_MODELER: INFO
+      PLAY_ENABLED: "true"
 
   postgres:
     deploy:
@@ -132,6 +135,8 @@ services:
         reservations:
           cpus: "0.1"
           memory: 64M
+    environment:
+      APP_DEBUG: "false"
 
   mailpit:
     deploy:

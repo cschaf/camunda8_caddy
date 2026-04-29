@@ -1,6 +1,6 @@
 # While the Docker images themselves are supported for production usage,
-# this docker-compose.yaml is designed to be used by developers to run
-# an environment locally. It is not designed to be used in production.
+# this docker-compose.yaml is configured as a production-ready single-node
+# Docker Compose profile for environments that accept the documented trade-offs.
 # We recommend to use Kubernetes in production with our Helm Charts:
 # https://docs.camunda.io/docs/self-managed/setup/install/
 # For local development, we recommend using KIND instead of `docker-compose`:
@@ -488,7 +488,7 @@ services:
       start_period: 60s
     environment:
       JAVA_OPTIONS: -Xmx768m
-      LOGGING_LEVEL_IO_CAMUNDA_MODELER: DEBUG
+      LOGGING_LEVEL_IO_CAMUNDA_MODELER: INFO
       CAMUNDA_IDENTITY_BASEURL: http://identity:8084/
       SPRING_DATASOURCE_URL: jdbc:postgresql://web-modeler-db:5432/${WEBMODELER_DB_NAME:?WEBMODELER_DB_NAME is required}
       SPRING_DATASOURCE_USERNAME: ${WEBMODELER_DB_USER:?WEBMODELER_DB_USER is required}
@@ -556,7 +556,7 @@ services:
       start_period: 30s
     environment:
       APP_NAME: "Web Modeler Self-Managed WebSockets"
-      APP_DEBUG: "true"
+      APP_DEBUG: "false"
       PUSHER_APP_ID: ${WEBMODELER_PUSHER_APP_ID:?WEBMODELER_PUSHER_APP_ID is required}
       PUSHER_APP_KEY: ${WEBMODELER_PUSHER_KEY:?WEBMODELER_PUSHER_KEY is required}
       PUSHER_APP_SECRET: ${WEBMODELER_PUSHER_SECRET:?WEBMODELER_PUSHER_SECRET is required}

@@ -1,5 +1,5 @@
 # Caddyfile for Camunda Compose NVL - Reverse Proxy
-# Development only - not for production
+# Ready for production when paired with production TLS certificates and hardened environment secrets
 
 # Custom TLS certificates (optional):
 # If FULLCHAIN_PEM and PRIVATEKEY_PEM are set in .env, the setup-host scripts

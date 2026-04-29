@@ -874,7 +874,7 @@ Several settings are intentionally development-oriented and should be reviewed b
 | Setting | Current Value | Production Value | Risk if Left |
 |---------|---------------|------------------|--------------|
 | `/actuator/configprops` exposure | Disabled for runtime services | Keep disabled; if temporarily needed, use `show-values: NEVER` | Exposing config properties can leak OAuth client secrets, database passwords, and connector credentials |
-| `LOGGING_LEVEL_IO_CAMUNDA_MODELER=DEBUG` | web-modeler-restapi | `INFO` | Verbose logging, performance impact |
+| `LOGGING_LEVEL_IO_CAMUNDA_MODELER=INFO` | web-modeler-restapi | `INFO` | Keeps Web Modeler logging at production-appropriate verbosity |
 | `xpack.security.enabled=true` | elasticsearch | `true` | Basic Auth required on Elasticsearch API |
 
 ### Data Durability Settings
@@ -913,5 +913,5 @@ Management endpoint policy: expose only the endpoints needed for health checks a
 3. **Replace self-signed TLS certs** with certificates from a corporate CA or Let's Encrypt
 4. **Set Elasticsearch-backed index replicas to `1`** for the Zeebe exporter and Optimize only when Elasticsearch has at least two data nodes
 5. **Keep `/actuator/configprops` disabled** for all runtime services; if temporarily enabled for debugging, set `show-values: NEVER` and restrict access to localhost.
-6. **Change `LOGGING_LEVEL_IO_CAMUNDA_MODELER`** from `DEBUG` to `INFO`
+6. **Keep `LOGGING_LEVEL_IO_CAMUNDA_MODELER`** at `INFO`
 7. **Consider multi-node Elasticsearch** for HA production deployments
