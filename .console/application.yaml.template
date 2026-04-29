@@ -11,7 +11,7 @@ camunda:
           # renovate: datasource=docker depName=camunda/camunda
           version: "8.9.1"
           tags:
-            - "dev"
+            - "${STAGE}"
             - "local"
           components:
             - name: "Console"

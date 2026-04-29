@@ -43,7 +43,7 @@ $ConsoleTemplate = Join-Path $ProjectDir '.console/application.yaml.template'
 $ConsoleConfig   = Join-Path $ProjectDir '.console/application.yaml'
 if ((Test-Path $ConsoleTemplate) -and $EnvHost) {
     $content = Get-Content $ConsoleTemplate -Raw
-    $content = $content.Replace('${HOST}', $EnvHost)
+    $content = $content.Replace('${HOST}', $EnvHost).Replace('${STAGE}', $StageValue)
     $content | Set-Content $ConsoleConfig -NoNewline
 }
 
