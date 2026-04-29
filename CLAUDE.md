@@ -94,7 +94,7 @@ Direct service ports are bound to `127.0.0.1` for local diagnostics and scripts 
 
 When adding a new service, publish host ports only if a host-side script or local diagnostic workflow needs them. Bind such ports to `127.0.0.1`. Public user-facing access should be routed through Caddy on port 443.
 
-Elasticsearch remains reachable on `127.0.0.1:9200` for backup and restore scripts. It must not be exposed on a LAN or public interface while `xpack.security.enabled=false`.
+Elasticsearch requires Basic Auth on port `9200`. Direct access is bound to `127.0.0.1` for backup/restore scripts and diagnostics only. Do not expose `9200` on LAN interfaces.
 
 ### Web Modeler Architecture
 

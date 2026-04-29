@@ -103,8 +103,8 @@ On restore, the Keycloak database is restored via `pg_restore --clean --if-exist
 **Quick verification after creating a new admin:**
 
 ```bash
-# Confirm Camunda authorization indices exist
-curl -s http://localhost:9200/_cat/indices?h=index | grep -E '^(camunda-|operate-|tasklist-)'
+# Confirm Camunda authorization indices exist (requires ES auth)
+curl -s -u "elastic:${ELASTIC_PASSWORD}" http://localhost:9200/_cat/indices?h=index | grep -E '^(camunda-|operate-|tasklist-)'
 
 # Take a backup
 ./scripts/backup.sh
@@ -624,7 +624,7 @@ Current scripts also release the lock reliably on PowerShell via `try/finally`, 
 
 ### Elasticsearch snapshot fails
 
-- Check if Elasticsearch is running: `curl http://localhost:9200/_cluster/health`
+- Check if Elasticsearch is running: `curl -u "elastic:${ELASTIC_PASSWORD}" http://localhost:9200/_cluster/health`
 - Check if the Docker volume `elastic-backup` exists: `docker volume ls | grep elastic-backup`
 - Check Elasticsearch logs: `docker compose logs elasticsearch`
 

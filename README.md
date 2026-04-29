@@ -262,7 +262,7 @@ To allow other devices on your network to reach the services through Caddy:
 
 Each client machine also needs to trust the CA that signed your certificate. For mkcert, the root certificate is at the path printed by `mkcert -CAROOT` (`rootCA.pem`) — import it into the OS trust store on each client. For a corporate CA it is likely already trusted on domain-joined machines.
 
-Do not expose Elasticsearch or management ports such as `9200`, `9300`, or `9600` on LAN interfaces while Elasticsearch security and actuator hardening are not enabled.
+Elasticsearch requires Basic Auth on port `9200`. Direct access is still bound to `127.0.0.1` for local backup/restore scripts and diagnostics. Do not expose `9200`, `9300`, or `9600` on LAN interfaces.
 
 ---
 

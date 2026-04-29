@@ -153,7 +153,7 @@ Elasticsearch is retained for **Optimize**. Camunda core operational query data 
 environment:
   - bootstrap.memory_lock=true                     # Prevent Elasticsearch swapping
   - discovery.type=single-node                     # No clustering (single-node dev/prod)
-  - xpack.security.enabled=false                   # No TLS/auth for internal ES
+  - xpack.security.enabled=true                    # Require Basic Auth for Elasticsearch API
   - cluster.max_shards_per_node=1000              # Realistic limit for single-node (was 3000)
   - "action.auto_create_index=.security*,zeebe-record*,operate-*,tasklist-*,optimize-*,camunda-*,web-modeler-*,identity-*"
   - indices.memory.index_buffer_size=20%           # Larger indexing buffer for write throughput
@@ -170,7 +170,7 @@ environment:
 |---------|-------|---------|-----|
 | `bootstrap.memory_lock=true` | `true` | `false` | Lock Elasticsearch's memory at boot using `mlockall`. Prevents the OS from swapping ES pages to disk, which would cause catastrophic latency spikes. Elasticsearch is a latency-sensitive in-memory store. |
 | `discovery.type=single-node` | `single-node` | `multi-node` | This stack runs a single Elasticsearch node. Multi-node would require a cluster with minimum master node quorum. `single-node` disables shard allocation fencing that would otherwise reject writes. |
-| `xpack.security.enabled=false` | `false` | `true` | Security (TLS + auth) is disabled for this internal service. Container access stays on the Docker network and the host API is bound to `127.0.0.1:9200` for local backup/restore scripts only. In production multi-node setups, you'd enable this. |
+| `xpack.security.enabled=true` | `true` | `true` | Security (Basic Auth) is enabled. All internal services authenticate with the `elastic` user and `ELASTIC_PASSWORD`. The host API on `127.0.0.1:9200` also requires credentials. Backup and restore scripts source the password from `.env`. |
 | `cluster.max_shards_per_node=1000` | `1000` | `1000` | **Hard cap on the total number of shards this single node can hold.** The previous value of `3000` allowed Elasticsearch to create so many shards that the JVM heap was exhausted before the limit was reached, causing OOM and cluster instability. On an 8 GB single-node, each shard carries ~10–30 MB of heap overhead. 1000 shards is the Elasticsearch 8.x default and a realistic ceiling for this node size. |
 | `cluster.routing.allocation.disk.watermark.low=85%` | `85%` | `85%` | Elasticsearch stops allocating shards to a node when disk usage reaches 85%. Gives operators time to add storage before the node goes read-only. |
 | `cluster.routing.allocation.disk.watermark.high=90%` | `90%` | `90%` | Elasticsearch blocks shard allocation entirely above 90%. Combined with flood_stage at 95%, gives two warning thresholds before read-only lock. |
@@ -478,6 +478,7 @@ The `generate-secrets.sh` script creates a production-quality `.env` file:
 | `WEBMODELER_PUSHER_KEY` | web-modeler-restapi, web-modeler-websockets | Pusher WebSocket authentication |
 | `WEBMODELER_PUSHER_SECRET` | web-modeler-websockets | Pusher WebSocket authentication |
 | `DEMO_USER_PASSWORD` | Identity (creates demo user) | Password for the demo user account |
+| `ELASTIC_PASSWORD` | Elasticsearch, Optimize, orchestration, backup/restore scripts | Password for the Elasticsearch `elastic` user; used by Optimize and Zeebe Exporter for authenticated ES access |
 | `CAMUNDA_DB_PASSWORD` | `camunda-db`, orchestration | Database password for the Camunda core PostgreSQL database |
 
 ### Why No Hardcoded Fallbacks?
@@ -505,6 +506,7 @@ This means if the environment variable was missing, the service would start with
 - `ZEEBE_BROKER_GATEWAY_SECURITY_AUTHENTICATION_IDENTITY_ISSUERBACKENDURL` — Internal URL for Zeebe's own auth (used for inter-broker communication)
 - `CAMUNDA_IDENTITY_ISSUERBACKENDURL` — Internal URL for the identity service
 - `CAMUNDA_IDENTITY_BASEURL` — Internal URL for identity service API calls
+- `ELASTIC_PASSWORD` — Passed to the container; used by the Zeebe Elasticsearch Exporter and Camunda database Elasticsearch client for authenticated ES access
 
 **OIDC URL split:**
 ```
@@ -535,12 +537,15 @@ This distinction is critical: the browser must see the public HTTPS URL in the a
 
 **Key env vars:**
 - `OPTIMIZE_ELASTICSEARCH_HOST=elasticsearch` — Docker DNS name for ES
+- `ELASTIC_PASSWORD` — Passed to Optimize container; also used in `.optimize/environment-config.yaml` for ES Basic Auth
 - `SPRING_PROFILES_ACTIVE=ccsm` — "Camunda Cloud Self Managed" profile activates Optimize's self-managed mode
 - `CAMUNDA_OPTIMIZE_IDENTITY_ISSUER_URL=https://keycloak.${HOST}/...` — Browser-facing issuer URL
 - `CAMUNDA_OPTIMIZE_IDENTITY_ISSUER_BACKEND_URL=http://${KEYCLOAK_HOST}:18080/...` — Internal issuer URL
 - `SERVER_FORWARD_HEADERS_STRATEGY=framework` — Required behind Caddy proxy for correct URL construction
 
 **Important:** Optimize shares the platform `elasticsearch` container but maintains its own indices under the `optimize-` prefix. Camunda core data (Operate, Tasklist, Zeebe) is stored in PostgreSQL (`camunda-db`), so only Optimize uses Elasticsearch indices.
+
+**Elasticsearch authentication:** Optimize connects to Elasticsearch with Basic Auth via `.optimize/environment-config.yaml`. The `generate-secrets` scripts create this file from `.optimize/environment-config.yaml.example`, substituting the generated `ELASTIC_PASSWORD`. The generated file is gitignored — never commit it.
 
 ### Identity
 
@@ -787,7 +792,7 @@ Direct host binding is loopback-only (`127.0.0.1`) for local diagnostics and scr
 
 When adding a new service, publish host ports only if a host-side script or local diagnostic workflow needs them. Bind such ports to `127.0.0.1`. Public user-facing access should be routed through Caddy on port 443.
 
-Elasticsearch remains reachable on `127.0.0.1:9200` for backup and restore scripts. It must not be exposed on a LAN or public interface while `xpack.security.enabled=false`.
+Elasticsearch requires Basic Auth on port `9200`. Direct access is bound to `127.0.0.1` for backup/restore scripts and diagnostics only. Do not expose `9200` on LAN interfaces.
 
 ### Docker DNS Resolution
 
@@ -816,7 +821,7 @@ Several settings are intentionally development-oriented and should be reviewed b
 |---------|---------------|------------------|--------------|
 | `/actuator/configprops` exposure | Disabled for runtime services | Keep disabled; if temporarily needed, use `show-values: NEVER` | Exposing config properties can leak OAuth client secrets, database passwords, and connector credentials |
 | `LOGGING_LEVEL_IO_CAMUNDA_MODELER=DEBUG` | web-modeler-restapi | `INFO` | Verbose logging, performance impact |
-| `xpack.security.enabled=false` | elasticsearch | `true` | No authentication on Elasticsearch API |
+| `xpack.security.enabled=true` | elasticsearch | `true` | Basic Auth required on Elasticsearch API |
 
 ### Data Durability Settings
 
@@ -852,8 +857,7 @@ Management endpoint policy: expose only the endpoints needed for health checks a
 1. **Run `scripts/generate-secrets.sh --force`** to regenerate all secrets with cryptographically random values
 2. **Set `HOST`** to your actual production hostname (must be lowercase)
 3. **Replace self-signed TLS certs** with certificates from a corporate CA or Let's Encrypt
-4. **Set `xpack.security.enabled=true`** in Elasticsearch and configure credentials
-5. **Set Elasticsearch-backed index replicas to `1`** for the Zeebe exporter and Optimize only when Elasticsearch has at least two data nodes
-6. **Keep `/actuator/configprops` disabled** for all runtime services; if temporarily enabled for debugging, set `show-values: NEVER` and restrict access to localhost.
-7. **Change `LOGGING_LEVEL_IO_CAMUNDA_MODELER`** from `DEBUG` to `INFO`
-8. **Consider multi-node Elasticsearch** for HA production deployments
+4. **Set Elasticsearch-backed index replicas to `1`** for the Zeebe exporter and Optimize only when Elasticsearch has at least two data nodes
+5. **Keep `/actuator/configprops` disabled** for all runtime services; if temporarily enabled for debugging, set `show-values: NEVER` and restrict access to localhost.
+6. **Change `LOGGING_LEVEL_IO_CAMUNDA_MODELER`** from `DEBUG` to `INFO`
+7. **Consider multi-node Elasticsearch** for HA production deployments
