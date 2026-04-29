@@ -906,7 +906,7 @@ PYEOF
       local es_backup_volume
       es_backup_volume="${ES_BACKUP_VOLUME:-elastic-backup}"
       log "Copying snapshot data into Docker volume '$es_backup_volume'..."
-      docker run --rm \
+      MSYS_NO_PATHCONV=1 docker run --rm \
         -v "$es_backup_dir:/source:ro" \
         -v "${es_backup_volume}:/dest" \
         alpine sh -c '
@@ -1110,7 +1110,7 @@ except Exception as e:
         log "ERROR: Zeebe volume '$zeebe_vol' missing after compose create"
         exit 1
       fi
-      docker run --rm \
+      MSYS_NO_PATHCONV=1 docker run --rm \
         -v "${zeebe_vol}:/data" \
         -v "$BACKUP_DIR:/backup" \
         alpine sh -c "cd /data && tar xzf /backup/orchestration.tar.gz"

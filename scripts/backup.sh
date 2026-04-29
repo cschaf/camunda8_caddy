@@ -318,7 +318,7 @@ main() {
     while true; do
       local zeebe_vol
       zeebe_vol="$(compose_volume_name orchestration)"
-      if docker run --rm \
+      if MSYS_NO_PATHCONV=1 docker run --rm \
         -v "${zeebe_vol}:/data" \
         -v "$backup_dir:/backup" \
         alpine tar czf /backup/orchestration.tar.gz -C /data . 2>>"$LOG_FILE"; then
@@ -429,7 +429,7 @@ PYEOF
     log "Copying snapshot data from Docker volume to backup directory..."
     local es_backup_dir="$backup_dir/elasticsearch"
     mkdir -p "$es_backup_dir"
-    docker run --rm \
+    MSYS_NO_PATHCONV=1 docker run --rm \
       -v "elastic-backup:/source:ro" \
       -v "$es_backup_dir:/dest" \
       alpine sh -c 'cp -r /source/. /dest/' > /dev/null 2>&1 || {
