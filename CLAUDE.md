@@ -112,10 +112,12 @@ The cluster configuration (`CAMUNDA_MODELER_CLUSTERS_0_URL_WEBAPP`) points to th
 - `.orchestration/application.yaml` — Orchestration (Zeebe) config
 - `.connectors/application.yaml` — Connectors config
 - `.identity/application.yaml` — Identity + Keycloak realm/client setup
-- `.optimize/environment-config.yaml` — Optimize config
-- `.console/application.yaml` — Console config
+- `.optimize/environment-config.yaml.example` — Optimize config **template** (rendered at startup)
+- `.console/application.yaml.template` — Console config **template** (rendered at startup)
 - `connector-secrets.txt` — Connectors secrets (mounted as env_file)
 - `stages/` — Stage-specific Docker Compose resource profiles (`prod`, `dev`, `test`) merged on top of `docker-compose.yaml` by the start scripts
+
+**Rendered configs:** `start.sh` and `start.ps1` generate `.optimize/environment-config.yaml` (from `.example`) and `.console/application.yaml` (from `.template`) before `docker compose up`. These files are gitignored and overwritten on every start so that changes to `.env` (`HOST`, `ELASTIC_PASSWORD`) are picked up automatically. **When editing Console or Optimize configuration, update the template files, not the rendered outputs.**
 
 ### Environment Stages
 
@@ -261,3 +263,5 @@ Also add `SERVER_FORWARD_HEADERS_STRATEGY: framework` to the service's environme
 21. **ILM/retention changes only affect new indices** — Updating `minimumAge` or `ttl` does not retroactively delete existing indices on the next restart. ILM policies are applied to index *templates*; existing indices keep their original policy until rolled over or recreated. To force cleanup in a dev environment, use the Elasticsearch Delete Index API directly. Don't expect `docker compose restart` to immediately reduce disk usage after a retention change.
 
 22. **Do not expose `/actuator/configprops`** — Runtime services receive OAuth client secrets, database passwords, and Keycloak admin credentials through environment variables. Keep `configprops` out of `management.endpoints.web.exposure.include`, and never commit `MANAGEMENT_ENDPOINT_CONFIGPROPS_SHOW_VALUES=ALWAYS` or `management.endpoint.configprops.show-values: ALWAYS`.
+
+23. **Edit template files, not rendered configs** — `.console/application.yaml` and `.optimize/environment-config.yaml` are generated from `.template` / `.example` by the start scripts on every run. Changes made directly to the rendered files are lost on the next start. Always edit the template files (`.console/application.yaml.template` and `.optimize/environment-config.yaml.example`) so the next startup picks them up.
