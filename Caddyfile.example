@@ -144,7 +144,11 @@ orchestration.camunda.dev.local {
         }
     }
 
-    reverse_proxy orchestration:8080
+    reverse_proxy orchestration:8080 {
+        # Camunda 8.9 emits draft/experimental feature tokens that Chrome logs
+        # as unrecognized Permissions-Policy warnings in Tasklist/Operate.
+        header_down -Permissions-Policy
+    }
 }
 
 # Zeebe gRPC Gateway

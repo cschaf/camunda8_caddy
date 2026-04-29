@@ -445,10 +445,14 @@ The demo user is assigned these roles:
 
 | Variable | Value | Why |
 |----------|-------|-----|
+| `KC_HTTP_PORT=18080` | Native Keycloak HTTP port | Current Keycloak/Bitnami 26+ setting for the HTTP listener; mirrors the legacy `KEYCLOAK_HTTP_PORT` value |
+| `KC_HTTP_RELATIVE_PATH=/auth` | Native Keycloak relative path | Current Keycloak/Bitnami 26+ setting for serving Keycloak under `/auth`; mirrors the legacy `KEYCLOAK_HTTP_RELATIVE_PATH` value |
+| `KC_HOSTNAME=https://keycloak.${HOST}/auth` | Canonical public issuer URL | Forces Keycloak's OIDC discovery and issued tokens to use the browser-facing HTTPS issuer, avoiding refresh-token failures such as `invalid_grant: Invalid token issuer` |
+| `KC_PROXY_HEADERS=xforwarded` | Native proxy header setting | Current Keycloak/Bitnami 26+ setting that trusts Caddy's `X-Forwarded-*` headers |
 | `KEYCLOAK_HTTP_PORT=18080` | Non-standard port | Avoids conflict with other services on 8080; matches `KEYCLOAK_HOST=keycloak` in the Docker network |
 | `KEYCLOAK_HTTP_RELATIVE_PATH=/auth` | Required path | Keycloak requires this path prefix; the `KEYCLOAK_HOST=keycloak` means containers call `http://keycloak:18080/auth` |
 | `KEYCLOAK_DATABASE_HOST=postgres` | Docker DNS name | Keycloak connects to the PostgreSQL container by name, not localhost |
-| `KEYCLOAK_PROXY_HEADERS=xforwarded` | Trust proxy headers | Required when behind Caddy reverse proxy; tells Keycloak to read `X-Forwarded-Proto` and `X-Forwarded-Host` headers to construct correct URLs in OIDC responses |
+| `KEYCLOAK_PROXY_HEADERS=xforwarded` | Legacy proxy header setting | Kept for compatibility with older Bitnami images; the active setting for Keycloak 26+ is `KC_PROXY_HEADERS` |
 
 ---
 
@@ -754,7 +758,19 @@ handle @static {
 
 Removing the `Origin` header makes Spring Security treat the request as same-origin, allowing font files to be served.
 
-**4. WebSocket proxying for Web Modeler**
+**4. Orchestration Permissions-Policy cleanup**
+
+Camunda 8.9 emits a broad `Permissions-Policy` header from the unified Orchestration web app. Some feature tokens in that header are experimental or browser-specific (`ambient-light-sensor`, `attribution-reporting`, `browsing-topics`, `language-detector`, `summarizer`, `translator`, and others), so Chromium-based browsers can log repeated console warnings when Tasklist or Operate loads.
+
+The warnings are browser policy parsing noise, not an application failure. Caddy strips the header on the Orchestration route to keep Tasklist/Operate consoles readable:
+
+```caddy
+reverse_proxy orchestration:8080 {
+    header_down -Permissions-Policy
+}
+```
+
+**5. WebSocket proxying for Web Modeler**
 
 ```caddy
 handle /app/* {
@@ -764,7 +780,7 @@ handle /app/* {
 
 Pusher's WebSocket connections use the `/app/*` path pattern. Caddy routes them to the websockets container while the rest of `webmodeler.camunda.dev.local` goes to the webapp.
 
-**5. Forwarded headers for Optimize**
+**6. Forwarded headers for Optimize**
 
 ```caddy
 reverse_proxy optimize:8090 {
@@ -846,7 +862,7 @@ Several settings are intentionally development-oriented and should be reviewed b
 | `HOST=camunda.dev.local` | `.env` | Production hostname | Not accessible from other networks |
 | Direct service ports | `127.0.0.1` bindings | Keep loopback-only or remove when unused | Exposing app, management, or Elasticsearch ports on LAN bypasses the Caddy ingress and increases attack surface |
 | Self-signed TLS certs | Caddy auto-generated | Corporate CA or Let's Encrypt | Browser warnings, potential MITM |
-| `KEYCLOAK_PROXY_HEADERS=xforwarded` | keycloak | Restrict to trusted proxies | Header injection risk if untrusted proxies can reach Keycloak |
+| `KC_PROXY_HEADERS=xforwarded` / `KEYCLOAK_PROXY_HEADERS=xforwarded` | keycloak | Restrict to trusted proxies | Header injection risk if untrusted proxies can reach Keycloak |
 
 ### Secrets
 

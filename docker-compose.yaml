@@ -309,6 +309,10 @@ services:
     volumes:
       - keycloak-theme:/opt/bitnami/keycloak/themes/identity
     environment:
+      KC_HTTP_PORT: 18080
+      KC_HTTP_RELATIVE_PATH: /auth
+      KC_HOSTNAME: https://keycloak.${HOST:?HOST is required}/auth
+      KC_PROXY_HEADERS: xforwarded
       KEYCLOAK_HTTP_PORT: 18080
       KEYCLOAK_HTTP_RELATIVE_PATH: /auth
       KEYCLOAK_DATABASE_HOST: postgres
