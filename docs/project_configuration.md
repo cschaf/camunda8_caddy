@@ -170,7 +170,7 @@ environment:
 |---------|-------|---------|-----|
 | `bootstrap.memory_lock=true` | `true` | `false` | Lock Elasticsearch's memory at boot using `mlockall`. Prevents the OS from swapping ES pages to disk, which would cause catastrophic latency spikes. Elasticsearch is a latency-sensitive in-memory store. |
 | `discovery.type=single-node` | `single-node` | `multi-node` | This stack runs a single Elasticsearch node. Multi-node would require a cluster with minimum master node quorum. `single-node` disables shard allocation fencing that would otherwise reject writes. |
-| `xpack.security.enabled=false` | `false` | `true` | Security (TLS + auth) is disabled for this internal-only service. All access is through Camunda services on the internal Docker network. In production multi-node setups, you'd enable this. |
+| `xpack.security.enabled=false` | `false` | `true` | Security (TLS + auth) is disabled for this internal service. Container access stays on the Docker network and the host API is bound to `127.0.0.1:9200` for local backup/restore scripts only. In production multi-node setups, you'd enable this. |
 | `cluster.max_shards_per_node=1000` | `1000` | `1000` | **Hard cap on the total number of shards this single node can hold.** The previous value of `3000` allowed Elasticsearch to create so many shards that the JVM heap was exhausted before the limit was reached, causing OOM and cluster instability. On an 8 GB single-node, each shard carries ~10–30 MB of heap overhead. 1000 shards is the Elasticsearch 8.x default and a realistic ceiling for this node size. |
 | `cluster.routing.allocation.disk.watermark.low=85%` | `85%` | `85%` | Elasticsearch stops allocating shards to a node when disk usage reaches 85%. Gives operators time to add storage before the node goes read-only. |
 | `cluster.routing.allocation.disk.watermark.high=90%` | `90%` | `90%` | Elasticsearch blocks shard allocation entirely above 90%. Combined with flood_stage at 95%, gives two warning thresholds before read-only lock. |
@@ -769,18 +769,25 @@ Optimize needs `X-Forwarded-Proto: https` to correctly construct OAuth2 redirect
 
 ### Port Map
 
+Direct host binding is loopback-only (`127.0.0.1`) for local diagnostics and scripts. Browser/user access should use the HTTPS Caddy subdomains on port 443. The only intentionally public host port is Caddy's HTTPS listener.
+
 | Service | Host Port | Container Port | Protocol | Access |
 |---------|-----------|----------------|----------|--------|
-| orchestration | 26500, 9600, **8088** | 26500, 9600, 8080 | gRPC/HTTP | Direct + via proxy |
-| connectors | **8086** | 8080 | HTTP | Direct + via proxy |
-| optimize | **8083** | 8090 | HTTP | Direct + via proxy |
-| identity | **8084** | 8084 | HTTP | Direct + via proxy |
-| keycloak | **18080** | 18080 | HTTP | Direct + via proxy |
-| elasticsearch | **9200**, 9300 | 9200, 9300 | HTTP/REST | Direct (no proxy) |
-| console | **8087**, 9100 | 8080, 9100 | HTTP | Via proxy |
-| web-modeler-restapi | **8070** | 8081 | HTTP | Via proxy (serves UI + API since 8.9) |
-| web-modeler-websockets | **8060** | 8060 | WebSocket | Via proxy (webmodeler.dev.local/app/*) |
-| mailpit | 1025, 8075 | 1025, 8025 | SMTP/HTTP | Direct (SMTP for web-modeler-restapi) |
+| reverse-proxy | **443** | 443 | HTTPS | Public ingress for browser/user access |
+| orchestration | 127.0.0.1:26500, 127.0.0.1:9600, **127.0.0.1:8088** | 26500, 9600, 8080 | gRPC/HTTP | Local diagnostics/scripts + via proxy |
+| connectors | **127.0.0.1:8086** | 8080 | HTTP | Local diagnostics/scripts |
+| optimize | **127.0.0.1:8083** | 8090 | HTTP | Local diagnostics/scripts + via proxy |
+| identity | **127.0.0.1:8084** | 8084 | HTTP | Local diagnostics/scripts + via proxy |
+| keycloak | (internal) | 18080 | HTTP | Via proxy only |
+| elasticsearch | **127.0.0.1:9200**, 127.0.0.1:9300 | 9200, 9300 | HTTP/REST | Local backup/restore and diagnostics only |
+| console | **127.0.0.1:8087**, 127.0.0.1:9100 | 8080, 9100 | HTTP | Local diagnostics/scripts + via proxy |
+| web-modeler-restapi | **127.0.0.1:8070** | 8081 | HTTP | Local diagnostics/scripts + via proxy (serves UI + API since 8.9) |
+| web-modeler-websockets | **127.0.0.1:8060** | 8060 | WebSocket | Local diagnostics/scripts + via proxy (webmodeler.dev.local/app/*) |
+| mailpit | 127.0.0.1:1025, 127.0.0.1:8075 | 1025, 8025 | SMTP/HTTP | Local SMTP/UI diagnostics |
+
+When adding a new service, publish host ports only if a host-side script or local diagnostic workflow needs them. Bind such ports to `127.0.0.1`. Public user-facing access should be routed through Caddy on port 443.
+
+Elasticsearch remains reachable on `127.0.0.1:9200` for backup and restore scripts. It must not be exposed on a LAN or public interface while `xpack.security.enabled=false`.
 
 ### Docker DNS Resolution
 
@@ -825,6 +832,7 @@ Several settings are intentionally development-oriented and should be reviewed b
 | Setting | Current Value | Production Value | Risk if Left |
 |---------|---------------|------------------|--------------|
 | `HOST=camunda.dev.local` | `.env` | Production hostname | Not accessible from other networks |
+| Direct service ports | `127.0.0.1` bindings | Keep loopback-only or remove when unused | Exposing app, management, or Elasticsearch ports on LAN bypasses the Caddy ingress and increases attack surface |
 | Self-signed TLS certs | Caddy auto-generated | Corporate CA or Let's Encrypt | Browser warnings, potential MITM |
 | `KEYCLOAK_PROXY_HEADERS=xforwarded` | keycloak | Restrict to trusted proxies | Header injection risk if untrusted proxies can reach Keycloak |
 

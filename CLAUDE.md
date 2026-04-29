@@ -50,18 +50,18 @@ KEYCLOAK_HOST=keycloak  # Internal container-to-container communication
 
 | Network | Members |
 |---------|---------|
-| `camunda-platform` | orchestration, connectors, optimize, console, elasticsearch, keycloak, identity, web-modeler-restapi*, web-modeler-webapp* |
+| `camunda-platform` | orchestration, connectors, optimize, console, elasticsearch, keycloak, identity, web-modeler-restapi* |
 | `identity-network` | keycloak, identity, postgres |
-| `web-modeler` | web-modeler-db, mailpit, web-modeler-restapi, web-modeler-webapp, web-modeler-websockets |
+| `web-modeler` | web-modeler-db, mailpit, web-modeler-restapi, web-modeler-websockets |
 
-*web-modeler-restapi and web-modeler-webapp are dual-homed on both `web-modeler` and `camunda-platform` to reach orchestration and identity.
+*web-modeler-restapi is dual-homed on both `web-modeler` and `camunda-platform` to reach orchestration and identity.
 
 Container names serve as DNS hostnames within networks. E.g., `keycloak:18080`, `identity:8084`, `orchestration:8080`.
 
 ### OIDC Authentication Flow
 
 1. Browser requests `http://localhost:8088` (or other service UI)
-2. Service redirects to Keycloak authorization endpoint using `${HOST}` → `http://localhost:18080/auth/realms/...`
+2. Service redirects to Keycloak authorization endpoint using `${HOST}` → `https://keycloak.${HOST}/auth/realms/...`
 3. User authenticates at Keycloak (browser ↔ Keycloak direct)
 4. Keycloak redirects back to service callback URL (e.g., `http://localhost:8088/sso-callback`)
 5. Service exchanges auth code for token using `${KEYCLOAK_HOST}` → `http://keycloak:18080/auth/realms/...`
@@ -77,25 +77,30 @@ Container names serve as DNS hostnames within networks. E.g., `keycloak:18080`, 
 
 ### Exposed Ports
 
+Direct service ports are bound to `127.0.0.1` for local diagnostics and scripts only. Browser/user access should use the HTTPS Caddy subdomains on port 443.
+
 | Service | Host Port | Container Port | Notes |
 |---------|----------|----------------|-------|
-| orchestration | 26500, 9600, **8088** | 26500, 9600, 8080 | Zeebe gRPC, actuator, Operate/Tasklist UI |
-| connectors | **8086** | 8080 | |
-| optimize | **8083** | 8090 | |
-| identity | **8084** | 8084 | |
-| keycloak | **18080** | 18080 | Admin UI + OIDC |
-| elasticsearch | **9200**, 9300 | 9200, 9300 | |
-| console | **8087**, 9100 | 8080, 9100 | UI + metrics |
-| web-modeler-webapp | **8070** | 8070 | |
-| web-modeler-websockets | **8060** | 8060 | |
-| web-modeler-restapi | (internal) | 8091 | No host port exposed |
+| orchestration | 127.0.0.1:26500, 127.0.0.1:9600, **127.0.0.1:8088** | 26500, 9600, 8080 | Zeebe gRPC, actuator, Operate/Tasklist UI |
+| connectors | **127.0.0.1:8086** | 8080 | |
+| optimize | **127.0.0.1:8083** | 8090 | |
+| identity | **127.0.0.1:8084** | 8084 | |
+| keycloak | (internal) | 18080 | Admin UI + OIDC via `https://keycloak.{HOST}/auth/` |
+| elasticsearch | **127.0.0.1:9200**, 127.0.0.1:9300 | 9200, 9300 | Local backup/restore and diagnostics only |
+| console | **127.0.0.1:8087**, 127.0.0.1:9100 | 8080, 9100 | UI + metrics |
+| web-modeler-restapi | **127.0.0.1:8070** | 8081 | Serves Web Modeler UI + API |
+| web-modeler-websockets | **127.0.0.1:8060** | 8060 | |
+| mailpit | 127.0.0.1:1025, 127.0.0.1:8075 | 1025, 8025 | Local SMTP/UI diagnostics |
+
+When adding a new service, publish host ports only if a host-side script or local diagnostic workflow needs them. Bind such ports to `127.0.0.1`. Public user-facing access should be routed through Caddy on port 443.
+
+Elasticsearch remains reachable on `127.0.0.1:9200` for backup and restore scripts. It must not be exposed on a LAN or public interface while `xpack.security.enabled=false`.
 
 ### Web Modeler Architecture
 
 Three components with dual network membership:
 
-- **web-modeler-restapi** (internal port 8091) — reaches identity, elasticsearch, orchestration, mailpit, websockets
-- **web-modeler-webapp** (port 8070) — browser-facing UI, reaches restapi and websockets
+- **web-modeler-restapi** (host port 8070, container port 8081) — browser-facing UI/API, reaches identity, orchestration, mailpit, and websockets
 - **web-modeler-websockets** (port 8060) — push notifications for webapp
 
 The cluster configuration (`CAMUNDA_MODELER_CLUSTERS_0_URL_WEBAPP`) points to the local Orchestration UI (e.g. `https://orchestration.localhost` when using the proxy, or `http://localhost:8088` for direct access), not Web Modeler itself, because Web Modeler connects to the Zeebe broker running in orchestration.
@@ -225,14 +230,14 @@ Also add `SERVER_FORWARD_HEADERS_STRATEGY: framework` to the service's environme
 
 9. **`header_up` is a `reverse_proxy` subdirective** — It cannot be used as a standalone directive inside a Caddy `handle` block. Always nest it: `reverse_proxy upstream { header_up -Origin }`.
 
-10. **HTTPS proxy → browser-facing Keycloak URL must also be HTTPS** — Services accessed via the reverse proxy are served over HTTPS. If `KEYCLOAK_BASE_URL` (or equivalent) still points to `http://localhost:18080`, the browser will refuse the OIDC discovery request (mixed content). Set it to `https://keycloak.{HOST}/auth` instead.
+10. **HTTPS proxy → browser-facing Keycloak URL must also be HTTPS** — Services accessed via the reverse proxy are served over HTTPS. If `KEYCLOAK_BASE_URL` (or equivalent) still points to an `http://...` browser-facing Keycloak URL, the browser will refuse the OIDC discovery request (mixed content). Set it to `https://keycloak.{HOST}/auth` instead.
 
 11. **Console is Node.js, not Spring Boot** — OIDC config is in `docker-compose.yaml` env vars (`KEYCLOAK_BASE_URL`, `KEYCLOAK_INTERNAL_BASE_URL`), not in `.console/application.yaml`. Spring Boot gotchas (font 403, CSRF POST, `SERVER_FORWARD_HEADERS_STRATEGY`) do not apply to Console.
 
 12. **Spring Boot `redirectRootUrl` must use proxy URL** — Camunda Spring Boot services configure post-login redirect roots in `application.yaml` (e.g. `camunda.operate.identity.redirectRootUrl`, `camunda.tasklist.identity.redirectRootUrl`). When behind the proxy these must point to the proxy URL (e.g. `https://orchestration.{HOST}/operate`), not `http://localhost:8088`. Otherwise the browser is sent to the non-proxy URL after SSO completes.
 
 12. **Web Modeler WebSocket (Pusher) via proxy** — When `webmodeler.{HOST}` is served over HTTPS, the browser's Pusher client must connect to the proxy host with TLS. Required changes in `docker-compose.yaml`:
-    - `web-modeler-webapp`: `CLIENT_PUSHER_HOST: webmodeler.${HOST}`, `CLIENT_PUSHER_PORT: "443"`, `CLIENT_PUSHER_FORCE_TLS: "true"`, `SERVER_URL: https://webmodeler.${HOST}`, `OAUTH2_TOKEN_ISSUER: https://keycloak.${HOST}/auth/realms/camunda-platform`
+    - `web-modeler-restapi`: `CLIENT_PUSHER_HOST: webmodeler.${HOST}`, `CLIENT_PUSHER_PORT: "443"`, `CLIENT_PUSHER_FORCE_TLS: "true"`, `RESTAPI_SERVER_URL: https://webmodeler.${HOST}`, `OAUTH2_TOKEN_ISSUER: https://keycloak.${HOST}/auth/realms/camunda-platform`
     - `web-modeler-restapi`: `RESTAPI_SERVER_URL: https://webmodeler.${HOST}`, `RESTAPI_OAUTH2_TOKEN_ISSUER: https://keycloak.${HOST}/auth/realms/camunda-platform` (must match the `iss` claim in tokens issued via the proxy — otherwise restapi rejects every token with 401 and webapp loops back to `/login`)
     - `reverse-proxy`: add `web-modeler` to its networks so Caddy can reach `web-modeler-websockets:8060`
     - `Caddyfile`: add `handle /app/* { reverse_proxy web-modeler-websockets:8060 }` inside the `webmodeler.{HOST}` block

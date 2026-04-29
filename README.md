@@ -253,12 +253,16 @@ All configuration is driven by the `HOST` variable in `.env`. To switch domain:
 
 ### Accessing from other machines on the network
 
-The hosts file entries added by `setup-host` use `127.0.0.1` and only work on the local machine. To allow other devices on your network to reach the services:
+The hosts file entries added by `setup-host` use `127.0.0.1` and only work on the local machine. Direct service ports such as `8088`, `9200`, and `9600` are intentionally bound to `127.0.0.1` for local diagnostics and scripts; remote clients should use only the HTTPS Caddy subdomains on port 443.
+
+To allow other devices on your network to reach the services through Caddy:
 
 - Add entries pointing to your machine's actual IP (e.g. `192.168.1.10 keycloak.your-hostname`) to the hosts file on each client machine, **or**
 - Create a wildcard DNS record `*.your-hostname → <your IP>` in your corporate DNS
 
 Each client machine also needs to trust the CA that signed your certificate. For mkcert, the root certificate is at the path printed by `mkcert -CAROOT` (`rootCA.pem`) — import it into the OS trust store on each client. For a corporate CA it is likely already trusted on domain-joined machines.
+
+Do not expose Elasticsearch or management ports such as `9200`, `9300`, or `9600` on LAN interfaces while Elasticsearch security and actuator hardening are not enabled.
 
 ---
 

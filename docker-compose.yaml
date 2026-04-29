@@ -26,9 +26,9 @@ services:
     image: camunda/camunda:${CAMUNDA_VERSION:?CAMUNDA_VERSION is required}
     container_name: orchestration
     ports:
-      - "26500:26500"
-      - "9600:9600"
-      - "8088:8080"
+      - "127.0.0.1:26500:26500"
+      - "127.0.0.1:9600:9600"
+      - "127.0.0.1:8088:8080"
     environment: # https://docs.camunda.io/docs/self-managed/zeebe-deployment/configuration/environment-variables/
       # OIDC Authentication - Environment-specific URLs and secrets
       CAMUNDA_SECURITY_AUTHENTICATION_OIDC_CLIENTID: ${ORCHESTRATION_CLIENT_ID}
@@ -92,7 +92,7 @@ services:
     image: camunda/connectors-bundle:${CAMUNDA_CONNECTORS_VERSION}
     container_name: connectors
     ports:
-      - "8086:8080"
+      - "127.0.0.1:8086:8080"
     environment:
       # Orchestration connection - service addresses and credentials
       CAMUNDA_CLIENT_RESTADDRESS: http://orchestration:8080
@@ -134,7 +134,7 @@ services:
     image: camunda/optimize:${CAMUNDA_OPTIMIZE_VERSION}
     container_name: optimize
     ports:
-      - "8083:8090"
+      - "127.0.0.1:8083:8090"
     environment: # https://docs.camunda.io/docs/self-managed/optimize-deployment/install-and-start/
       # Elasticsearch connection
       OPTIMIZE_ELASTICSEARCH_HOST: elasticsearch
@@ -188,7 +188,7 @@ services:
     container_name: identity
     image: camunda/identity:${CAMUNDA_IDENTITY_VERSION}
     ports:
-      - "8084:8084"
+      - "127.0.0.1:8084:8084"
     environment: # https://docs.camunda.io/docs/self-managed/identity/miscellaneous/configuration-variables/
       IDENTITY_DATABASE_HOST: postgres
       IDENTITY_DATABASE_PORT: 5432
@@ -346,8 +346,8 @@ services:
     image: docker.elastic.co/elasticsearch/elasticsearch:${ELASTIC_VERSION}
     container_name: elasticsearch
     ports:
-      - "9200:9200"
-      - "9300:9300"
+      - "127.0.0.1:9200:9200"
+      - "127.0.0.1:9300:9300"
     environment:
       - bootstrap.memory_lock=true
       - discovery.type=single-node
@@ -428,8 +428,8 @@ services:
     container_name: mailpit
     image: axllent/mailpit:${MAILPIT_VERSION}
     ports:
-      - "1025:1025"
-      - "8075:8025"
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8075:8025"
     labels:
       - autoheal=true
     restart: unless-stopped
@@ -456,7 +456,7 @@ services:
     container_name: web-modeler-restapi
     image: camunda/web-modeler-restapi:${CAMUNDA_WEB_MODELER_VERSION}
     ports:
-      - "8070:8081"
+      - "127.0.0.1:8070:8081"
     labels:
       - autoheal=true
     restart: unless-stopped
@@ -532,7 +532,7 @@ services:
     container_name: web-modeler-websockets
     image: camunda/web-modeler-websockets:${CAMUNDA_WEB_MODELER_VERSION}
     ports:
-      - "8060:8060"
+      - "127.0.0.1:8060:8060"
     labels:
       - autoheal=true
     restart: unless-stopped
@@ -565,8 +565,8 @@ services:
     container_name: console
     image: camunda/console:${CAMUNDA_CONSOLE_VERSION}
     ports:
-      - "8087:8080"
-      - "9100:9100"
+      - "127.0.0.1:8087:8080"
+      - "127.0.0.1:9100:9100"
     environment:
       NODE_ENV: production
       KEYCLOAK_BASE_URL: https://keycloak.${HOST:?HOST is required}/auth
