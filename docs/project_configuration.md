@@ -709,6 +709,7 @@ Three components:
 - `RESTAPI_PUSHER_*` — Pusher configuration for WebSocket communication with the websockets service
 - `CAMUNDA_MODELER_CLUSTERS_0_URL_WEBAPP=https://orchestration.${HOST}` — Points to the **Orchestration** UI (not Web Modeler itself), because Web Modeler connects to the Zeebe broker running in Orchestration. Uses the browser-reachable HTTPS proxy URL so it works from remote clients on the network, not just the Docker host machine.
 - `LOGGING_LEVEL_IO_CAMUNDA_MODELER=INFO` — Keeps Web Modeler logging at production-appropriate verbosity.
+- `LOGGING_LEVEL_ORG_HIBERNATE_ORM_CONNECTIONS_POOLING=WARN` — Suppresses Hibernate's informational database metadata banner that reports some datasource pool values as `undefined/unknown` during startup.
 - `SERVER_HTTPS_ONLY=false` — Allows HTTP on the internal Docker network while Caddy terminates browser-facing HTTPS.
 - `PLAY_ENABLED=true` — Keeps the Web Modeler Play feature enabled.
 
