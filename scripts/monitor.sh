@@ -181,7 +181,7 @@ PYEOF
   done
 
   log "Attempting to recover by running scripts/start.sh..."
-  if ! bash "$PROJECT_DIR/scripts/start.sh" >> "$LOG_FILE" 2>&1; then
+  if ! bash "$PROJECT_DIR/scripts/start.sh" 2>&1 | tee -a "$LOG_FILE"; then
     log "ERROR: scripts/start.sh failed"
     exit 1
   fi

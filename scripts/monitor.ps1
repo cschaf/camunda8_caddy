@@ -131,9 +131,11 @@ if ($containerJson) {
         }
     } catch {
         # Fallback: try each line individually
-        $containers = foreach ($line in $containerJson) {
-            try { $line | ConvertFrom-Json -Depth 10 } catch { $null }
-        } | Where-Object { $null -ne $_ }
+        $containers = @(
+            foreach ($line in $containerJson) {
+                try { $line | ConvertFrom-Json -Depth 10 } catch { $null }
+            }
+        ) | Where-Object { $null -ne $_ }
     }
 }
 
@@ -170,10 +172,9 @@ foreach ($issue in $issues) {
 }
 
 Write-Log 'Attempting to recover by running scripts/start.ps1...'
-try {
-    & (Join-Path $ProjectDir 'scripts/start.ps1') *>> $LogFile
-} catch {
-    Write-Log "ERROR: scripts/start.ps1 failed: $_"
+& (Join-Path $ProjectDir 'scripts/start.ps1')
+if ($LASTEXITCODE -ne 0) {
+    Write-Log "ERROR: scripts/start.ps1 exited with code $LASTEXITCODE"
     exit 1
 }
 
