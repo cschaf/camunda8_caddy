@@ -43,7 +43,7 @@ host** should probe.
 | orchestration (Zeebe + Operate + Tasklist) | `orchestration:8080`, `:9600`, `:26500` | `8088`, `9600`, `26500` | `GET :9600/actuator/health/{liveness,readiness,startup}` | `GET :9600/actuator/prometheus` | none on management port |
 | connectors | `connectors:8080` | `8086` | `GET :8086/actuator/health/readiness` | `GET :8086/actuator/prometheus` | none on management port |
 | optimize | `optimize:8090` | `8083` | `GET :8083/api/readyz` | `GET :8083/actuator/prometheus` | none on management port |
-| identity | `identity:8084` (API), `:8082` (management — not host-published) | `8084` (API only) | `docker inspect identity` (health field) — see §3.4 | not exposed by default | n/a |
+| identity | `identity:8084` (API), `:8082` (management — not host-published) | `8084` (API only) | `docker inspect identity` (health field) — see §4.4 | not exposed by default | n/a |
 | keycloak | `keycloak:18080` | (proxy only) | `GET https://keycloak.{HOST}/auth/` | not exposed by default | none |
 | elasticsearch | `elasticsearch:9200`, `:9300` | `9200`, `9300` | `GET :9200/_cluster/health` | `GET :9200/_nodes/stats`, `_cat/indices`, etc. | **HTTP Basic** (`elastic` / `$ELASTIC_PASSWORD`) |
 | console | `console:8080`, `:9100` | `8087`, `9100` | `GET :9100/health/readiness` | `GET :9100/prometheus` *(not `/actuator/prometheus`)* | none on metrics port |
@@ -58,13 +58,122 @@ host** should probe.
 > The container's *internal* health-check command is what Docker uses to mark
 > a container `healthy`/`unhealthy`. External monitors should probe the
 > *loopback host port* with the equivalent endpoint. The two sometimes
-> differ — see §4.4 for the Identity quirk.
+> differ — see §5.4 for the Identity quirk.
 
 ---
 
-## 2. Host machine monitoring
+## 2. Built-in cluster health monitor
 
-### 2.1 Disk
+The repository ships two standalone monitor scripts that check whether every
+expected Docker Compose service is present and healthy, log problems, and
+auto-recover by running the stack start script.
+
+| Script | Platform | Purpose |
+|--------|----------|---------|
+| `scripts/monitor.sh` | Linux / macOS / WSL / Git Bash | Cron-friendly Bash monitor |
+| `scripts/monitor.ps1` | Windows (PowerShell 7+) | Task-Scheduler-friendly PowerShell monitor |
+
+### What the monitor does
+
+1. **Backup/restore guard** — detects the lock file at
+   `backups/.backup.lock` (written by `scripts/backup.sh` and
+   `scripts/restore.sh`). If a backup or restore is in progress, the monitor
+   exits silently so it does not race with those operations.
+2. **Service enumeration** — reads the expected service list from
+   `docker compose config --services` for the current `STAGE`, then queries
+   `docker compose ps --format json` for live state and health.
+3. **Health evaluation** — flags any container that is:
+   - missing / not running, or
+   - explicitly `unhealthy` (containers without a healthcheck are skipped)
+4. **Auto-recovery** — when issues are found, they are logged and
+   `scripts/start.sh` (or `scripts/start.ps1`) is executed to bring the
+   stack back up.
+
+`camunda-data-init` is excluded from checks because it is a one-shot init
+container that exits after completing its work and is not expected to keep
+running.
+
+### Cron / Task Scheduler setup
+
+**Linux / macOS / WSL (cron)**
+
+```bash
+# Edit the crontab for the user that owns the Docker socket
+crontab -e
+
+# Check every 5 minutes
+*/5 * * * * /path/to/CamundaComposeNVL/scripts/monitor.sh
+```
+
+**Windows (Task Scheduler)**
+
+Create a basic task that runs every 5 minutes:
+
+```powershell
+# Run once at boot and then every 5 minutes
+$Action = New-ScheduledTaskAction -Execute 'pwsh.exe' `
+    -Argument '-File C:\path\to\CamundaComposeNVL\scripts\monitor.ps1'
+
+$Trigger = New-ScheduledTaskTrigger -Once -At (Get-Date) `
+    -RepetitionInterval (New-TimeSpan -Minutes 5) -RepetitionDuration (New-TimeSpan -Days 3650)
+
+Register-ScheduledTask -TaskName 'CamundaClusterMonitor' `
+    -Action $Action -Trigger $Trigger -User 'NT AUTHORITY\SYSTEM'
+```
+
+### Configuration
+
+Both scripts support the same environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MONITOR_LOG_FILE` | `monitor.log` in project root | Where check results and recovery actions are written |
+| `MONITOR_LOG_MAX_SIZE` | `10485760` (10 MiB) | Log file size threshold before rotation |
+| `MONITOR_LOG_MAX_ARCHIVES` | `5` | Number of rotated archives to keep (`monitor.log.1` … `.5`) |
+
+**Example — custom log path and 5 MiB rotation limit:**
+
+```bash
+# Bash cron entry
+*/5 * * * * MONITOR_LOG_FILE=/var/log/camunda/monitor.log MONITOR_LOG_MAX_SIZE=5242880 /opt/camunda/scripts/monitor.sh
+```
+
+```powershell
+# PowerShell / Task Scheduler
+$env:MONITOR_LOG_FILE = 'C:\Logs\camunda-monitor.log'
+$env:MONITOR_LOG_MAX_SIZE = 5242880
+& C:\CamundaComposeNVL\scripts\monitor.ps1
+```
+
+### Log rotation
+
+Both scripts rotate the log automatically when it exceeds
+`MONITOR_LOG_MAX_SIZE`. The rotation is done in-place before any log line is
+written, so the current run always appends to a fresh or existing file that is
+below the threshold.
+
+Archives follow the pattern `monitor.log.1`, `monitor.log.2`, … up to
+`MONITOR_LOG_MAX_ARCHIVES`. The oldest archive is overwritten when the limit
+is reached. No external `logrotate` configuration is required.
+
+### Recovery behavior
+
+When the monitor detects missing or unhealthy containers it:
+
+1. Logs each affected service with its state/health
+2. Invokes the platform-appropriate start script (`start.sh` or `start.ps1`)
+3. Logs whether recovery succeeded or failed
+
+If the stack is intentionally stopped, the monitor will start it. If you want
+the monitor to run only when the stack is already up, add a pre-check in your
+wrapper or cron entry that verifies at least one expected container is running
+before calling the monitor.
+
+---
+
+## 3. Host machine monitoring
+
+### 3.1 Disk
 
 The host needs free space in two places:
 
@@ -116,7 +225,7 @@ For the partition holding the Docker data directory:
 
 Watermark values come from `docker-compose.yaml` (`cluster.routing.allocation.disk.watermark.low/high/flood_stage`). Aligning host-disk alerts a few percentage points *before* those values gives the sysadmin time to react before the cluster degrades itself.
 
-### 2.2 Memory and CPU
+### 3.2 Memory and CPU
 
 Resource limits per service per stage are defined in `stages/{prod,dev,test}.yaml`.
 Approximate totals of `deploy.resources.limits` (worst-case sustained):
@@ -181,7 +290,7 @@ free -h
 # Watch the "Swap:" row; "used" should be 0 or near-0
 ```
 
-### 2.3 OS settings
+### 3.3 OS settings
 
 These are check-once-on-host-prep items, not metrics — but a monitoring
 system should still flag drift if they regress.
@@ -211,7 +320,7 @@ backing distro. Two host-level concerns remain:
 Camunda timers are clock-driven. NTP drift > 1 second is operationally
 visible (timer events fire late or twice).
 
-### 2.4 Network exposure
+### 3.4 Network exposure
 
 Only ports `80` and `443` should be reachable on a non-loopback interface.
 Everything else (`8060`, `8070`, `8083`, `8084`, `8086`, `8087`, `8088`,
@@ -229,7 +338,7 @@ nc -zv <camunda-host-ip> 9200
 nc -zv <camunda-host-ip> 8088
 ```
 
-### 2.5 TLS certificate expiry
+### 3.5 TLS certificate expiry
 
 Caddy auto-generates a self-signed certificate by default; **no expiry
 monitoring is needed in that case** (Caddy regenerates as needed).
@@ -259,9 +368,9 @@ echo | openssl s_client -servername "${HOST}" -connect "${HOST}:443" 2>/dev/null
 
 ---
 
-## 3. Docker engine layer
+## 4. Docker engine layer
 
-### 3.1 Container health status
+### 4.1 Container health status
 
 Every Camunda service in `docker-compose.yaml` has a `healthcheck:` block
 and the `autoheal=true` label, so its `STATE.Health.Status` is either
@@ -288,7 +397,7 @@ the check at the configured interval — external probes only consume the
 | Any container `unhealthy` for > 15 min | Critical |
 | `orchestration`, `keycloak`, `elasticsearch`, or `reverse-proxy` `unhealthy` for > 2 min | Critical (these are user-impacting immediately) |
 
-### 3.2 Restart loops
+### 4.2 Restart loops
 
 The `restart: unless-stopped` policy plus the `autoheal` sidecar
 (`willfarrell/autoheal`, runs every 30 s) means an unhealthy container is
@@ -315,7 +424,7 @@ docker inspect <container> \
 
 Restart count delta ≥ 5 within 1 hour for any single container → critical.
 
-### 3.3 Autoheal noise vs. real failure
+### 4.3 Autoheal noise vs. real failure
 
 `autoheal` logs every restart it performs:
 
@@ -329,7 +438,7 @@ within minutes are the alert-worthy signal — they mean the container goes
 unhealthy almost immediately after restart. Investigate the affected
 service's logs, not autoheal's.
 
-### 3.4 Identity and Web Modeler RestAPI: management port not host-published
+### 4.4 Identity and Web Modeler RestAPI: management port not host-published
 
 Both services run their Spring Boot Actuator on a *separate* internal port
 that is not published to the host:
@@ -356,18 +465,18 @@ docker exec web-modeler-restapi wget -q -O - http://localhost:8091/health/readin
 
 Option A is preferred for unattended monitoring — Docker already runs the
 HTTP probe every 30 seconds and caches the result; reading
-`State.Health.Status` is cheap and consistent with §3.1's general advice.
+`State.Health.Status` is cheap and consistent with §4.1's general advice.
 
 ---
 
-## 4. Per-service probes
+## 5. Per-service probes
 
 Every endpoint below is a plain HTTP `GET` returning `200 OK` on success
 unless stated otherwise. Run on the same host as the stack; substitute
 `{HOST}` with the value of `HOST` in `.env`, and `$ELASTIC_PASSWORD` with
 the value from `.env`.
 
-### 4.1 Orchestration (Zeebe + Operate + Tasklist)
+### 5.1 Orchestration (Zeebe + Operate + Tasklist)
 
 Three management probes plus the gRPC gateway TCP port:
 
@@ -387,7 +496,7 @@ Liveness staying `DOWN` for > 5 minutes → critical. Readiness flapping
 (toggling `UP`/`DOWN`) typically means the secondary storage (Elasticsearch
 or `camunda-db`) is unhealthy — investigate those before orchestration.
 
-### 4.2 Connectors
+### 5.2 Connectors
 
 ```bash
 curl -fsS http://127.0.0.1:8086/actuator/health/readiness
@@ -427,7 +536,7 @@ starvation, disk I/O stalls, GC pauses, or large job activation bursts. Do not
 change connector credentials or endpoint configuration unless the logs also
 show authentication or connection errors.
 
-### 4.3 Optimize
+### 5.3 Optimize
 
 ```bash
 curl -fsS http://127.0.0.1:8083/api/readyz
@@ -438,9 +547,9 @@ Optimize is fully dependent on Elasticsearch. If the ES cluster is
 `yellow` or `red`, expect Optimize readiness to fail — alert on ES first
 to suppress the cascading Optimize alerts.
 
-### 4.4 Identity
+### 5.4 Identity
 
-The actuator port (`8082`) is not host-published. See §3.4 for the
+The actuator port (`8082`) is not host-published. See §4.4 for the
 explanation. Recommended probe:
 
 ```bash
@@ -456,7 +565,7 @@ docker exec identity wget -q -O - http://localhost:8082/actuator/health
 
 No metrics endpoint is exposed by default.
 
-### 4.5 Keycloak
+### 5.5 Keycloak
 
 Keycloak's container port `18080` is not host-published; probe via the
 reverse proxy:
@@ -473,7 +582,7 @@ curl -fsk "https://keycloak.${HOST}/auth/realms/camunda-platform/.well-known/ope
 The OIDC discovery probe is the most useful single Keycloak check: if it
 returns non-200 or non-JSON, **every Camunda UI login is broken**.
 
-### 4.6 Elasticsearch
+### 5.6 Elasticsearch
 
 Cluster status is the headline metric. All Elasticsearch endpoints require
 HTTP Basic auth.
@@ -510,7 +619,7 @@ curl -fsS -u "elastic:${ELASTIC_PASSWORD}" \
 interface; the only auth in front of it is the static `elastic` password
 from `.env`.
 
-### 4.7 Console
+### 5.7 Console
 
 ```bash
 curl -fsS http://127.0.0.1:9100/health/readiness
@@ -524,10 +633,10 @@ Console aggregates other services' health internally (configured in
 UI; **external monitoring should still probe each backend directly** so an
 unrelated Console outage does not mask other failures.
 
-### 4.8 Web Modeler REST API
+### 5.8 Web Modeler REST API
 
 The health port (`8091`) is not host-published — the host-bound `8070`
-maps to container port `8081` (the user-facing API). See §3.4. Recommended
+maps to container port `8081` (the user-facing API). See §4.4. Recommended
 probe:
 
 ```bash
@@ -545,7 +654,7 @@ Metrics are not exposed by default
 (`management.endpoints.web.exposure.include: health,info` in
 `docker-compose.yaml`).
 
-### 4.9 Web Modeler WebSockets
+### 5.9 Web Modeler WebSockets
 
 ```bash
 curl -fsS http://127.0.0.1:8060/up
@@ -555,7 +664,7 @@ No auth, no metrics. The WebSocket itself is established after Web Modeler
 authentication via `web-modeler-restapi`; alerting on this endpoint
 catches process death only.
 
-### 4.10 Postgres (Identity / Keycloak DB)
+### 5.10 Postgres (Identity / Keycloak DB)
 
 The container is not host-published. Probe and size queries run via
 `docker exec`:
@@ -575,7 +684,7 @@ docker exec postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At \
 
 `$POSTGRES_USER` and `$POSTGRES_DB` come from `.env`.
 
-### 4.11 Camunda DB (Postgres)
+### 5.11 Camunda DB (Postgres)
 
 The Camunda core RDBMS for Zeebe / Operate / Tasklist secondary storage:
 
@@ -592,7 +701,7 @@ archival when growth becomes a capacity concern. The 90-day Elasticsearch
 retention ([CLAUDE.md gotcha 20](../CLAUDE.md)) does not apply to the
 Camunda RDBMS; it only trims Zeebe records in `elasticsearch`.
 
-### 4.12 Web Modeler DB (Postgres)
+### 5.12 Web Modeler DB (Postgres)
 
 ```bash
 docker exec web-modeler-db pg_isready \
@@ -601,7 +710,7 @@ docker exec web-modeler-db pg_isready \
 
 `$WEBMODELER_DB_USER` and `$WEBMODELER_DB_NAME` come from `.env`.
 
-### 4.13 Mailpit
+### 5.13 Mailpit
 
 Local-only test SMTP sink. Worth probing only because Web Modeler depends
 on it for email flows:
@@ -614,7 +723,7 @@ nc -z 127.0.0.1 1025
 Alerting on Mailpit is rarely worth the noise. Skip it unless email flows
 are operationally critical to your dev workflow.
 
-### 4.14 Reverse proxy (Caddy)
+### 5.14 Reverse proxy (Caddy)
 
 ```bash
 # Caddy admin API — loopback only; returns the running config as JSON
@@ -633,7 +742,7 @@ treat reverse-proxy alerts as critical.
 
 ---
 
-## 5. Logs
+## 6. Logs
 
 All services log to **stdout/stderr**, captured by the Docker daemon. There
 is no persistent file logging or log rotation configured in this
@@ -664,7 +773,7 @@ cleanly.
 
 ---
 
-## 6. Stage-aware threshold reference
+## 7. Stage-aware threshold reference
 
 Container memory alerts should be computed against the *limit* in
 `stages/<stage>.yaml`, not against the host total. Reference table for the
@@ -695,7 +804,7 @@ from the table.
 
 ---
 
-## 7. Operational gotchas worth alerting on
+## 8. Operational gotchas worth alerting on
 
 These are configuration regressions that the running stack tolerates
 silently for a while but eventually break user flows. Detection rules a
@@ -711,7 +820,7 @@ sysadmin can encode:
 
 ---
 
-## 8. Out of scope (covered elsewhere)
+## 9. Out of scope (covered elsewhere)
 
 - **Backup operational signals** (last successful run, archive age, restore
   drill, encrypted-backup checks) → [backup-restore.md](backup-restore.md)
