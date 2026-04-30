@@ -5,7 +5,7 @@ $ProjectDir = Resolve-Path (Join-Path $ScriptDir "..\..")
 if (-not $EnvFile) {
     $EnvFile = Join-Path $ProjectDir ".env"
 }
-$BackupBaseDir = Join-Path $ProjectDir "backups"
+$BackupBaseDir = if ($env:BACKUP_BASE_DIR) { $env:BACKUP_BASE_DIR } else { Join-Path $ProjectDir "backups" }
 $LockDir = Join-Path $BackupBaseDir ".backup.lock"
 $LockFile = Join-Path $LockDir "pid"
 
@@ -34,6 +34,13 @@ function Load-Env {
             }
             [Environment]::SetEnvironmentVariable($name, $value, "Process")
         }
+    }
+
+    # Recompute derived paths in case BACKUP_BASE_DIR was overridden by .env
+    if ($env:BACKUP_BASE_DIR) {
+        $script:BackupBaseDir = $env:BACKUP_BASE_DIR
+        $script:LockDir = Join-Path $script:BackupBaseDir ".backup.lock"
+        $script:LockFile = Join-Path $script:LockDir "pid"
     }
 }
 

@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 ENV_FILE="${ENV_FILE:-$PROJECT_DIR/.env}"
-BACKUP_BASE_DIR="$PROJECT_DIR/backups"
+BACKUP_BASE_DIR="${BACKUP_BASE_DIR:-$PROJECT_DIR/backups}"
 LOCK_DIR="$BACKUP_BASE_DIR/.backup.lock"
 LOCK_FILE="$LOCK_DIR/pid"
 
@@ -28,6 +28,11 @@ load_env() {
   # Remove UTF-8 BOM if present (common on Windows)
   source <(sed '1s/^\xEF\xBB\xBF//' "$ENV_FILE")
   set +a
+
+  # Recompute derived paths in case BACKUP_BASE_DIR was overridden by .env
+  BACKUP_BASE_DIR="${BACKUP_BASE_DIR:-$PROJECT_DIR/backups}"
+  LOCK_DIR="$BACKUP_BASE_DIR/.backup.lock"
+  LOCK_FILE="$LOCK_DIR/pid"
 }
 
 get_stage() {
