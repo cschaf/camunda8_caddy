@@ -262,19 +262,16 @@ CAMUNDA_DB_USER=camunda
 CAMUNDA_DB_PASSWORD=<strong secret>
 ```
 
-### Connectors Authentication Variable
+### Connectors Authentication Variables
 
-The current Connectors service uses issuer discovery:
+The Connectors service keeps the internal issuer URL for realm context and also sets an explicit internal token URL:
 
 ```yaml
 CAMUNDA_CLIENT_AUTH_ISSUERURL: http://${KEYCLOAK_HOST}:18080/auth/realms/camunda-platform
-```
-
-Replace the old direct token URL variable:
-
-```yaml
 CAMUNDA_CLIENT_AUTH_TOKENURL: http://${KEYCLOAK_HOST}:18080/auth/realms/camunda-platform/protocol/openid-connect/token
 ```
+
+The explicit token URL prevents issuer discovery from returning Keycloak's browser-facing HTTPS token endpoint to a Docker-internal machine-to-machine client.
 
 ### Web Modeler WebApp Removed
 
@@ -300,6 +297,8 @@ Client-facing Web Modeler variables now live on `web-modeler-restapi`, including
 The current REST API service also has:
 
 ```yaml
+SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: https://keycloak.${HOST}/auth/realms/camunda-platform
+SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI: http://${KEYCLOAK_HOST}:18080/auth/realms/camunda-platform/protocol/openid-connect/certs
 LOGGING_LEVEL_IO_CAMUNDA_MODELER: INFO
 SERVER_HTTPS_ONLY: "false"
 PLAY_ENABLED: "true"

@@ -546,6 +546,8 @@ This distinction is critical: the browser must see the public HTTPS URL in the a
 **Key env vars:**
 - `CAMUNDA_CLIENT_RESTADDRESS=http://orchestration:8080` — Internal REST endpoint for the Zeebe client
 - `CAMUNDA_CLIENT_GRPCADDRESS=http://orchestration:26500` — Internal gRPC endpoint
+- `CAMUNDA_CLIENT_AUTH_ISSUERURL=http://${KEYCLOAK_HOST}:18080/...` — Internal realm URL used for issuer context
+- `CAMUNDA_CLIENT_AUTH_TOKENURL=http://${KEYCLOAK_HOST}:18080/.../token` — Internal token endpoint for machine-to-machine auth; avoids Keycloak discovery returning the public HTTPS token endpoint inside the Docker network.
 - `CAMUNDA_CLIENT_AUTH_*` — OIDC credentials for authenticating to the Zeebe gateway
 
 **Secrets:** Connectors reads additional secrets from `connector-secrets.txt` (gitignored env_file), which holds outbound connector secrets (e.g., HTTP basic auth credentials for external systems).
@@ -702,6 +704,8 @@ Three components:
 **Key env vars for web-modeler-restapi:**
 - `RESTAPI_OAUTH2_TOKEN_ISSUER=https://keycloak.${HOST}/...` — Browser-facing issuer (used for JWT validation from webapp)
 - `RESTAPI_OAUTH2_TOKEN_ISSUER_BACKEND_URL=http://${KEYCLOAK_HOST}:18080/...` — Internal issuer URL
+- `SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI=https://keycloak.${HOST}/...` — Canonical JWT issuer used by Web Modeler REST API on Camunda 8.9; must match Keycloak's advertised issuer even when OIDC discovery uses the internal backend URL.
+- `SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI=http://${KEYCLOAK_HOST}:18080/.../certs` — Internal JWK Set endpoint used for JWT signature validation; avoids calling the public HTTPS issuer from inside the container.
 - `RESTAPI_PUSHER_*` — Pusher configuration for WebSocket communication with the websockets service
 - `CAMUNDA_MODELER_CLUSTERS_0_URL_WEBAPP=https://orchestration.${HOST}` — Points to the **Orchestration** UI (not Web Modeler itself), because Web Modeler connects to the Zeebe broker running in Orchestration. Uses the browser-reachable HTTPS proxy URL so it works from remote clients on the network, not just the Docker host machine.
 - `LOGGING_LEVEL_IO_CAMUNDA_MODELER=INFO` — Keeps Web Modeler logging at production-appropriate verbosity.

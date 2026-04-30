@@ -99,6 +99,7 @@ services:
       CAMUNDA_CLIENT_RESTADDRESS: http://orchestration:8080
       CAMUNDA_CLIENT_GRPCADDRESS: http://orchestration:26500
       CAMUNDA_CLIENT_AUTH_ISSUERURL: http://${KEYCLOAK_HOST:?KEYCLOAK_HOST is required}:18080/auth/realms/camunda-platform
+      CAMUNDA_CLIENT_AUTH_TOKENURL: http://${KEYCLOAK_HOST:?KEYCLOAK_HOST is required}:18080/auth/realms/camunda-platform/protocol/openid-connect/token
       CAMUNDA_CLIENT_AUTH_CLIENTID: ${CONNECTORS_CLIENT_ID}
       CAMUNDA_CLIENT_AUTH_CLIENTSECRET: ${CONNECTORS_CLIENT_SECRET:?CONNECTORS_CLIENT_SECRET is required}
       CAMUNDA_LICENSE_KEY: ${CAMUNDA_LICENSE_KEY:-}
@@ -501,6 +502,8 @@ services:
       RESTAPI_PUSHER_SECRET: ${WEBMODELER_PUSHER_SECRET:?WEBMODELER_PUSHER_SECRET is required}
       RESTAPI_OAUTH2_TOKEN_ISSUER: https://keycloak.${HOST:?HOST is required}/auth/realms/camunda-platform
       RESTAPI_OAUTH2_TOKEN_ISSUER_BACKEND_URL: http://${KEYCLOAK_HOST:?KEYCLOAK_HOST is required}:18080/auth/realms/camunda-platform
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: https://keycloak.${HOST:?HOST is required}/auth/realms/camunda-platform
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI: http://${KEYCLOAK_HOST:?KEYCLOAK_HOST is required}:18080/auth/realms/camunda-platform/protocol/openid-connect/certs
       RESTAPI_SERVER_URL: https://webmodeler.${HOST:?HOST is required}
       RESTAPI_MAIL_HOST: mailpit
       RESTAPI_MAIL_PORT: 1025
