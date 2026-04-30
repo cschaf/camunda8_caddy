@@ -556,6 +556,15 @@ Connector secrets use a dedicated `CONNECTORS_SECRET` prefix configured in `.con
 
 The connector runtime also leaves agentic AI HTTP proxy support enabled so AI Agent, MCP Client, and A2A Client connectors can use standard proxy settings in environments that require outbound proxies. See [agentic-ai.md](agentic-ai.md) for provider-specific secret names and MCP examples.
 
+**Zeebe health warning:** Connector logs can contain `Zeebe health check failed: numBrokers=1, anyPartitionHealthy=false` when Orchestration briefly marks the single Zeebe partition unhealthy. This is a Zeebe topology-health symptom, not necessarily a connector configuration problem. Check connector readiness and Orchestration logs before changing connector auth settings:
+
+```bash
+docker exec connectors wget -q -O- http://localhost:8080/actuator/health/readiness
+docker logs orchestration --since 20m | grep -E 'Partition-1 failed|Partition-1 recovered|actor appears blocked'
+```
+
+If readiness later reports `anyPartitionHealthy=true` and Orchestration logs `Partition-1 recovered`, treat the connector warning as transient. Repeated occurrences or sustained `DOWN` readiness require Orchestration/Zeebe investigation, especially stream processor actor blockage, CPU starvation, disk I/O stalls, GC pauses, or heavy job activation bursts.
+
 ### Optimize
 
 **Image:** `camunda/optimize:${CAMUNDA_OPTIMIZE_VERSION}`

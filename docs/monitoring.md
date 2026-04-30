@@ -398,6 +398,35 @@ A connector reports `DOWN` if its outbound dependency (e.g. an external
 SaaS API) is unreachable. The container itself is still up — health is
 about its *workload*, not its process state.
 
+If connector logs show:
+
+```text
+Zeebe health check failed: numBrokers=1, anyPartitionHealthy=false
+```
+
+the connector is reporting Zeebe topology health, not a connector runtime
+startup failure. In this stack it usually means the single Zeebe partition was
+temporarily marked unhealthy by Orchestration. Confirm whether it recovered:
+
+```bash
+docker exec connectors wget -q -O- http://localhost:8080/actuator/health/readiness
+docker logs orchestration --since 20m | grep -E 'Partition-1 failed|Partition-1 recovered|actor appears blocked'
+docker inspect connectors --format '{{json .State.Health}}'
+```
+
+Healthy recovered output from the readiness endpoint includes:
+
+```json
+{"status":"UP","components":{"zeebeClient":{"status":"UP","details":{"numBrokers":1,"anyPartitionHealthy":true}}}}
+```
+
+A one-off warning followed by `Partition-1 recovered` is operationally
+transient. If the warning repeats or the readiness endpoint remains `DOWN`,
+investigate Orchestration/Zeebe first: stream processor actor blockage, CPU
+starvation, disk I/O stalls, GC pauses, or large job activation bursts. Do not
+change connector credentials or endpoint configuration unless the logs also
+show authentication or connection errors.
+
 ### 4.3 Optimize
 
 ```bash
