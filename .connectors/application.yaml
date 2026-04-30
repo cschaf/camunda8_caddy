@@ -8,10 +8,19 @@ camunda:
       method: oidc
       credentialsCachePath: /tmp/orchestration_auth_cache
       audience: orchestration-api
-  connectors:
-    secretprovider:
+  connector:
+    secret-provider:
       environment:
+        # Camunda 8.9 defaults to SECRET_. This stack uses a dedicated prefix
+        # so connector secrets in connector-secrets.txt are explicit and do not
+        # expose unrelated container environment variables.
         prefix: "CONNECTORS_SECRET"
+    agenticai:
+      http:
+        proxy-support:
+          # Leave enabled so AI Agent, MCP Client, and A2A Client connectors can
+          # use standard proxy variables when a corporate proxy is configured.
+          enabled: true
 
 management:
   endpoints:

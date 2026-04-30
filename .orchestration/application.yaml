@@ -92,6 +92,9 @@ camunda:
       enabled: true
 
   mcp:
+    # Camunda 8.9 built-in Orchestration Cluster MCP server. Docker Compose
+    # enables this by default upstream, but keeping it explicit documents that
+    # AI/MCP clients may use /mcp/cluster through localhost:8088 or Caddy.
     enabled: true
 
   security:

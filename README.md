@@ -18,6 +18,7 @@ For end user usage, please check the official documentation of [Camunda 8 Self-M
 
 - [`docs/project_configuration.md`](docs/project_configuration.md) - Full configuration reference for this stack, including service settings, resource sizing, reverse proxy behavior, `autoheal`, the host recovery guard, and a decision guide for PostgreSQL vs Elasticsearch as Camunda core data backend.
 - [`docs/stage_comparison.md`](docs/stage_comparison.md) - Side-by-side comparison of the `prod`, `dev`, and `test` stage resource profiles.
+- [`docs/agentic-ai.md`](docs/agentic-ai.md) - Camunda 8.9 Agentic AI setup for AI Agent connectors, MCP clients, LLM provider secrets, proxy/truststore notes, and safety guardrails.
 
 ## First Start Setup
 
@@ -66,6 +67,17 @@ cp connector-secrets.txt.example connector-secrets.txt
 ```
 
 `connector-secrets.txt` is mounted into the Connectors container as an env file. Add any connector secrets you need in `NAME=VALUE` format. The file is gitignored — never commit it.
+
+For Camunda 8.9 Agentic AI connectors, this stack uses the `CONNECTORS_SECRET` prefix. A connector field such as `{{secrets.OPENAI_API_KEY}}` resolves `CONNECTORS_SECRET_OPENAI_API_KEY` from `connector-secrets.txt`.
+
+Example:
+
+```env
+CONNECTORS_SECRET_OPENAI_API_KEY=sk-...
+CONNECTORS_SECRET_MCP_CLIENT_SECRET=...
+```
+
+See [`docs/agentic-ai.md`](docs/agentic-ai.md) for provider-specific examples and MCP client configuration.
 
 ### Management endpoints and secret exposure
 
@@ -244,6 +256,7 @@ The dashboard at `https://{HOST}` provides a landing page with links to all serv
 | Keycloak Admin | https://keycloak.{HOST}/auth/ (admin / admin) |
 | Zeebe Gateway | https://zeebe.{HOST} |
 | Admin | https://orchestration.{HOST}/admin |
+| Orchestration MCP Server | https://orchestration.{HOST}/mcp/cluster |
 
 > **TLS warning:** If no custom certificates are configured, Caddy uses a self-signed cert. Your browser will show a security warning — click "Advanced" and proceed. With a trusted certificate (your own or one from mkcert) this warning disappears.
 

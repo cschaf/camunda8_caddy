@@ -23,6 +23,7 @@ This document describes every configuration in this stack, explaining what each 
 9. [Reverse Proxy (Caddy)](#9-reverse-proxy-caddy)
 10. [Network Architecture](#10-network-architecture)
 11. [Development vs Production Trade-offs](#11-development-vs-production-trade-offs)
+12. [Agentic AI and MCP](#12-agentic-ai-and-mcp)
 
 ---
 
@@ -312,6 +313,22 @@ Camunda 8 supports two backends for core operational data (Zeebe records, Operat
 
 Operate and Tasklist run on Camunda 8.9 RDBMS secondary storage in this stack. Their query data is stored in PostgreSQL (`camunda-db`), not in `operate-*` or `tasklist-*` Elasticsearch archive indices. For that reason, `.orchestration/application.yaml` intentionally does not configure `camunda.operate.archiver.*` or `camunda.tasklist.archiver.*` keys. Those archiver ILM settings are only relevant when Operate/Tasklist use Elasticsearch/OpenSearch as their secondary-storage backend.
 
+### Orchestration Cluster MCP Server
+
+The built-in Camunda 8.9 Orchestration Cluster MCP server is explicitly enabled:
+
+```yaml
+camunda:
+  mcp:
+    enabled: true
+```
+
+| Setting | Value | Default | Why |
+|---------|-------|---------|-----|
+| `camunda.mcp.enabled` | `true` | Enabled in Docker Compose distributions | Documents that external AI clients may use the Orchestration Cluster MCP endpoint at `/mcp/cluster`. Keeping this explicit avoids accidental disablement when the stack is later converted to a different deployment type. |
+
+The endpoint is available internally at `http://orchestration:8080/mcp/cluster`, locally from the Docker host at `http://localhost:8088/mcp/cluster`, and through Caddy at `https://orchestration.${HOST}/mcp/cluster`.
+
 ### Optimize Data Retention
 
 > **Note:** The `number_of_shards: 1` setting in `.optimize/environment-config.yaml` only reduces shard overhead per index — it does not delete old data. Retention is configured separately via `historyCleanup`.
@@ -532,6 +549,10 @@ This distinction is critical: the browser must see the public HTTPS URL in the a
 - `CAMUNDA_CLIENT_AUTH_*` — OIDC credentials for authenticating to the Zeebe gateway
 
 **Secrets:** Connectors reads additional secrets from `connector-secrets.txt` (gitignored env_file), which holds outbound connector secrets (e.g., HTTP basic auth credentials for external systems).
+
+Connector secrets use a dedicated `CONNECTORS_SECRET` prefix configured in `.connectors/application.yaml`. For example, a connector template field containing `{{secrets.OPENAI_API_KEY}}` resolves the environment variable `CONNECTORS_SECRET_OPENAI_API_KEY`.
+
+The connector runtime also leaves agentic AI HTTP proxy support enabled so AI Agent, MCP Client, and A2A Client connectors can use standard proxy settings in environments that require outbound proxies. See [agentic-ai.md](agentic-ai.md) for provider-specific secret names and MCP examples.
 
 ### Optimize
 
@@ -924,3 +945,56 @@ Management endpoint policy: expose only the endpoints needed for health checks a
 5. **Keep `/actuator/configprops` disabled** for all runtime services; if temporarily enabled for debugging, set `show-values: NEVER` and restrict access to localhost.
 6. **Keep `LOGGING_LEVEL_IO_CAMUNDA_MODELER`** at `INFO`
 7. **Consider multi-node Elasticsearch** for HA production deployments
+
+---
+
+## 12. Agentic AI and MCP
+
+Camunda 8.9 adds two AI integration paths that this stack keeps separate:
+
+| Path | Purpose | Primary Configuration |
+|------|---------|-----------------------|
+| AI inside BPMN | AI Agent, MCP Client, and A2A Client connectors run as process tasks | `connectors`, `connector-secrets.txt`, Web Modeler element templates |
+| AI outside Camunda | External AI clients inspect and operate the cluster through MCP | `camunda.mcp.enabled=true`, `/mcp/cluster` endpoint |
+
+### AI Agent Connectors
+
+AI Agent connector tasks run in the `connectors` container. Provider credentials are not stored in `.env`; they belong in `connector-secrets.txt` with the `CONNECTORS_SECRET` prefix.
+
+Recommended first process:
+
+1. AI Agent service task
+2. Output variable such as `aiResult`
+3. User task for review
+4. Error or incident path for failed provider calls
+
+Always configure model-level timeouts such as `PT60S`. Add tool calling only after the basic model call is validated.
+
+### MCP Server Endpoint
+
+The Orchestration Cluster MCP endpoint is:
+
+```text
+/mcp/cluster
+```
+
+Available URLs:
+
+| Client Location | URL |
+|-----------------|-----|
+| Docker network | `http://orchestration:8080/mcp/cluster` |
+| Docker host | `http://localhost:8088/mcp/cluster` |
+| HTTPS proxy | `https://orchestration.${HOST}/mcp/cluster` |
+
+For local validation, direct HTTP from the Docker host is enough. For authenticated shared environments, use OAuth client credentials or Camunda `c8ctl mcp-proxy`, and grant only the required Camunda authorizations.
+
+### Operational Guardrails
+
+- Keep LLM credentials in `connector-secrets.txt` or an external secret manager.
+- Keep direct service ports bound to `127.0.0.1`.
+- Use Caddy or a controlled internal network path for remote MCP clients.
+- Start with read-only MCP tools before enabling write operations such as incident resolution or process creation.
+- Use Camunda authorizations for connector clients and MCP clients.
+- Use a corporate proxy and truststore when provider traffic must leave through controlled network egress.
+
+See [docs/agentic-ai.md](agentic-ai.md) for the concrete provider setup, MCP client examples, and first-process checklist.
