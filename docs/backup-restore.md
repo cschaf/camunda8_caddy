@@ -4,6 +4,8 @@ This document describes the backup and restore system for the Camunda 8 Self-Man
 
 ## Contents
 
+- [Big Picture](#big-picture)
+- [Quick Start](#quick-start)
 - [Data Sources](#data-sources)
 - [Storage Sizing Example](#storage-sizing-example)
 - [Relation to Official Procedure](#relation-to-official-procedure)
@@ -16,6 +18,65 @@ This document describes the backup and restore system for the Camunda 8 Self-Man
 - [CLI Reference](#cli-reference)
 - [Troubleshooting](#troubleshooting)
 - [Automation](#automation)
+
+## Big Picture
+
+The project ships **three scripts**, one for each job in the backup lifecycle. Each has a `.sh` (Linux/macOS/WSL) and a `.ps1` (Windows) variant; they produce identical artifacts.
+
+| Script | What it does | When to run it |
+|---|---|---|
+| `backup.sh` / `backup.ps1` | Cold-snapshots the live stack into a timestamped folder under `backups/` (Postgres dumps for Keycloak / Camunda / Web Modeler, Zeebe volume archive, Elasticsearch snapshot, configs, manifest with SHA256 checksums). Application services are briefly stopped; core data services keep running. | Daily, and before risky changes (image upgrades, config edits, schema changes) |
+| `restore.sh <dir>` / `restore.ps1 <dir>` | **Destructive.** Stops the live stack, wipes data volumes, restores the chosen backup back into the same compose project. Auto-creates a rollback backup of current state first (skip with `--no-pre-backup`). Prompts for confirmation unless `--force`. | Real disaster recovery, refreshing a dev stack from a prod backup |
+| `restore-drill.sh` / `restore-drill.ps1` | **Non-destructive.** Spins up a *second, isolated* Camunda stack (project name `camunda-restoredrill`, ports offset by +10000, dedicated `elastic-backup-drill` volume), restores a backup into it, runs Keycloak / Orchestration / Web Modeler smoke tests, then tears it down. The live stack is never touched. | Weekly, and after any change that could affect restore (Compose, image, or script edits) |
+
+The model is a **cold backup**: application services (orchestration, connectors, optimize, identity, console, keycloak, web-modeler-*) are stopped for the duration of the backup so Zeebe and the databases reach a quiet state. Core data services (`postgres`, `camunda-db`, `web-modeler-db`, `elasticsearch`) keep running so dumps and snapshots can be taken in place. Typical downtime is ~5-10 min depending on data volume.
+
+The single question every backup plan has to answer is *"can you actually restore from this?"* — `restore.sh --verify` checks file integrity (manifest checksums, gzip/tar readability) in seconds, but only the **drill** actually starts containers, runs the real restore script against them, and confirms services come back healthy. That's why drill exists as a separate script: a green drill is the only thing that proves the entire pipeline still works end-to-end without committing to a destructive restore on the live stack.
+
+## Quick Start
+
+A pragmatic first-week walkthrough. All three scripts read `STAGE` and other variables from `.env`, so make sure the stack is configured and running first.
+
+```bash
+# Day 1 — take your first backup
+./scripts/backup.sh
+# → produces backups/YYYYMMDD_HHMMSS/ with dumps, snapshot, configs, manifest.json
+```
+
+```bash
+# Day 2 — prove the backup can be restored, without touching the live stack
+./scripts/restore-drill.sh
+# → spins up an isolated parallel stack on ports +10000, restores into it, smoke-tests, tears down
+```
+
+When `restore-drill.sh` is invoked with no arguments it picks the most recent `backups/YYYYMMDD_HHMMSS/` directory automatically. To inspect the drill stack manually instead of having it torn down at the end, pass `--keep`:
+
+```bash
+./scripts/restore-drill.sh --keep
+# Drill stack stays up (default port offset 10000):
+#   Keycloak realm    → http://localhost:28080/auth/realms/camunda-platform
+#   Orchestration UI  → http://localhost:18088
+#   Orchestration health → http://localhost:19600/actuator/health
+#   Web Modeler ready    → http://localhost:18071/health/readiness
+# Tear down later with:
+#   docker compose -p camunda-restoredrill down --volumes --remove-orphans
+```
+
+```bash
+# Day N — a real incident: restore on the live stack
+./scripts/restore.sh backups/20240115_120000
+# → confirms with you, auto-creates a rollback backup, then restores. Destructive.
+```
+
+For zero-risk smoke checks of all three scripts in order:
+
+```bash
+./scripts/backup.sh --simulate                      # ~30 s, no impact
+./scripts/restore.sh --verify backups/<latest>      # ~10 s, checksum/integrity only
+./scripts/restore-drill.sh --keep                   # ~5-10 min, parallel stack
+```
+
+After this, the rest of the document is organized as a reference: see [Backup Scenarios](#backup-scenarios) for backup options (encryption, retention, custom env file), [Restore Scenarios](#restore-scenarios) for granular and cross-cluster restore, [Restore Drill](#restore-drill) for isolation details and customization, and [CLI Reference](#cli-reference) for every flag.
 
 ## Data Sources
 
@@ -225,6 +286,8 @@ backups/20240115_120000/
 ```
 
 **Cross-platform compatibility:** Both `backup.sh` / `restore.sh` (Linux/macOS/WSL) and `backup.ps1` / `restore.ps1` (Windows) produce the **same directory structure and file formats**. Backups created on one platform can be restored on the other.
+
+**Failed backups:** If a backup fails partway through, the timestamped directory is renamed to `<timestamp>_FAILED` and any application services that were stopped are restarted automatically. `_FAILED` directories are excluded from retention cleanup so you can inspect them; remove them manually once you no longer need the logs.
 
 ## Backup Scenarios
 
@@ -653,6 +716,7 @@ A passing drill means your backup format, restore logic, and stack health checks
 | Option | Description |
 |--------|-------------|
 | `backup-directory` | Path to backup (default: most recent under `backups/`) |
+| `--keep` | Keep the drill stack running after smoke tests (or after a failure) for manual inspection. The teardown command is logged so you can clean up later. Default: tear down. |
 | `-h, --help` | Shows help |
 
 The drill also recognizes the environment variables listed in [Restore Drill](#restore-drill).
