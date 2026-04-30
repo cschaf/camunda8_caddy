@@ -5,6 +5,7 @@ This document describes the backup and restore system for the Camunda 8 Self-Man
 ## Contents
 
 - [Data Sources](#data-sources)
+- [Storage Sizing Example](#storage-sizing-example)
 - [Relation to Official Procedure](#relation-to-official-procedure)
 - [Security](#security)
 - [Users and Permissions](#users-and-permissions)
@@ -32,6 +33,61 @@ The backup system secures the following data:
 **Not backed up:** `keycloak-theme` volume (initialized automatically by Identity).
 
 **Volume naming:** Docker Compose prefixes managed volume names with the compose project name (for example `camundacomposenvl_orchestration`). The scripts derive the correct prefixed volume names automatically. The Elasticsearch snapshot repository volume is exempt because it is explicitly named `elastic-backup`.
+
+## Storage Sizing Example
+
+The storage footprint of a Camunda installation depends more on the process model and payload than on the raw number of process instances. A process instance with a few small string variables is very different from a process instance that stores large JSON documents, many user tasks, repeated variable updates, incidents, or connector payloads. Camunda's own sizing guidance also points out that payload size can change storage requirements by orders of magnitude: a few small strings may be around the kilobyte range, while a 1 MB JSON document must be stored and indexed in multiple places.
+
+For this stack, **10,000 completed process instances per year** is a low-volume workload. With typical small-to-medium payloads, assume:
+
+- 5-15 flow nodes per instance
+- 0-5 user tasks per instance
+- fewer than 10 process variables per instance
+- small variables, usually strings/numbers/booleans and no large embedded documents
+- low incident rate
+- Optimize enabled with the current 365-day cleanup
+- Zeebe Elasticsearch exporter records retained for 90 days
+
+Under those assumptions, a practical planning estimate is:
+
+| Store | What grows there | Retention in this stack | Rough planning estimate for 10,000 process instances/year |
+|---|---|---|---|
+| `camunda-db` PostgreSQL volume | Camunda core operational/query data: process instances, flow nodes, variables, user tasks, authorizations, exporter positions, technical metadata | No explicit cleanup policy currently configured in this stack | ~200 MB to 1.5 GB per year for typical small/medium payloads |
+| `orchestration` Zeebe volume | Zeebe primary runtime state, RocksDB state, snapshots, and log segments | Compacted by Zeebe; mostly driven by active state, snapshots, and exporter/backlog behavior rather than full historical retention | Usually <1 GB for this workload, but keep several GB free for snapshots, compaction, and temporary growth |
+| `elastic` Elasticsearch volume: `zeebe-record-*` | Raw exported Zeebe records used by Optimize as import source | 90 days | ~50 MB to 1 GB retained at any time for typical payloads |
+| `elastic` Elasticsearch volume: `optimize-*` | Optimize analytics and report data | 365 days | ~100 MB to 2 GB per year for typical payloads |
+| `postgres` Keycloak/Identity DB | Users, roles, groups, clients, sessions, realm configuration | Not driven by process instance count | Usually <100 MB unless user/session volume is high |
+| `postgres-web` Web Modeler DB | Projects, BPMN/DMN files, folders, comments, metadata | Not driven directly by process instance count | Usually tens to hundreds of MB, depending on modeling usage |
+| Backup directory | Compressed dumps, Zeebe volume archive, Elasticsearch snapshot copy, configs, manifest | Backup retention defaults to 7 days | Often ~0.5 GB to 4 GB per backup for this workload after the stack has accumulated data |
+
+Use these numbers as a starting point, not a guarantee. The multiplier can become large when variables or connector payloads are large because the same business data can appear in Zeebe state, RDBMS secondary storage, exported Elasticsearch records, and Optimize analytics. As a simple stress example, if each process instance carries a 1 MB JSON variable and 10,000 instances complete per year, the raw business payload alone is already 10 GB before database indexes, history records, Elasticsearch indexing overhead, Optimize copies, snapshots, and backup retention are counted. In that case, plan in the tens of GB rather than the low single-digit GB range.
+
+Operational recommendation for this stack:
+
+- Keep at least 20-30 GB free for Docker volumes even for the 10,000 process instances/year scenario.
+- Monitor actual volume growth after the first few weeks or months and extrapolate from real data.
+- Pay special attention to `camunda-db` and `elastic`; these are the stores most affected by process history and Optimize.
+- Keep backup retention in mind: seven daily 2 GB backups require about 14 GB of host backup storage before off-site copies.
+- For production sizing, validate with a representative process model and payload instead of relying only on generic estimates.
+
+Useful checks:
+
+```bash
+# Docker volume usage summary
+docker system df -v
+
+# PostgreSQL database size for Camunda core data
+docker exec camunda-db psql -U "$CAMUNDA_DB_USER" -d "$CAMUNDA_DB_NAME" -c "SELECT pg_size_pretty(pg_database_size(current_database()));"
+
+# Elasticsearch index sizes by Camunda-related prefix
+curl -s -u "elastic:${ELASTIC_PASSWORD}" "http://localhost:9200/_cat/indices/zeebe-record*,optimize*?h=index,docs.count,store.size&s=store.size:desc"
+```
+
+Relevant Camunda sizing and retention references:
+
+- https://docs.camunda.io/docs/components/best-practices/architecture/sizing-your-environment/
+- https://docs.camunda.io/docs/self-managed/setup/guides/data-retention/
+- https://docs.camunda.io/docs/self-managed/deployment/helm/configure/data-retention/
 
 ## Security
 
@@ -65,19 +121,56 @@ The restore scripts extract decrypted archives under `backups/decrypted-*` and t
 
 These scripts implement a **cold backup** tailored to the local Docker Compose stack: application services that can write to Zeebe, Elasticsearch, or the PostgreSQL databases are stopped, then Elasticsearch is snapshotted, PostgreSQL databases are dumped, and the Zeebe state volume is archived. This yields consistent backups without orchestrating Camunda's backup APIs, at the cost of a short downtime window for the duration of the backup.
 
-They do **not** implement the official Camunda 8 Self-Managed hot-backup procedure, which:
+### Current backup approach in this stack
+
+The current setup is best described as a **full-stack infrastructure backup** for this Docker Compose environment, not as a Camunda-managed hot backup. It backs up the complete local runtime state that matters for this project:
+
+- Zeebe primary state from the `orchestration` Docker volume
+- Camunda core PostgreSQL data from `camunda-db`
+- Optimize and Zeebe record indices through an Elasticsearch snapshot
+- Keycloak identity data from PostgreSQL
+- Web Modeler data from PostgreSQL
+- Runtime configuration files such as `.env`, `connector-secrets.txt`, `Caddyfile`, and application YAML files
+
+This is intentional for the local/single-node Compose profile because it also covers services outside Camunda's backup API scope, especially Keycloak, Web Modeler, and local configuration. The trade-off is that the stack must stop the application services during the backup window.
+
+This project uses Camunda 8.9 with RDBMS secondary storage for Operate, Tasklist, authorizations, and API query data. Elasticsearch is still retained for Optimize and exported Zeebe records. Because of this mixed storage model, adopting the official Camunda backup mechanisms would not be a drop-in replacement for the current scripts:
+
+- The RDBMS backup path covers Zeebe, Operate, and Tasklist, but not Optimize.
+- The Elasticsearch/OpenSearch backup path covers Optimize, but assumes coordinated component backups through configured repositories and management APIs.
+- Keycloak, Web Modeler, and local configuration still need separate backup and restore handling.
+
+### Difference from Camunda hot/online backup
+
+These scripts do **not** implement the official Camunda 8 Self-Managed hot/online backup procedure, which:
 
 - Keeps Zeebe running under a soft export pause
 - Uses Camunda actuator endpoints (`/actuator/backupHistory`, `/actuator/backupRuntime`, `/actuator/backups`) to coordinate component backups
 - Snapshots only `zeebe-record*` at the Elasticsearch layer (with `"feature_states": ["none"]`)
 - Requires each component (Operate, Tasklist, Optimize, Zeebe broker) to be configured with a backup repository
 
-For zero-downtime production backups, follow the official guides:
+Camunda's current backup documentation distinguishes two official paths:
 
-- Backup: https://docs.camunda.io/docs/self-managed/operational-guides/backup-restore/elasticsearch/es-backup/
-- Restore: https://docs.camunda.io/docs/self-managed/operational-guides/backup-restore/elasticsearch/es-restore/
+| Official path | Coverage | Operational model | Important limitation |
+|---|---|---|---|
+| Elasticsearch/OpenSearch | Zeebe, Operate, Tasklist, Optimize | Coordinated component backups with a shared backup ID | Requires backup repositories and management API access for all relevant components |
+| RDBMS secondary storage | Zeebe, Operate, Tasklist | Decoupled Zeebe and database backups; Camunda aligns state during restore | Does not cover Optimize |
+
+For zero-downtime or low-downtime production backups, follow the official guides and design the missing non-Camunda backups around them:
+
+- Overview: https://docs.camunda.io/docs/self-managed/operational-guides/backup-restore/backup-and-restore/
+- Zeebe Backup API: https://docs.camunda.io/docs/self-managed/operational-guides/backup-restore/zeebe-backup-and-restore/
+- RDBMS backup and restore: https://docs.camunda.io/docs/self-managed/operational-guides/backup-restore/rdbms/rdbms-restore/
+- Elasticsearch/OpenSearch backup and restore: https://docs.camunda.io/docs/self-managed/operational-guides/backup-restore/elasticsearch/es-backup/
 
 The default `.orchestration/application.yaml` in this project does not expose the backup actuator endpoints and does not configure backup storage for Operate/Tasklist/Optimize/Zeebe. Adopting the official procedure requires those configuration changes first.
+
+### Trade-offs
+
+| Approach | Advantages | Disadvantages |
+|---|---|---|
+| Current cold backup scripts | Simple to operate in Docker Compose; captures Camunda data, Keycloak, Web Modeler, and configuration together; avoids exposing internal management APIs; produces a self-contained restore artifact for this stack | Requires application downtime; tied to this Compose topology; does not use Camunda's component-level backup coordination; less suitable for production environments with strict RTO/RPO requirements |
+| Official Camunda hot/online mechanisms | Designed for running clusters; lower downtime; uses component-aware backup coordination; better fit for production and HA deployments | Requires additional backup repository configuration, management API access, security controls, and automation; does not cover all non-Camunda data in this project; Optimize requires the Elasticsearch/OpenSearch path |
 
 Alignment notes:
 
