@@ -273,11 +273,17 @@ function Main {
             Start-Sleep -Seconds 2
 
             Log "Backing up Zeebe state (volume: orchestration)..."
+            $zeebeVol = Get-ComposeVolumeName 'orchestration'
+            try {
+                $sizeOutput = docker run --rm -v "${zeebeVol}:/data" alpine du -sh /data 2>$null
+                if ($sizeOutput) { Log "  Zeebe state size: $(($sizeOutput -split '\s+')[0])" }
+            }
+            catch { }
+
             $zeebeRetry = 0
             $zeebeMaxRetries = 3
             while ($zeebeRetry -lt $zeebeMaxRetries) {
                 try {
-                    $zeebeVol = Get-ComposeVolumeName 'orchestration'
                     docker run --rm `
                         -v "${zeebeVol}:/data" `
                         -v "${backupDir}:/backup" `
@@ -400,6 +406,7 @@ function Main {
                     Method = 'Put'
                     ContentType = 'application/json'
                     Body = $esRepoBody
+                    AllowUnencryptedAuthentication = $true
                 }
                 if ($esCredential) { $invokeParams.Credential = $esCredential }
                 Invoke-RestMethod @invokeParams | Out-Null
@@ -420,6 +427,7 @@ function Main {
                     Method = 'Put'
                     ContentType = 'application/json'
                     Body = $snapshotBody
+                    AllowUnencryptedAuthentication = $true
                 }
                 if ($esCredential) { $snapshotParams.Credential = $esCredential }
                 $response = Invoke-RestMethod @snapshotParams

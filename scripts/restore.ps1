@@ -321,7 +321,7 @@ function Test-ServiceReadiness {
         }
         "elasticsearch" {
             try {
-                $esHealthParams = @{ Uri = "http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s"; TimeoutSec = 6 }
+                $esHealthParams = @{ Uri = "http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s"; TimeoutSec = 6; AllowUnencryptedAuthentication = $true }
                 if ($env:ELASTIC_PASSWORD) {
                     $esHealthSecure = ConvertTo-SecureString $env:ELASTIC_PASSWORD -AsPlainText -Force
                     $esHealthParams.Credential = New-Object System.Management.Automation.PSCredential("elastic", $esHealthSecure)
@@ -900,6 +900,7 @@ chmod -R 777 /dest
                         Method = 'Put'
                         ContentType = 'application/json'
                         Body = $esRepoBody
+                        AllowUnencryptedAuthentication = $true
                     }
                     if ($esCredential) { $repoParams.Credential = $esCredential }
                     $repoResponse = Invoke-RestMethod @repoParams
@@ -924,7 +925,7 @@ chmod -R 777 /dest
             # or incomplete backup directory cannot wipe the live cluster.
             $snapshotExists = $false
             try {
-                $snapParams = @{ Uri = "${esUrl}/_snapshot/backup-repo/$snapshotName"; Method = 'Get' }
+                $snapParams = @{ Uri = "${esUrl}/_snapshot/backup-repo/$snapshotName"; Method = 'Get'; AllowUnencryptedAuthentication = $true }
                 if ($esCredential) { $snapParams.Credential = $esCredential }
                 Invoke-RestMethod @snapParams | Out-Null
                 $snapshotExists = $true
@@ -946,14 +947,14 @@ chmod -R 777 /dest
             Log "Clearing Camunda-related Elasticsearch indices..."
             $indexDeleteFailures = 0
             try {
-                $catParams = @{ Uri = "${esUrl}/_cat/indices?h=index&expand_wildcards=all&format=json" }
+                $catParams = @{ Uri = "${esUrl}/_cat/indices?h=index&expand_wildcards=all&format=json"; AllowUnencryptedAuthentication = $true }
                 if ($esCredential) { $catParams.Credential = $esCredential }
                 $catIndices = Invoke-RestMethod @catParams
                 foreach ($row in $catIndices) {
                     $idx = $row.index
                     if ($idx -match $camundaPattern) {
                         try {
-                            $delParams = @{ Uri = "${esUrl}/$idx"; Method = 'Delete' }
+                            $delParams = @{ Uri = "${esUrl}/$idx"; Method = 'Delete'; AllowUnencryptedAuthentication = $true }
                             if ($esCredential) { $delParams.Credential = $esCredential }
                             Invoke-RestMethod @delParams | Out-Null
                         }
@@ -974,7 +975,7 @@ chmod -R 777 /dest
 
             Log "Verifying deletion of Camunda-related Elasticsearch indices..."
             try {
-                $verifyParams = @{ Uri = "${esUrl}/_cat/indices?h=index&expand_wildcards=all&format=json" }
+                $verifyParams = @{ Uri = "${esUrl}/_cat/indices?h=index&expand_wildcards=all&format=json"; AllowUnencryptedAuthentication = $true }
                 if ($esCredential) { $verifyParams.Credential = $esCredential }
                 $remainingIndices = @(
                     Invoke-RestMethod @verifyParams |
@@ -996,14 +997,14 @@ chmod -R 777 /dest
             Log "Clearing Camunda-related Elasticsearch data streams..."
             $dataStreamDeleteFailures = 0
             try {
-                $dsListParams = @{ Uri = "${esUrl}/_data_stream?expand_wildcards=all" }
+                $dsListParams = @{ Uri = "${esUrl}/_data_stream?expand_wildcards=all"; AllowUnencryptedAuthentication = $true }
                 if ($esCredential) { $dsListParams.Credential = $esCredential }
                 $dsResponse = Invoke-RestMethod @dsListParams
                 if ($dsResponse.data_streams) {
                     foreach ($ds in $dsResponse.data_streams) {
                         if ($ds.name -match $camundaPattern) {
                             try {
-                                $dsDelParams = @{ Uri = "${esUrl}/_data_stream/$($ds.name)"; Method = 'Delete' }
+                                $dsDelParams = @{ Uri = "${esUrl}/_data_stream/$($ds.name)"; Method = 'Delete'; AllowUnencryptedAuthentication = $true }
                                 if ($esCredential) { $dsDelParams.Credential = $esCredential }
                                 Invoke-RestMethod @dsDelParams | Out-Null
                             }
@@ -1026,7 +1027,7 @@ chmod -R 777 /dest
             Log "Verifying deletion of Camunda-related Elasticsearch data streams..."
             try {
                 $remainingDataStreams = @()
-                $dsVerifyParams = @{ Uri = "${esUrl}/_data_stream?expand_wildcards=all" }
+                $dsVerifyParams = @{ Uri = "${esUrl}/_data_stream?expand_wildcards=all"; AllowUnencryptedAuthentication = $true }
                 if ($esCredential) { $dsVerifyParams.Credential = $esCredential }
                 $dsVerifyResponse = Invoke-RestMethod @dsVerifyParams
                 if ($dsVerifyResponse.data_streams) {
@@ -1057,6 +1058,7 @@ chmod -R 777 /dest
                     Method = 'Post'
                     ContentType = 'application/json'
                     Body = $restoreBody
+                    AllowUnencryptedAuthentication = $true
                 }
                 if ($esCredential) { $restoreParams.Credential = $esCredential }
                 $restoreResponse = Invoke-RestMethod @restoreParams

@@ -367,7 +367,7 @@ function Collect-ESState {
 
     $health = $null
     try {
-        $healthParams = @{ Uri = "${esUrl}/_cluster/health"; TimeoutSec = 10; ErrorAction = 'Stop' }
+        $healthParams = @{ Uri = "${esUrl}/_cluster/health"; TimeoutSec = 10; ErrorAction = 'Stop'; AllowUnencryptedAuthentication = $true }
         if ($esCredential) { $healthParams.Credential = $esCredential }
         $health = Invoke-RestMethod @healthParams
     }
@@ -381,7 +381,7 @@ function Collect-ESState {
 
     $indicesRaw = @()
     try {
-        $idxParams = @{ Uri = "${esUrl}/_cat/indices?h=index,docs.count,store.size&format=json&expand_wildcards=all"; TimeoutSec = 15 }
+        $idxParams = @{ Uri = "${esUrl}/_cat/indices?h=index,docs.count,store.size&format=json&expand_wildcards=all"; TimeoutSec = 15; AllowUnencryptedAuthentication = $true }
         if ($esCredential) { $idxParams.Credential = $esCredential }
         $indicesRaw = Invoke-RestMethod @idxParams
     }
@@ -389,7 +389,7 @@ function Collect-ESState {
 
     $dataStreamsRaw = $null
     try {
-        $dsParams = @{ Uri = "${esUrl}/_data_stream?expand_wildcards=all"; TimeoutSec = 10 }
+        $dsParams = @{ Uri = "${esUrl}/_data_stream?expand_wildcards=all"; TimeoutSec = 10; AllowUnencryptedAuthentication = $true }
         if ($esCredential) { $dsParams.Credential = $esCredential }
         $dataStreamsRaw = Invoke-RestMethod @dsParams
     }

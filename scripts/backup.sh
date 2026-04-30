@@ -313,11 +313,15 @@ main() {
     sleep 2
 
     log "Backing up Zeebe state (volume: orchestration)..."
+    local zeebe_vol
+    zeebe_vol="$(compose_volume_name orchestration)"
+    local zeebe_size
+    zeebe_size="$(MSYS_NO_PATHCONV=1 docker run --rm -v "${zeebe_vol}:/data" alpine du -sh /data 2>/dev/null | awk '{print $1}' || true)"
+    [[ -n "$zeebe_size" ]] && log "  Zeebe state size: $zeebe_size"
+
     local zeebe_retry=0
     local zeebe_max_retries=3
     while true; do
-      local zeebe_vol
-      zeebe_vol="$(compose_volume_name orchestration)"
       if MSYS_NO_PATHCONV=1 docker run --rm \
         -v "${zeebe_vol}:/data" \
         -v "$backup_dir:/backup" \
