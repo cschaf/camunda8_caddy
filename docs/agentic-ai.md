@@ -123,6 +123,36 @@ Recommended connector settings:
 
 After this works, add an ad-hoc subprocess with a small set of allowed tools. Keep the first tool set narrow, for example one REST connector or one MCP tool, then expand after observing behavior.
 
+## Web Modeler Connector Template Import
+
+Web Modeler can add connector templates from the marketplace when changing a BPMN task type. In this stack, prefer connector templates that match `CAMUNDA_CONNECTORS_VERSION` and `CAMUNDA_WEB_MODELER_VERSION`.
+
+If the marketplace import fails with browser console messages such as:
+
+```text
+/api/internal/files 403
+Failed to create file
+Failed to import resource
+COULD_NOT_IMPORT_RESOURCES
+```
+
+check `web-modeler-restapi` first:
+
+```bash
+docker logs web-modeler-restapi --since 15m
+```
+
+Warnings about `c3-navigation-appbar`, Statsig, or `ContextPad#getPad is deprecated` are not the root cause. The actionable failure is the `POST /api/internal/files` response. If the logs show successful authentication and some connector template files were created, the proxy and login path are working; Web Modeler is rejecting only part of the imported template bundle.
+
+For Camunda 8.9.1, import the AI Agent templates from the version-pinned connector repository URLs instead of URLs under `refs/heads/main`:
+
+```text
+https://raw.githubusercontent.com/camunda/connectors/8.9.1/connectors/agentic-ai/element-templates/agenticai-aiagent-outbound-connector.json
+https://raw.githubusercontent.com/camunda/connectors/8.9.1/connectors/agentic-ai/element-templates/agenticai-aiagent-job-worker.json
+```
+
+After importing, refresh Web Modeler and check the task type selector for `AI Agent Task` and `AI Agent Sub-process`. If a previous marketplace import partially succeeded, remove duplicate or partially imported connector templates in Web Modeler before re-importing the version-pinned templates.
+
 ## Orchestration Cluster MCP Server
 
 The Orchestration Cluster MCP server is enabled in `.orchestration/application.yaml`:
