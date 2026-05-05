@@ -14,6 +14,7 @@ if (-not (Test-Path $EnvFile)) {
 $StageValue = $null
 $EnvHost = $null
 $ElasticPassword = $null
+$DisplayStageValue = $null
 foreach ($line in Get-Content $EnvFile) {
     if ($line -match '^\s*#') { continue }
     if ($line -match '^\s*STAGE\s*=(.*)$') {
@@ -25,7 +26,9 @@ foreach ($line in Get-Content $EnvFile) {
     if ($line -match '^\s*ELASTIC_PASSWORD\s*=(.*)$') {
         $ElasticPassword = $matches[1].Trim()
     }
-    if ($StageValue -and $EnvHost -and $ElasticPassword) { break }
+    if ($line -match '^\s*DISPLAY_STAGE\s*=(.*)$') {
+        $DisplayStageValue = $matches[1].Trim()
+    }
 }
 
 if (-not $StageValue) {
@@ -38,12 +41,14 @@ if ($StageValue -notin @('prod', 'dev', 'test')) {
     exit 1
 }
 
+$DisplayStage = if ([string]::IsNullOrEmpty($DisplayStageValue)) { $StageValue } else { $DisplayStageValue }
+
 # Render console config from template
 $ConsoleTemplate = Join-Path $ProjectDir '.console/application.yaml.template'
 $ConsoleConfig   = Join-Path $ProjectDir '.console/application.yaml'
 if ((Test-Path $ConsoleTemplate) -and $EnvHost) {
     $content = Get-Content $ConsoleTemplate -Raw
-    $content = $content.Replace('${HOST}', $EnvHost).Replace('${STAGE}', $StageValue)
+    $content = $content.Replace('${HOST}', $EnvHost).Replace('${DISPLAY_STAGE}', $DisplayStage)
     $content | Set-Content $ConsoleConfig -NoNewline
 }
 

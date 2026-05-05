@@ -202,6 +202,21 @@ Supported values:
 | `dev` | Reduced resources for developer workstations with fewer CPUs and less RAM |
 | `test` | Compact resources for constrained test hosts |
 
+### Decoupling the displayed label (`DISPLAY_STAGE`)
+
+`STAGE` selects the resource profile *and*, by default, the label shown on the dashboard badge / page title and the Camunda Console release tag. To run one profile while displaying a different label — for example `dev` resources but a `TEST` badge — set the optional `DISPLAY_STAGE` variable in `.env`:
+
+```
+STAGE=DEV
+DISPLAY_STAGE=TEST
+```
+
+If `DISPLAY_STAGE` is unset, both surfaces fall back to `STAGE` (existing setups are unaffected). Casing of `DISPLAY_STAGE` is preserved verbatim, so `DISPLAY_STAGE=Staging-A` shows up exactly as `Staging-A`. After changing `DISPLAY_STAGE`, rerun the start script and restart the affected containers:
+
+```bash
+docker compose up -d reverse-proxy console
+```
+
 Start the stack with the stage-aware wrapper:
 
 ```bash

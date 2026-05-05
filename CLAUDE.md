@@ -125,6 +125,17 @@ Use `scripts/start.sh` or `scripts/start.ps1` instead of direct `docker compose 
 
 Use `scripts/stop.sh` or `scripts/stop.ps1` for the matching shutdown command.
 
+### Display Stage Override
+
+`STAGE` selects the resource profile (`prod|dev|test`); `DISPLAY_STAGE` (optional, in `.env`) overrides only the label shown on the dashboard badge / page title and the Camunda Console release tag. If `DISPLAY_STAGE` is unset, both surfaces fall back to `STAGE` (so default behavior is unchanged). Use it to run, for example, the `dev` profile while displaying `TEST` to users:
+
+```
+STAGE=DEV
+DISPLAY_STAGE=TEST
+```
+
+The dashboard fallback is evaluated by Caddy at request time (`{{ or (env "DISPLAY_STAGE") (env "STAGE") }}`); the Console fallback is computed by the start scripts before they render `.console/application.yaml.template` to `.console/application.yaml`. Casing is preserved as-entered for `DISPLAY_STAGE`; the `STAGE` fallback path keeps its today-lowercased value.
+
 ### Reverse Proxy
 
 A Caddy reverse proxy provides subdomain routing on standard HTTPS port 443.

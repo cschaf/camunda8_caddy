@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Camunda 8 {{env "STAGE"}} Environment</title>
-    <meta name="description" content="Camunda 8 Self-Managed {{env "STAGE"}} Dashboard">
+    <title>Camunda 8 {{ or (env "DISPLAY_STAGE") (env "STAGE") }} Environment</title>
+    <meta name="description" content="Camunda 8 Self-Managed {{ or (env "DISPLAY_STAGE") (env "STAGE") }} Dashboard">
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
-    <meta property="og:title" content="Camunda 8 {{env "STAGE"}} Environment">
-    <meta property="og:description" content="Camunda 8 Self-Managed — {{env "STAGE"}} Dashboard">
+    <meta property="og:title" content="Camunda 8 {{ or (env "DISPLAY_STAGE") (env "STAGE") }} Environment">
+    <meta property="og:description" content="Camunda 8 Self-Managed — {{ or (env "DISPLAY_STAGE") (env "STAGE") }} Dashboard">
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://{{env "HOST"}}/">
     <meta property="og:image" content="https://{{env "HOST"}}/favicon.svg">
@@ -33,7 +33,7 @@
                 </div>
                 <div class="header-actions">
                     <div class="meta">
-                        <span class="badge stage">{{env "STAGE"}}</span>
+                        <span class="badge stage">{{ or (env "DISPLAY_STAGE") (env "STAGE") }}</span>
                         <span class="badge">{{env "HOST"}}</span>
                         <span class="badge">v{{env "CAMUNDA_VERSION"}}</span>
                     </div>

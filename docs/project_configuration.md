@@ -93,6 +93,8 @@ Resources are managed through **environment stages**. The `STAGE` variable in `.
 
 For a complete side-by-side comparison of all stages, see [docs/stage_comparison.md](stage_comparison.md).
 
+> **Display label vs resource profile.** `STAGE` controls *what resources* the stack runs with. The label shown on the `/` dashboard badge / page title and on the Camunda Console release tag also defaults to `STAGE`, but can be overridden independently with the optional `DISPLAY_STAGE` variable in `.env`. This lets you run, e.g., the `dev` profile while displaying `TEST` to users (`STAGE=DEV` + `DISPLAY_STAGE=TEST`). When `DISPLAY_STAGE` is unset, the displayed label falls back to `STAGE`.
+
 ### Base (Production) Profile
 
 The following table shows the **base** resource configuration — what the `prod` stage uses. This is the reference profile calibrated for a 16 vCPU / 32 GB RAM Linux server. The summed per-container CPU limits keep a small intentional CPU overcommit buffer, so treat them as aggregate caps rather than required physical cores.

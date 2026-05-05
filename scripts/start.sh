@@ -30,14 +30,17 @@ case "$stage" in
     ;;
 esac
 
+display_stage="${DISPLAY_STAGE:-$stage}"
+export DISPLAY_STAGE="$display_stage"
+
 # Render console config from template
 CONSOLE_TEMPLATE="$PROJECT_DIR/.console/application.yaml.template"
 CONSOLE_CONFIG="$PROJECT_DIR/.console/application.yaml"
 if [[ -f "$CONSOLE_TEMPLATE" ]]; then
   if command -v envsubst >/dev/null 2>&1; then
-    envsubst '$HOST $STAGE' < "$CONSOLE_TEMPLATE" > "$CONSOLE_CONFIG"
+    envsubst '$HOST $DISPLAY_STAGE' < "$CONSOLE_TEMPLATE" > "$CONSOLE_CONFIG"
   else
-    sed "s/\\\${HOST}/$HOST/g; s/\\\${STAGE}/$stage/g" "$CONSOLE_TEMPLATE" > "$CONSOLE_CONFIG"
+    sed "s/\\\${HOST}/$HOST/g; s/\\\${DISPLAY_STAGE}/$display_stage/g" "$CONSOLE_TEMPLATE" > "$CONSOLE_CONFIG"
   fi
 fi
 

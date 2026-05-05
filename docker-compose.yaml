@@ -635,6 +635,7 @@ services:
       - HOST=${HOST:?HOST is required}
       - CAMUNDA_VERSION=${CAMUNDA_VERSION:?CAMUNDA_VERSION is required}
       - STAGE=${STAGE:?STAGE is required}
+      - DISPLAY_STAGE=${DISPLAY_STAGE:-}
       - BANNER_DARKMODE=${BANNER_DARKMODE}
       - BANNER_LIGHTMODE=${BANNER_LIGHTMODE}
     labels:
