@@ -334,3 +334,66 @@ pwsh -File scripts/add-camunda-user.ps1 -Username jdoe -Password "changeme" -Ema
 The scripts read `HOST` and `ORCHESTRATION_CLIENT_SECRET` from `.env`. On failure the created user is automatically rolled back.
 
 > **How authorization works:** Camunda 8 has its own internal authorization system (`camunda.security.authorizations.enabled=true`) independent of Keycloak roles. The scripts assign users to both their Keycloak realm roles *and* the corresponding Camunda internal role via the REST API.
+
+---
+
+## Inspecting Camunda's private Docker registry
+
+Camunda 8 enterprise customers receive credentials for `registry.camunda.cloud` — a Harbor registry that hosts the public Docker Hub mirror (`dockerhub-camunda`), enterprise-only projects (`console`, `web-modeler-ee`, `iam-ee`, `keycloak-ee`, …), and customer hotfix repositories. The `registry-info` script queries the Harbor v2 REST API to list projects, repositories, and tags so you can discover which images and versions are available before pinning one in `docker-compose.yaml`.
+
+### Why use it
+
+`docker search` only works against Docker Hub, so for any private registry you have to talk to its REST API directly. The script wraps that with three things you would otherwise build by hand:
+
+1. **Reads credentials from `.env`** — no need to hand-craft Basic-Auth headers each time.
+2. **Handles Harbor's repository-name quirk** — Harbor's listing endpoint returns repos as `<project>/<repo>`, but the artifacts endpoint expects only the bare `<repo>` portion. The script strips the project prefix automatically, so you can copy-paste names from the listing without thinking about it.
+3. **Default mode lists tags for the images this stack actually uses** — a quick way to spot when newer versions of `camunda/camunda`, `camunda/console`, `camunda/optimize`, etc. show up on the mirror.
+
+### Prerequisites
+
+Add the registry URL and your customer credentials to `.env`:
+
+```env
+CAMUNDA_REGISTRY_URL=https://registry.camunda.cloud
+CAMUNDA_REGISTRY_USERNAME=your-customer-account
+CAMUNDA_REGISTRY_PASSWORD=your-customer-password
+```
+
+> The script only needs these three variables. They are independent of `docker login` — that login is what allows `docker compose pull` to fetch images, while the script reads the values from `.env` to call the Harbor REST API.
+
+The Bash version additionally requires `curl` and `jq`.
+
+### Usage
+
+**Linux / macOS:**
+```bash
+bash scripts/registry-info.sh                                                              # default: tags for the standard images
+bash scripts/registry-info.sh --projects                                                   # list all projects
+bash scripts/registry-info.sh --project console                                            # list repos in a project
+bash scripts/registry-info.sh --project console --repository console-sm --limit 20         # tags for one repo
+```
+
+**Windows (PowerShell):**
+```powershell
+pwsh -File scripts/registry-info.ps1                                                       # default: tags for the standard images
+pwsh -File scripts/registry-info.ps1 -ListProjects                                          # list all projects
+pwsh -File scripts/registry-info.ps1 -Project console                                      # list repos in a project
+pwsh -File scripts/registry-info.ps1 -Project console -Repository console-sm -Limit 20     # tags for one repo
+```
+
+Both forms accept the repository either as the bare name (`console-sm`) or the full name as printed by the listing (`console/console-sm`) — the project prefix is stripped automatically.
+
+### What you'll see
+
+| Mode | Output |
+|------|--------|
+| Default | Newest tags for each of the nine standard images used by `docker-compose.yaml` (camunda, console, optimize, identity, connectors-bundle, web-modeler-restapi/webapp/websockets, keycloak), pulled from the `dockerhub-camunda` mirror project |
+| Projects | Project name, repo count, and whether the project is public |
+| Project repositories | Repo name, artifact count, and last update timestamp |
+| Repository tags | Tag name and push timestamp, sorted newest-first, capped to `--limit` (default 10) |
+
+### Troubleshooting
+
+- **`-DebugRaw` (PowerShell)** dumps the first 800 characters of the raw API response, which is helpful when the API shape ever changes.
+- **HTTP 401 on `/projects/<x>/repositories`** means your account does not have permission for that project. Camunda customer accounts are Harbor *robot accounts* with project-scoped pull permissions; the public catalog endpoint and many user-info endpoints are deliberately closed.
+- **A repository shows `0` tags but a high artifact count** usually means you queried with the full `<project>/<repo>` name without prefix-stripping (the script handles this; manual `curl` calls do not).
