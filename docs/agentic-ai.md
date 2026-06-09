@@ -144,11 +144,11 @@ docker logs web-modeler-restapi --since 15m
 
 Warnings about `c3-navigation-appbar`, Statsig, or `ContextPad#getPad is deprecated` are not the root cause. The actionable failure is the `POST /api/internal/files` response. If the logs show successful authentication and some connector template files were created, the proxy and login path are working; Web Modeler is rejecting only part of the imported template bundle.
 
-For Camunda 8.9.1, import the AI Agent templates from the version-pinned connector repository URLs instead of URLs under `refs/heads/main`:
+For Camunda 8.9.6, import the AI Agent templates from the version-pinned connector repository URLs instead of URLs under `refs/heads/main`:
 
 ```text
-https://raw.githubusercontent.com/camunda/connectors/8.9.1/connectors/agentic-ai/element-templates/agenticai-aiagent-outbound-connector.json
-https://raw.githubusercontent.com/camunda/connectors/8.9.1/connectors/agentic-ai/element-templates/agenticai-aiagent-job-worker.json
+https://raw.githubusercontent.com/camunda/connectors/8.9.6/connectors/agentic-ai/element-templates/agenticai-aiagent-outbound-connector.json
+https://raw.githubusercontent.com/camunda/connectors/8.9.6/connectors/agentic-ai/element-templates/agenticai-aiagent-job-worker.json
 ```
 
 After importing, refresh Web Modeler and check the task type selector for `AI Agent Task` and `AI Agent Sub-process`. If a previous marketplace import partially succeeded, remove duplicate or partially imported connector templates in Web Modeler before re-importing the version-pinned templates.

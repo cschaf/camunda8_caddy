@@ -4,8 +4,8 @@ This guide documents what changed when this Docker Compose project moved from Ca
 
 Current target in this project:
 
-- Camunda Platform: `8.9.1`
-- Console: `8.9.26`
+- Camunda Platform: `8.9.6`
+- Console: `8.9.44`
 - Elasticsearch: `8.19.11`
 - Keycloak: `26.3.2`
 - PostgreSQL: `15-alpine3.22`
@@ -72,14 +72,14 @@ Update `.env.example` and the local `.env`.
 
 | Component | 8.8 value used before | Current 8.9 value | Project variable |
 |---|---:|---:|---|
-| Orchestration / Zeebe / Operate / Tasklist / Admin | `8.8.21` | `8.9.1` | `CAMUNDA_VERSION` |
-| Connectors | `8.8.10` | `8.9.1` | `CAMUNDA_CONNECTORS_VERSION` |
-| Identity | `8.8.10` | `8.9.1` | `CAMUNDA_IDENTITY_VERSION` |
-| Operate display value | `8.8.21` | `8.9.1` | `CAMUNDA_OPERATE_VERSION` |
-| Tasklist display value | `8.8.21` | `8.9.1` | `CAMUNDA_TASKLIST_VERSION` |
-| Optimize | `8.8.8` | `8.9.1` | `CAMUNDA_OPTIMIZE_VERSION` |
-| Web Modeler | `8.8.12` | `8.9.1` | `CAMUNDA_WEB_MODELER_VERSION` |
-| Console | `8.8.133` | `8.9.26` | `CAMUNDA_CONSOLE_VERSION` |
+| Orchestration / Zeebe / Operate / Tasklist / Admin | `8.8.21` | `8.9.6` | `CAMUNDA_VERSION` |
+| Connectors | `8.8.10` | `8.9.5` | `CAMUNDA_CONNECTORS_VERSION` |
+| Identity | `8.8.10` | `8.9.4` | `CAMUNDA_IDENTITY_VERSION` |
+| Operate display value | `8.8.21` | `8.9.6` | `CAMUNDA_OPERATE_VERSION` |
+| Tasklist display value | `8.8.21` | `8.9.6` | `CAMUNDA_TASKLIST_VERSION` |
+| Optimize | `8.8.8` | `8.9.6` | `CAMUNDA_OPTIMIZE_VERSION` |
+| Web Modeler | `8.8.12` | `8.9.4` | `CAMUNDA_WEB_MODELER_VERSION` |
+| Console | `8.8.133` | `8.9.44` | `CAMUNDA_CONSOLE_VERSION` |
 | Elasticsearch | `8.17.10` | `8.19.11` | `ELASTIC_VERSION` |
 | Keycloak | `26.3.2` | `26.3.2` | `KEYCLOAK_SERVER_VERSION` |
 | Mailpit | `v1.21.8` | `v1.21.8` | `MAILPIT_VERSION` |
@@ -336,9 +336,9 @@ Generated file: `.console/application.yaml`
 
 Current template changes:
 
-- release version is `8.9.1`
-- Console component version is `8.9.26`
-- Orchestration, Operate, Tasklist, Orchestration Admin, Optimize, Identity, WebModeler, and Connectors show `8.9.1`
+- release version is `8.9.6`
+- Console component version is `8.9.44`
+- Orchestration, Operate, Tasklist, Orchestration Admin, Optimize, Identity, WebModeler, and Connectors show `8.9.6`
 - Keycloak display version is `26.3.2`
 - WebModeler is a single logical component
 - Orchestration endpoints use browser-facing proxy URLs for Console display:
