@@ -585,6 +585,8 @@ If readiness later reports `anyPartitionHealthy=true` and Orchestration logs `Pa
 
 **Elasticsearch authentication:** Optimize connects to Elasticsearch with Basic Auth via `.optimize/environment-config.yaml`. The `generate-secrets` scripts create this file from `.optimize/environment-config.yaml.example`, substituting the generated `ELASTIC_PASSWORD`. The generated file is gitignored — never commit it.
 
+**Schema version migration (patch bumps).** Optimize persists its schema version in Elasticsearch and refuses to start when the stored version is older than its own binary. After every bump of `CAMUNDA_OPTIMIZE_VERSION` in `.env` (e.g. `8.9.1` → `8.9.6`), the `optimize` container will restart-loop with `The database Optimize schema version [...] doesn't match the current Optimize version [...]` until the bundled schema upgrade is run. The `start.sh` / `start.ps1` scripts run this upgrade one-shot as a pre-flight step before `docker compose up -d`, so a normal start will not hit this error. If the pre-flight is bypassed (manual `docker compose up -d`) or the upgrade itself fails, run `bash scripts/optimize-upgrade.sh` (or `pwsh -File scripts/optimize-upgrade.ps1`) to recover. The upgrade is non-destructive and idempotent — re-running it on a stack that's already at the target version is a no-op. See [README §"Optimize schema upgrade"](../README.md#optimize-schema-upgrade-after-a-patch-bump) for the full diagnosis.
+
 ### Identity
 
 **Image:** `camunda/identity:${CAMUNDA_IDENTITY_VERSION}`

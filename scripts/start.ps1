@@ -61,5 +61,26 @@ if ((Test-Path $OptimizeTemplate) -and $ElasticPassword) {
     $content | Set-Content $OptimizeConfig -NoNewline
 }
 
+# Pre-flight: run the Optimize schema upgrade one-shot before starting the
+# stack. Optimize persists its schema version in Elasticsearch and refuses to
+# start when the stored version is older than its own binary. The upgrade is
+# non-destructive and idempotent (it logs "no update to perform" if the stored
+# version is already at or above the new binary), so running it on every
+# start is safe. If it fails for any reason (e.g. ES not yet up), log a
+# warning and continue -- the regular start will surface the schema mismatch
+# in the optimize container logs, and the operator can run
+# `scripts\optimize-upgrade.ps1` manually to recover.
+Write-Host '>> Pre-flight: Optimize schema check (idempotent)...'
+$ComposeFile = Join-Path $ProjectDir 'docker-compose.yaml'
+$StageFile   = Join-Path $ProjectDir "stages/$StageValue.yaml"
+$OptimizeUpgrade = & docker compose -f $ComposeFile -f $StageFile `
+    run --rm --no-deps -T `
+    --entrypoint bash optimize `
+    /optimize/upgrade/upgrade.sh --skip-warning
+if ($LASTEXITCODE -ne 0) {
+    Write-Warning 'Optimize schema pre-flight failed. Continuing with stack start.'
+    Write-Warning 'If optimize does not come up, run: pwsh -File scripts\optimize-upgrade.ps1'
+}
+
 Write-Host "Starting Camunda stack with STAGE=$StageValue"
-docker compose -f (Join-Path $ProjectDir 'docker-compose.yaml') -f (Join-Path $ProjectDir "stages/$StageValue.yaml") up -d
+docker compose -f $ComposeFile -f $StageFile up -d

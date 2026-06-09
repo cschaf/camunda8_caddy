@@ -283,19 +283,19 @@ docker logs console --tail 120
 docker logs web-modeler-restapi --tail 120
 ```
 
-If `optimize` is restart-looping with a `schema version [...] doesn't match` error, Optimize's stored ES metadata is still on the old version. Run the bundled schema upgrade one-shot, then re-check the logs:
+10. **If `optimize` is restart-looping with a `schema version [...] doesn't match` error**, Optimize's stored ES metadata is still on the old version. Run the bundled schema upgrade one-shot, then re-check the logs:
 
-```powershell
-pwsh -File scripts\optimize-upgrade.ps1
-```
+    ```bash
+    # Linux / macOS / Git Bash
+    ./scripts/optimize-upgrade.sh
 
-```bash
-./scripts/optimize-upgrade.sh
-```
+    # Windows (PowerShell)
+    pwsh -File scripts\optimize-upgrade.ps1
+    ```
 
-This is required on every Optimize patch bump (see `docs/cluster_upgrade.md` for the full diagnosis).
+    This is required on every Optimize patch bump, not just minor upgrades. See `docs/cluster_upgrade.md` §"Optimize restart-loops with schema version mismatch" for the full diagnosis. (The `start.sh` / `start.ps1` scripts run this upgrade as a pre-flight step, so a normal start of the stack will not hit this error. The manual command here is the fallback when the pre-flight was bypassed or itself failed.)
 
-10. Test browser login and core workflows:
+11. Test browser login and core workflows:
 
 - `https://orchestration.${HOST}/operate`
 - `https://orchestration.${HOST}/tasklist`
@@ -305,9 +305,9 @@ This is required on every Optimize patch bump (see `docs/cluster_upgrade.md` for
 - `https://webmodeler.${HOST}`
 - deploy and start a small BPMN process, then verify it appears in Operate
 
-11. Run a fresh backup after the update.
-12. Run a restore drill against the fresh post-update backup.
-13. Commit the changed project files after the stack and restore drill are verified.
+12. Run a fresh backup after the update.
+13. Run a restore drill against the fresh post-update backup.
+14. Commit the changed project files after the stack and restore drill are verified.
 
 ## Small Step By Step Plan
 
