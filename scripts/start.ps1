@@ -61,25 +61,54 @@ if ((Test-Path $OptimizeTemplate) -and $ElasticPassword) {
     $content | Set-Content $OptimizeConfig -NoNewline
 }
 
-# Pre-flight: run the Optimize schema upgrade one-shot before starting the
-# stack. Optimize persists its schema version in Elasticsearch and refuses to
-# start when the stored version is older than its own binary. The upgrade is
+# Pre-flight: bring Elasticsearch up first so the Optimize schema check has
+# something to talk to, then run the schema upgrade one-shot, then start the
+# rest of the stack.
+#
+# Optimize persists its schema version in Elasticsearch and refuses to start
+# when the stored version is older than its own binary. The upgrade is
 # non-destructive and idempotent (it logs "no update to perform" if the stored
 # version is already at or above the new binary), so running it on every
-# start is safe. If it fails for any reason (e.g. ES not yet up), log a
-# warning and continue -- the regular start will surface the schema mismatch
-# in the optimize container logs, and the operator can run
-# `scripts\optimize-upgrade.ps1` manually to recover.
-Write-Host '>> Pre-flight: Optimize schema check (idempotent)...'
+# start is safe. The upgrade MUST happen after ES is healthy but before
+# optimize starts; otherwise either the pre-flight cannot reach ES (fresh
+# start) or optimize boots with a stale schema and restart-loops until the
+# operator manually runs the recovery script.
+#
+# `docker compose up -d elasticsearch` is idempotent: it is a no-op if ES is
+# already running. The final `up -d` below will not restart the healthy ES.
+
+Write-Host '>> Starting Elasticsearch (pre-flight dependency)...'
 $ComposeFile = Join-Path $ProjectDir 'docker-compose.yaml'
 $StageFile   = Join-Path $ProjectDir "stages/$StageValue.yaml"
-$OptimizeUpgrade = & docker compose -f $ComposeFile -f $StageFile `
-    run --rm --no-deps -T `
-    --entrypoint bash optimize `
-    /optimize/upgrade/upgrade.sh --skip-warning
-if ($LASTEXITCODE -ne 0) {
-    Write-Warning 'Optimize schema pre-flight failed. Continuing with stack start.'
+docker compose -f $ComposeFile -f $StageFile up -d elasticsearch | Out-Null
+
+Write-Host '>> Waiting for Elasticsearch to become healthy (timeout 300s)...'
+$Attempts = 0
+$MaxAttempts = 60
+$EsHealthy = $false
+while ($Attempts -lt $MaxAttempts) {
+    $Status = (docker compose -f $ComposeFile -f $StageFile ps --format '{{.Status}}' elasticsearch 2>$null) -as [string]
+    if ($Status -and $Status -match '\(healthy\)') {
+        $EsHealthy = $true
+        break
+    }
+    $Attempts += 1
+    Start-Sleep -Seconds 5
+}
+
+if (-not $EsHealthy) {
+    Write-Warning 'Elasticsearch did not become healthy in time. Skipping Optimize pre-flight.'
     Write-Warning 'If optimize does not come up, run: pwsh -File scripts\optimize-upgrade.ps1'
+} else {
+    Write-Host '>> Pre-flight: Optimize schema check (idempotent)...'
+    & docker compose -f $ComposeFile -f $StageFile `
+        run --rm --no-deps -T `
+        --entrypoint bash optimize `
+        /optimize/upgrade/upgrade.sh --skip-warning
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warning 'Optimize schema pre-flight failed. Continuing with stack start.'
+        Write-Warning 'If optimize does not come up, run: pwsh -File scripts\optimize-upgrade.ps1'
+    }
 }
 
 Write-Host "Starting Camunda stack with STAGE=$StageValue"
