@@ -283,6 +283,18 @@ docker logs console --tail 120
 docker logs web-modeler-restapi --tail 120
 ```
 
+If `optimize` is restart-looping with a `schema version [...] doesn't match` error, Optimize's stored ES metadata is still on the old version. Run the bundled schema upgrade one-shot, then re-check the logs:
+
+```powershell
+pwsh -File scripts\optimize-upgrade.ps1
+```
+
+```bash
+./scripts/optimize-upgrade.sh
+```
+
+This is required on every Optimize patch bump (see `docs/cluster_upgrade.md` for the full diagnosis).
+
 10. Test browser login and core workflows:
 
 - `https://orchestration.${HOST}/operate`

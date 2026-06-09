@@ -579,6 +579,33 @@ Verify:
 - Elasticsearch is healthy
 - Optimize logs do not show authentication failures
 
+### Optimize restart-loops with "schema version [X] doesn't match [Y]"
+
+After bumping `CAMUNDA_OPTIMIZE_VERSION` in `.env`, the `optimize` container may fail to start and report:
+
+```
+io.camunda.optimize.service.exceptions.OptimizeRuntimeException:
+The database Optimize schema version [8.9.x] doesn't match the
+current Optimize version [8.9.y]. Please make sure to run the
+Upgrade first.
+```
+
+This is **not a misconfiguration** — Optimize persists its schema version in Elasticsearch on every successful startup and refuses to boot when the stored version is older than its own binary. It protects against applying incompatible schema migrations out of order.
+
+Fix by running the bundled schema upgrade one-shot, which patches the ES metadata to the new version and lets the regular service start:
+
+```bash
+# Linux / macOS / Git Bash
+bash scripts/optimize-upgrade.sh
+
+# Windows (PowerShell)
+pwsh -File scripts/optimize-upgrade.ps1
+```
+
+The script stops the broken `optimize` service, runs `bash /optimize/upgrade/upgrade.sh --skip-warning` in a transient container with the same env config, then restarts the service and waits for healthy. The upgrade is non-destructive (ES metadata is updated in place, no indices dropped, no data lost) and idempotent.
+
+You will need this procedure on **every** Optimize patch bump, not just minor upgrades. Add it to your standard post-update workflow.
+
 ### Zeebe Data Directory Problems
 
 Verify:

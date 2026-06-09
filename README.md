@@ -20,6 +20,8 @@ For end user usage, please check the official documentation of [Camunda 8 Self-M
 - [`docs/stage_comparison.md`](docs/stage_comparison.md) - Side-by-side comparison of the `prod`, `dev`, and `test` stage resource profiles.
 - [`docs/agentic-ai.md`](docs/agentic-ai.md) - Camunda 8.9 Agentic AI setup for AI Agent connectors, MCP clients, LLM provider secrets, proxy/truststore notes, and safety guardrails.
 - [`docs/backup-restore.md`](docs/backup-restore.md) - Backup, restore, and disaster-recovery drills. Covers the three scripts (`backup.sh`, `restore.sh`, `restore-drill.sh`), the cold-backup model, granular and cross-cluster restore, and the isolated drill stack used to verify backups end-to-end without touching live data.
+- [`docs/cluster_upgrade.md`](docs/cluster_upgrade.md) - The 8.8 → 8.9 cluster upgrade: what changed, file-by-file migration steps, config diffs, and troubleshooting for common post-upgrade issues including the Optimize schema migration.
+- [`update_guide.md`](update_guide.md) - The minor/patch update procedure: how to look up new versions, the file list to review per update, the backup-before-update protocol, and a step-by-step plan with a restore drill at the end.
 
 ## First Start Setup
 
@@ -277,6 +279,32 @@ The dashboard at `https://{HOST}` provides a landing page with links to all serv
 > **TLS warning:** If no custom certificates are configured, Caddy uses a self-signed cert. Your browser will show a security warning — click "Advanced" and proceed. With a trusted certificate (your own or one from mkcert) this warning disappears.
 
 > **Optimize browser console warning:** Optimize 8.9.6 ships a frontend loader for Mixpanel at `//cdn.mxpnl.com/libs/mixpanel-2-latest.min.js`. Browser privacy tools such as uBlock, AdBlock, or Brave Shields commonly block that URL and log `net::ERR_BLOCKED_BY_CLIENT`. This is a client-side blocker message, not a reverse-proxy or Optimize container failure. If Optimize loads normally, the warning can be ignored or removed by allowing `cdn.mxpnl.com` for `optimize.{HOST}`.
+
+---
+
+## Optimize schema upgrade (after a patch bump)
+
+Optimize persists its schema version in Elasticsearch and **refuses to start** when the stored version is older than the new binary. After bumping `CAMUNDA_OPTIMIZE_VERSION` in `.env` (e.g. `8.9.1` → `8.9.6`) and starting the stack, the `optimize` container restart-loops with:
+
+```
+The database Optimize schema version [8.9.1] doesn't match the
+current Optimize version [8.9.6]. Please make sure to run the
+Upgrade first.
+```
+
+This is by design — Camunda's defense against jumping Optimize versions without applying the intermediate schema migrations. Run the bundled schema upgrade one-shot before the regular service can come up:
+
+```bash
+# Linux / macOS / Git Bash
+bash scripts/optimize-upgrade.sh
+
+# Windows (PowerShell)
+pwsh -File scripts/optimize-upgrade.ps1
+```
+
+The script stops the broken `optimize` service, runs the upgrade container that inherits the service's env config and reaches Elasticsearch on the same Docker network, then restarts the service and polls for healthy. It is non-destructive (ES metadata is updated in place, no indices dropped, no data lost) and safe to re-run idempotently.
+
+Every patch bump of Optimize will require this step, so the script belongs in the standard post-update workflow alongside `docker compose pull` and a fresh backup.
 
 ---
 
