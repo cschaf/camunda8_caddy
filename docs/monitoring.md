@@ -828,4 +828,4 @@ sysadmin can encode:
 - **Configuration reference** (every setting, ILM policies, secrets
   management) → [project_configuration.md](project_configuration.md)
 - **Upgrade procedures** that may shift monitoring baselines (new metrics,
-  retired endpoints) → [cluster_upgrade.md](cluster_upgrade.md), `update_guide.md`
+  retired endpoints) → [cluster_upgrade.md](cluster_upgrade.md), [update_guide.md](update_guide.md)

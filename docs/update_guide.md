@@ -154,7 +154,7 @@ Update at least:
 - `docs/backup-restore.md`
 - `docs/cluster_upgrade.md` or create a new specific upgrade guide for the new minor
 - `docs/stage_comparison.md`
-- this `update_guide.md` if the project structure changes
+- this `update_guide.md` (under `docs/`) if the project structure changes
 
 ## Backup Before Updating
 

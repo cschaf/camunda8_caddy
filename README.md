@@ -21,7 +21,7 @@ For end user usage, please check the official documentation of [Camunda 8 Self-M
 - [`docs/agentic-ai.md`](docs/agentic-ai.md) - Camunda 8.9 Agentic AI setup for AI Agent connectors, MCP clients, LLM provider secrets, proxy/truststore notes, and safety guardrails.
 - [`docs/backup-restore.md`](docs/backup-restore.md) - Backup, restore, and disaster-recovery drills. Covers the three scripts (`backup.sh`, `restore.sh`, `restore-drill.sh`), the cold-backup model, granular and cross-cluster restore, and the isolated drill stack used to verify backups end-to-end without touching live data.
 - [`docs/cluster_upgrade.md`](docs/cluster_upgrade.md) - The 8.8 → 8.9 cluster upgrade: what changed, file-by-file migration steps, config diffs, and troubleshooting for common post-upgrade issues including the Optimize schema migration.
-- [`update_guide.md`](update_guide.md) - The minor/patch update procedure: how to look up new versions, the file list to review per update, the backup-before-update protocol, and a step-by-step plan with a restore drill at the end.
+- [`docs/update_guide.md`](docs/update_guide.md) - The minor/patch update procedure: how to look up new versions, the file list to review per update, the backup-before-update protocol, and a step-by-step plan with a restore drill at the end.
 
 ## First Start Setup
 
