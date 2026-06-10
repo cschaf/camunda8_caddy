@@ -25,6 +25,10 @@
           .playwright-mcp/
       - Dev / runtime:
           .worktrees/, backups/, tests/, *.log, *.har, monitor.log*
+      - Package meta: this script (build_deployment_package.ps1) is
+        excluded from its own output. Add more entries to the
+        $PackageExcludes list at the top of the script to skip
+        additional files.
       - VCS metadata: .git/
 
 .PARAMETER OutputDir
@@ -115,6 +119,13 @@ $Directories = @(
     'dashboard'
 )
 
+# Files that are part of the repo but should not be in the package itself
+# (e.g. the build script that produces the package). Paths are relative to
+# the directory tree they live in (typically scripts/).
+$PackageExcludes = @(
+    'build_deployment_package.ps1'
+)
+
 # --- Sanity check the whitelist -----------------------------------------
 $Missing = [System.Collections.Generic.List[string]]::new()
 foreach ($rel in ($Files + $Directories)) {
@@ -154,6 +165,15 @@ try {
             New-Item -ItemType Directory -Path $dstDir -Force | Out-Null
         }
         Get-ChildItem -Path $srcDir -Force | Copy-Item -Destination $dstDir -Recurse -Force
+
+        # Strip files that are part of the repo but not part of the
+        # deployment package itself (e.g. the build script).
+        foreach ($exclude in $PackageExcludes) {
+            $excludePath = Join-Path $dstDir $exclude
+            if (Test-Path $excludePath) {
+                Remove-Item -Path $excludePath -Force
+            }
+        }
     }
 
     # --- Safety net: strip anything AI-tooling-related -------------------
