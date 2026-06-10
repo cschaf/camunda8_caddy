@@ -306,6 +306,10 @@ The script stops the broken `optimize` service, runs the upgrade container that 
 
 Every patch bump of Optimize will require this step, so the script belongs in the standard post-update workflow alongside `docker compose pull` and a fresh backup.
 
+> **Pre-flight:** `scripts/start.sh` and `scripts/start.ps1` run the same upgrade one-shot automatically after pulling the new image and waiting for Elasticsearch to become healthy, so a normal `start` of the stack will not hit this error. The script above is only needed as a manual fallback — for example, if the pre-flight is bypassed (someone runs `docker compose up -d` directly) or if the pre-flight itself fails.
+
+> **Future-proof across 8.x:** The pre-flight and the manual `optimize-upgrade` script are not pinned to any specific Optimize version. Both invoke `/optimize/upgrade/upgrade.sh --skip-warning` *inside* the freshly-pulled Optimize image, so the next start after a `CAMUNDA_OPTIMIZE_VERSION` bump automatically runs the new image's bundled upgrade logic. No edits to `start.sh` / `start.ps1` or to the recovery script are required for future 8.x → 8.x patch or minor releases. The pre-flight only needs re-checking if Camunda renames the upgrade path inside the image or renames the `optimize` service in `docker-compose.yaml` (both would surface as a recurring `Optimize schema pre-flight failed` warning). For an 8 → 9 major jump, follow the official Camunda migration guide on top of the pre-flight.
+
 ---
 
 ## Changing the hostname

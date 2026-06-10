@@ -587,6 +587,8 @@ If readiness later reports `anyPartitionHealthy=true` and Orchestration logs `Pa
 
 **Schema version migration (patch bumps).** Optimize persists its schema version in Elasticsearch and refuses to start when the stored version is older than its own binary. After every bump of `CAMUNDA_OPTIMIZE_VERSION` in `.env` (e.g. `8.9.1` → `8.9.6`), the `optimize` container will restart-loop with `The database Optimize schema version [...] doesn't match the current Optimize version [...]` until the bundled schema upgrade is run. The `start.sh` / `start.ps1` scripts run this upgrade one-shot as a pre-flight step before `docker compose up -d`, so a normal start will not hit this error. If the pre-flight is bypassed (manual `docker compose up -d`) or the upgrade itself fails, run `bash scripts/optimize-upgrade.sh` (or `pwsh -File scripts/optimize-upgrade.ps1`) to recover. The upgrade is non-destructive and idempotent — re-running it on a stack that's already at the target version is a no-op. See [README §"Optimize schema upgrade"](../README.md#optimize-schema-upgrade-after-a-patch-bump) for the full diagnosis.
 
+The pre-flight and the manual `optimize-upgrade` scripts are **generic across 8.x → 8.x updates** and do not need to be edited when bumping `CAMUNDA_OPTIMIZE_VERSION`. Both call `/optimize/upgrade/upgrade.sh --skip-warning` *inside* the freshly-pulled Optimize image, so they automatically run whatever upgrade logic the **new** image ships. No code in this repo is pinned to a specific Optimize version, and no per-version maintenance of the upgrade path is needed.
+
 ### Identity
 
 **Image:** `camunda/identity:${CAMUNDA_IDENTITY_VERSION}`

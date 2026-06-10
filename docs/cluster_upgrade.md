@@ -606,6 +606,8 @@ The script stops the broken `optimize` service, runs `bash /optimize/upgrade/upg
 
 You will need this procedure on **every** Optimize patch bump, not just minor upgrades. Add it to your standard post-update workflow.
 
+The pre-flight in `scripts/start.sh` and `scripts/start.ps1` and the manual `scripts/optimize-upgrade.{sh,ps1}` recovery script are **generic across 8.x → 8.x updates** and do not need to be edited when bumping `CAMUNDA_OPTIMIZE_VERSION`. Both call `/optimize/upgrade/upgrade.sh --skip-warning` *inside* the freshly-pulled Optimize image, so when you update `CAMUNDA_OPTIMIZE_VERSION` and run `start.sh` / `start.ps1` again, the **new** image's bundled upgrade logic is what runs. The scripts in this repo are not pinned to a specific Optimize version and require no per-version maintenance. The only cases that would require touching `start.sh` / `start.ps1` are if Camunda renames the upgrade path inside the Optimize image (e.g. `/optimize/upgrade/upgrade.sh` moves) or renames the `optimize` service in `docker-compose.yaml`; both would surface as a recurring `Optimize schema pre-flight failed` warning on a stack where Elasticsearch is healthy, making them easy to spot. For a major version jump (8 → 9), follow the official Camunda migration guide on top of the pre-flight.
+
 ### Zeebe Data Directory Problems
 
 Verify:

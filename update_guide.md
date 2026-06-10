@@ -295,6 +295,8 @@ docker logs web-modeler-restapi --tail 120
 
     This is required on every Optimize patch bump, not just minor upgrades. See `docs/cluster_upgrade.md` §"Optimize restart-loops with schema version mismatch" for the full diagnosis. (The `start.sh` / `start.ps1` scripts run this upgrade as a pre-flight step, so a normal start of the stack will not hit this error. The manual command here is the fallback when the pre-flight was bypassed or itself failed.)
 
+    The upgrade path itself is generic across 8.x → 8.x updates: the pre-flight calls `/optimize/upgrade/upgrade.sh` *inside* the freshly-pulled Optimize image, so when you bump `CAMUNDA_OPTIMIZE_VERSION` and the next start runs, it automatically invokes the **new** image's bundled upgrade script. The same goes for the manual `scripts/optimize-upgrade.{sh,ps1}` fallback. Nothing in this repo is pinned to a specific Optimize version — the scripts and the pre-flight do not need to be edited for future 8.x patches or minor releases. The only cases that would require touching `start.sh` / `start.ps1` are if Camunda renames the upgrade path inside the image or renames the `optimize` service in the compose file; both would surface as a recurring `Optimize schema pre-flight failed` warning on a stack where ES is healthy, making them easy to spot. For a major version (8 → 9), follow the official Camunda migration guide on top of the pre-flight.
+
 11. Test browser login and core workflows:
 
 - `https://orchestration.${HOST}/operate`
