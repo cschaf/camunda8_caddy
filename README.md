@@ -6,7 +6,7 @@
 - [Git](https://git-scm.com/downloads) — to clone this repository
 - **Linux/macOS:** Bash + `openssl` (for `generate-secrets.sh`)
 - **Windows:** PowerShell 7+ (for `.ps1` scripts)
-- `bash` available in your PATH — some health checks inside containers run `bash -c` commands
+- `bash` available in your PATH (Linux/macOS, or Git Bash on Windows) — needed to run the `*.sh` scripts in `scripts/` (e.g. `generate-secrets.sh`, `start.sh`). The `bash` used inside the Camunda container images (e.g. for the orchestration healthcheck) is shipped with the image and is not a host requirement.
 
 > **RAM:** This stack reserves ~16 GB and limits at ~27 GB. The host machine needs at least **32 GB RAM** for stable operation.
 
@@ -176,7 +176,7 @@ bash scripts/start.sh
 pwsh -File scripts/start.ps1
 ```
 
-> **Note:** PowerShell 7+ required on Windows. For PS 5.1, use `docker compose -f docker-compose.yaml -f stages/$STAGE.yaml up -d` directly.
+> **Note:** PowerShell 7+ required on Windows. For PS 5.1, use `docker compose -f docker-compose.yaml -f stages/$env:STAGE.yaml up -d` directly.
 
 Wait for all services to be healthy:
 
@@ -191,6 +191,27 @@ docker compose ps
 The stack also includes an `autoheal` sidecar that watches labeled containers and restarts them when Docker marks them as `unhealthy`. It complements `restart: unless-stopped`, which covers unexpected process exits. `autoheal` does not restart containers that were stopped intentionally with `docker stop` or removed with `docker compose down`.
 
 For host-level recovery, the repository also provides `scripts/ensure-stack.sh`. It is intended for cron and checks whether all expected Compose services for the configured `STAGE` are currently running. If one or more containers are missing or stopped, it starts only those missing services with the same stage-aware Compose file selection used by the repository startup scripts. This is useful after a host reboot, after Docker starts later than the OS, or when selected containers were not recreated automatically. On Windows, the equivalent manual helper is `pwsh -File scripts/ensure-stack.ps1`.
+
+### 7. Access the services
+
+The dashboard at `https://{HOST}` provides a landing page with links to all services. Links adapt automatically to the configured `HOST`.
+
+| Service | URL |
+|---------|-----|
+| Dashboard | https://{HOST} |
+| Operate / Tasklist | https://orchestration.{HOST} |
+| Identity | https://identity.{HOST} |
+| Console | https://console.{HOST} |
+| Optimize | https://optimize.{HOST} |
+| Web Modeler | https://webmodeler.{HOST} |
+| Keycloak Admin | https://keycloak.{HOST}/auth/ (admin / admin) |
+| Zeebe Gateway | https://zeebe.{HOST} |
+| Admin | https://orchestration.{HOST}/admin |
+| Orchestration MCP Server | https://orchestration.{HOST}/mcp/cluster |
+
+> **TLS warning:** If no custom certificates are configured, Caddy uses a self-signed cert. Your browser will show a security warning — click "Advanced" and proceed. With a trusted certificate (your own or one from mkcert) this warning disappears.
+
+> **Optimize browser console warning:** Optimize 8.9.6 ships a frontend loader for Mixpanel at `//cdn.mxpnl.com/libs/mixpanel-2-latest.min.js`. Browser privacy tools such as uBlock, AdBlock, or Brave Shields commonly block that URL and log `net::ERR_BLOCKED_BY_CLIENT`. This is a client-side blocker message, not a reverse-proxy or Optimize container failure. If Optimize loads normally, the warning can be ignored or removed by allowing `cdn.mxpnl.com` for `optimize.{HOST}`.
 
 ## Environment Stages
 
@@ -258,27 +279,6 @@ For manual recovery on Windows, run:
 ```powershell
 pwsh -File scripts/ensure-stack.ps1
 ```
-
-### 7. Access the services
-
-The dashboard at `https://{HOST}` provides a landing page with links to all services. Links adapt automatically to the configured `HOST`.
-
-| Service | URL |
-|---------|-----|
-| Dashboard | https://{HOST} |
-| Operate / Tasklist | https://orchestration.{HOST} |
-| Identity | https://identity.{HOST} |
-| Console | https://console.{HOST} |
-| Optimize | https://optimize.{HOST} |
-| Web Modeler | https://webmodeler.{HOST} |
-| Keycloak Admin | https://keycloak.{HOST}/auth/ (admin / admin) |
-| Zeebe Gateway | https://zeebe.{HOST} |
-| Admin | https://orchestration.{HOST}/admin |
-| Orchestration MCP Server | https://orchestration.{HOST}/mcp/cluster |
-
-> **TLS warning:** If no custom certificates are configured, Caddy uses a self-signed cert. Your browser will show a security warning — click "Advanced" and proceed. With a trusted certificate (your own or one from mkcert) this warning disappears.
-
-> **Optimize browser console warning:** Optimize 8.9.6 ships a frontend loader for Mixpanel at `//cdn.mxpnl.com/libs/mixpanel-2-latest.min.js`. Browser privacy tools such as uBlock, AdBlock, or Brave Shields commonly block that URL and log `net::ERR_BLOCKED_BY_CLIENT`. This is a client-side blocker message, not a reverse-proxy or Optimize container failure. If Optimize loads normally, the warning can be ignored or removed by allowing `cdn.mxpnl.com` for `optimize.{HOST}`.
 
 ---
 
