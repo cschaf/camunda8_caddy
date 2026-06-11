@@ -12,8 +12,8 @@
     <meta property="og:url" content="https://{{env "HOST"}}/">
     <meta property="og:image" content="https://{{env "HOST"}}/favicon.svg">
     <link rel="stylesheet" href="style.css">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Fonts: system stack only, no external request. Improves load time on
+         air-gapped / VPN-only networks where fonts.googleapis.com is unreachable. -->
 </head>
 <body>
     <div class="page">

@@ -9,8 +9,24 @@
 # Dashboard (landing page)
 camunda.dev.local {
     root * /srv/dashboard
-    file_server
-    templates
+
+    # Apply Caddy templates only to the dashboard HTML page. The {{env ...}}
+    # placeholders only need to be resolved on this one file. Static assets
+    # (style.css, banner-*, favicon.svg) skip the template engine entirely
+    # and are served as-is, which avoids re-parsing them on every request.
+    @index path / /index.html
+    handle @index {
+        header Cache-Control "no-cache, must-revalidate"
+        file_server
+        templates
+    }
+
+    # Everything else is static. Short browser cache; Caddy itself does not
+    # re-render any of these.
+    handle {
+        header Cache-Control "public, max-age=300"
+        file_server
+    }
 }
 
 # Keycloak
