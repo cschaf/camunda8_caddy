@@ -83,10 +83,10 @@ function Get-Stage {
 
 function Get-DockerComposeCmd {
     if ($env:COMPOSE_FILE) {
-        return "docker compose"
+        return "docker compose --env-file `"$EnvFile`" --env-file `"$CredentialsFile`""
     }
     $stage = Get-Stage
-    return "docker compose -f `"$ProjectDir\docker-compose.yaml`" -f `"$ProjectDir\stages\${stage}.yaml`""
+    return "docker compose --env-file `"$EnvFile`" --env-file `"$CredentialsFile`" -f `"$ProjectDir\docker-compose.yaml`" -f `"$ProjectDir\stages\${stage}.yaml`""
 }
 
 function Check-ServicesHealth {
