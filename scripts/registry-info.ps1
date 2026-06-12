@@ -4,8 +4,8 @@
     Inspect Camunda's private Docker registry (Harbor v2 API): projects, repositories, tags.
 
 .DESCRIPTION
-    Reads CAMUNDA_REGISTRY_URL, CAMUNDA_REGISTRY_USERNAME and CAMUNDA_REGISTRY_PASSWORD
-    from the project's .env file and queries the Harbor REST API.
+    Reads CAMUNDA_REGISTRY_URL from .env and CAMUNDA_REGISTRY_USERNAME /
+    CAMUNDA_REGISTRY_PASSWORD from .env-credentials, then queries the Harbor REST API.
 
     With no parameters, lists the newest tags for the images used by docker-compose.yaml.
 
@@ -41,9 +41,19 @@ $ErrorActionPreference = 'Stop'
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectDir = Resolve-Path (Join-Path $ScriptDir '..')
 $EnvFile = Join-Path $ProjectDir '.env'
+$CredentialsFile = Join-Path $ProjectDir '.env-credentials'
 
 if (-not (Test-Path $EnvFile)) {
-    Write-Error ".env file not found. Run: cp .env.example .env"
+    Write-Error ".env file not found. It is part of the repo, so this should not happen."
+    Write-Error "Re-clone the repository, or restore .env from your last commit."
+    exit 1
+}
+
+if (-not (Test-Path $CredentialsFile)) {
+    Write-Error ".env-credentials file not found."
+    Write-Error "Run one of:"
+    Write-Error "  pwsh -File scripts/generate-secrets.ps1             # generate strong random secrets"
+    Write-Error "  Copy-Item .env-credentials.example .env-credentials  # copy the demo template"
     exit 1
 }
 
@@ -53,6 +63,9 @@ $RegistryPassword = $null
 foreach ($line in Get-Content $EnvFile) {
     if ($line -match '^\s*#') { continue }
     if ($line -match '^\s*CAMUNDA_REGISTRY_URL\s*=(.*)$')      { $RegistryUrl      = $matches[1].Trim() }
+}
+foreach ($line in Get-Content $CredentialsFile) {
+    if ($line -match '^\s*#') { continue }
     if ($line -match '^\s*CAMUNDA_REGISTRY_USERNAME\s*=(.*)$') { $RegistryUser     = $matches[1].Trim() }
     if ($line -match '^\s*CAMUNDA_REGISTRY_PASSWORD\s*=(.*)$') { $RegistryPassword = $matches[1].Trim() }
 }
@@ -67,8 +80,8 @@ $RegistryUser     = Strip-Quotes $RegistryUser
 $RegistryPassword = Strip-Quotes $RegistryPassword
 
 if (-not $RegistryUrl)      { Write-Error "CAMUNDA_REGISTRY_URL not set in .env"; exit 1 }
-if (-not $RegistryUser)     { Write-Error "CAMUNDA_REGISTRY_USERNAME not set in .env"; exit 1 }
-if (-not $RegistryPassword) { Write-Error "CAMUNDA_REGISTRY_PASSWORD not set in .env"; exit 1 }
+if (-not $RegistryUser)     { Write-Error "CAMUNDA_REGISTRY_USERNAME not set in .env-credentials"; exit 1 }
+if (-not $RegistryPassword) { Write-Error "CAMUNDA_REGISTRY_PASSWORD not set in .env-credentials"; exit 1 }
 
 $RegistryUrl = $RegistryUrl.TrimEnd('/')
 

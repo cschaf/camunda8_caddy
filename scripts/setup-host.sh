@@ -7,6 +7,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 ENV_FILE="$PROJECT_DIR/.env"
+CREDENTIALS_FILE="$PROJECT_DIR/.env-credentials"
 CADDYFILE="$PROJECT_DIR/Caddyfile"
 CADDYFILE_TEMPLATE="$PROJECT_DIR/Caddyfile.example"
 
@@ -39,34 +40,40 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [[ ! -f "$ENV_FILE" ]]; then
+if [[ ! -f "$ENV_FILE" && ! -f "$CREDENTIALS_FILE" ]]; then
     echo "ERROR: .env file not found. Run: cp .env.example .env"
     exit 1
 fi
 
-# Read HOST and optional TLS cert paths from .env
+# Read HOST and optional TLS cert paths from .env (and .env-credentials, for
+# consistency with the other scripts — none of the keys below live in
+# .env-credentials today, but the order is preserved so future additions
+# land predictably).
 HOST=""
 FULLCHAIN_PEM=""
 PRIVATEKEY_PEM=""
 
-while IFS= read -r line || [[ -n "$line" ]]; do
-    # Skip comments and empty lines
-    [[ "$line" =~ ^[[:space:]]*# ]] && continue
-    [[ -z "$line" ]] && continue
+for source_file in "$ENV_FILE" "$CREDENTIALS_FILE"; do
+    [[ -f "$source_file" ]] || continue
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        # Skip comments and empty lines
+        [[ "$line" =~ ^[[:space:]]*# ]] && continue
+        [[ -z "$line" ]] && continue
 
-    if [[ "$line" =~ ^HOST=(.*) ]]; then
-        HOST="${BASH_REMATCH[1]}"
-        HOST="${HOST//[[:space:]]/}"  # trim whitespace
-    fi
-    if [[ "$line" =~ ^FULLCHAIN_PEM=(.*) ]]; then
-        FULLCHAIN_PEM="${BASH_REMATCH[1]}"
-        FULLCHAIN_PEM="${FULLCHAIN_PEM//[[:space:]]/}"
-    fi
-    if [[ "$line" =~ ^PRIVATEKEY_PEM=(.*) ]]; then
-        PRIVATEKEY_PEM="${BASH_REMATCH[1]}"
-        PRIVATEKEY_PEM="${PRIVATEKEY_PEM//[[:space:]]/}"
-    fi
-done < "$ENV_FILE"
+        if [[ "$line" =~ ^HOST=(.*) ]]; then
+            HOST="${BASH_REMATCH[1]}"
+            HOST="${HOST//[[:space:]]/}"  # trim whitespace
+        fi
+        if [[ "$line" =~ ^FULLCHAIN_PEM=(.*) ]]; then
+            FULLCHAIN_PEM="${BASH_REMATCH[1]}"
+            FULLCHAIN_PEM="${FULLCHAIN_PEM//[[:space:]]/}"
+        fi
+        if [[ "$line" =~ ^PRIVATEKEY_PEM=(.*) ]]; then
+            PRIVATEKEY_PEM="${BASH_REMATCH[1]}"
+            PRIVATEKEY_PEM="${PRIVATEKEY_PEM//[[:space:]]/}"
+        fi
+    done < "$source_file"
+done
 
 if [[ -z "$HOST" ]]; then
     echo "ERROR: HOST not found in .env"

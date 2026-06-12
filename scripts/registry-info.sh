@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Inspect Camunda's private Docker registry (Harbor v2 API): projects, repositories, tags.
 #
-# Reads CAMUNDA_REGISTRY_URL, CAMUNDA_REGISTRY_USERNAME and CAMUNDA_REGISTRY_PASSWORD
-# from the project's .env file. With no arguments, lists the newest tags for the
-# images used by docker-compose.yaml.
+# Reads CAMUNDA_REGISTRY_URL from .env and CAMUNDA_REGISTRY_USERNAME /
+# CAMUNDA_REGISTRY_PASSWORD from .env-credentials. With no arguments, lists
+# the newest tags for the images used by docker-compose.yaml.
 #
 # Requires: curl, jq
 
@@ -12,6 +12,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 ENV_FILE="$PROJECT_DIR/.env"
+CREDENTIALS_FILE="$PROJECT_DIR/.env-credentials"
 
 usage() {
   cat <<EOF
@@ -47,7 +48,15 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ ! -f "$ENV_FILE" ]]; then
-  echo ".env file not found. Run: cp .env.example .env" >&2
+  echo ".env file not found. It is part of the repo, so this should not happen." >&2
+  echo "       Re-clone the repository, or restore .env from your last commit." >&2
+  exit 1
+fi
+
+if [[ ! -f "$CREDENTIALS_FILE" ]]; then
+  echo ".env-credentials file not found." >&2
+  echo "       Run: bash scripts/generate-secrets.sh" >&2
+  echo "       Or:  cp .env-credentials.example .env-credentials" >&2
   exit 1
 fi
 
@@ -58,25 +67,26 @@ for cmd in curl jq; do
   fi
 done
 
+# Reads a KEY=VALUE line from the given env file. Skips comments and strips
+# optional surrounding quotes.
 read_env() {
-  local key="$1"
+  local file="$1" key="$2"
   local value
-  value="$(grep -E "^[[:space:]]*${key}[[:space:]]*=" "$ENV_FILE" | head -1 | sed -E "s/^[[:space:]]*${key}[[:space:]]*=//")"
+  value="$(grep -E "^[[:space:]]*${key}[[:space:]]*=" "$file" | head -1 | sed -E "s/^[[:space:]]*${key}[[:space:]]*=//")"
   value="${value%$'\r'}"
-  # Strip optional surrounding single or double quotes
   if [[ "$value" =~ ^\"(.*)\"$ ]] || [[ "$value" =~ ^\'(.*)\'$ ]]; then
     value="${BASH_REMATCH[1]}"
   fi
   printf '%s' "$value"
 }
 
-REGISTRY_URL="$(read_env CAMUNDA_REGISTRY_URL)"
-REGISTRY_USER="$(read_env CAMUNDA_REGISTRY_USERNAME)"
-REGISTRY_PASSWORD="$(read_env CAMUNDA_REGISTRY_PASSWORD)"
+REGISTRY_URL="$(read_env "$ENV_FILE"          CAMUNDA_REGISTRY_URL)"
+REGISTRY_USER="$(read_env "$CREDENTIALS_FILE" CAMUNDA_REGISTRY_USERNAME)"
+REGISTRY_PASSWORD="$(read_env "$CREDENTIALS_FILE" CAMUNDA_REGISTRY_PASSWORD)"
 
 [[ -n "$REGISTRY_URL"      ]] || { echo "CAMUNDA_REGISTRY_URL not set in .env" >&2; exit 1; }
-[[ -n "$REGISTRY_USER"     ]] || { echo "CAMUNDA_REGISTRY_USERNAME not set in .env" >&2; exit 1; }
-[[ -n "$REGISTRY_PASSWORD" ]] || { echo "CAMUNDA_REGISTRY_PASSWORD not set in .env" >&2; exit 1; }
+[[ -n "$REGISTRY_USER"     ]] || { echo "CAMUNDA_REGISTRY_USERNAME not set in .env-credentials" >&2; exit 1; }
+[[ -n "$REGISTRY_PASSWORD" ]] || { echo "CAMUNDA_REGISTRY_PASSWORD not set in .env-credentials" >&2; exit 1; }
 
 REGISTRY_URL="${REGISTRY_URL%/}"
 

@@ -16,7 +16,7 @@ The largest functional change is that the current stack uses Camunda 8.9 unified
 
 The upgrade touches these project areas:
 
-- image versions in `.env.example` and local `.env`
+- image versions in `.env.example` and local `.env` (credentials live in `.env-credentials`, which is also affected when variables get renamed or added)
 - Orchestration runtime config in `.orchestration/application.yaml`
 - Docker service layout in `docker-compose.yaml`
 - generated Console config template in `.console/application.yaml.template`
@@ -54,6 +54,7 @@ Linux/macOS/WSL equivalent:
 4. Keep a separate copy of local-only files before replacing or merging project files:
 
 - `.env`
+- `.env-credentials`
 - `connector-secrets.txt`
 - `Caddyfile`
 - `certs/`
@@ -68,7 +69,7 @@ Do not rely on copying the project directory alone. Docker named volumes contain
 
 ## Version Changes
 
-Update `.env.example` and the local `.env`.
+Update `.env.example`, the local `.env`, and `.env-credentials.example` (when new credential variables are added, regenerate `.env-credentials` with `scripts/generate-secrets.sh` / `.ps1` after the upgrade).
 
 | Component | 8.8 value used before | Current 8.9 value | Project variable |
 |---|---:|---:|---|
@@ -254,11 +255,14 @@ camunda-db:
     - camunda-db:/var/lib/postgresql/data
 ```
 
-The required local `.env` values are:
+The required local values are:
 
 ```env
+# In .env
 CAMUNDA_DB_NAME=camunda
 CAMUNDA_DB_USER=camunda
+
+# In .env-credentials
 CAMUNDA_DB_PASSWORD=<strong secret>
 ```
 
@@ -574,7 +578,7 @@ Update `.console/application.yaml.template`, then restart with the project start
 
 Verify:
 
-- `ELASTIC_PASSWORD` is present in `.env`
+- `ELASTIC_PASSWORD` is present in `.env-credentials`
 - `.optimize/environment-config.yaml` was regenerated from `.optimize/environment-config.yaml.example`
 - Elasticsearch is healthy
 - Optimize logs do not show authentication failures
@@ -632,8 +636,10 @@ Also verify `camunda-data-init` completed successfully.
 
 | File | Required 8.9 change |
 |---|---|
-| `.env` | Update local image versions and add/keep `CAMUNDA_DB_*`, `RESOURCE_AUTHORIZATIONS_ENABLED`, and generated secrets |
-| `.env.example` | Document current 8.9 image versions and required variables |
+| `.env` | Update local image versions and keep `CAMUNDA_DB_NAME` / `CAMUNDA_DB_USER`, `RESOURCE_AUTHORIZATIONS_ENABLED`, etc. |
+| `.env.example` | Document current 8.9 image versions and required non-credential variables |
+| `.env-credentials` | Add/keep `CAMUNDA_DB_PASSWORD`, `ELASTIC_PASSWORD`, and all other credential values; regenerate via `scripts/generate-secrets.sh` / `.ps1` when new variables are introduced |
+| `.env-credentials.example` | Document the demo values for the credential template |
 | `.orchestration/application.yaml` | Use `admin` profile, RDBMS secondary storage, primary storage path, Elasticsearch exporter, persistent sessions, REST query, MCP, and authorizations |
 | `docker-compose.yaml` | Add `camunda-data-init`, `camunda-data`, `camunda-db`; wire Orchestration to `camunda-db`; remove `web-modeler-webapp`; move Web Modeler client variables to `web-modeler-restapi`; update Connectors issuer URL |
 | `.console/application.yaml.template` | Set current 8.9 component display versions and merged WebModeler component; generated `.console/application.yaml` is not the source of truth |

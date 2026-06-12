@@ -18,7 +18,7 @@
 
     Files that are intentionally NOT included:
       - Local secrets and rendered configs:
-          .env, Caddyfile, connector-secrets.txt, certs/,
+          .env-credentials, Caddyfile, connector-secrets.txt, certs/,
           .optimize/environment-config.yaml, .console/application.yaml
       - AI assistant artifacts:
           CLAUDE.md, AGENT.md, AGENTS.md, GEMINI.md, .claude/,
@@ -30,6 +30,13 @@
         $PackageExcludes list at the top of the script to skip
         additional files.
       - VCS metadata: .git/
+
+    The package ships .env (the committed, non-credential configuration
+    template — every operator gets the same defaults) and
+    .env-credentials.example (the credential template with placeholder
+    values) so a fresh extract follows the First Start Setup in README.md
+    without first having to copy example files. Operators generate the
+    real .env-credentials on the target host via scripts/generate-secrets.ps1.
 
 .PARAMETER OutputDir
     Directory to write the zip into. Defaults to './build' (relative
@@ -84,7 +91,9 @@ $Files = [System.Collections.Generic.List[string]]::new()
 # Top-level entry points
 $Files.AddRange([string[]]@(
     'README.md'
+    '.env'
     '.env.example'
+    '.env-credentials.example'
     '.gitignore'
     'docker-compose.yaml'
     'Caddyfile.example'
@@ -183,6 +192,7 @@ try {
         'docs/superpowers', 'docs/specs',
         'backups', 'backups-encrypted', 'tests',
         'monitor.log', 'monitor.log.*',
+        '.env-credentials', '.env-credentials.local',
         '.git'
     )
     $Stripped = [System.Collections.Generic.List[string]]::new()

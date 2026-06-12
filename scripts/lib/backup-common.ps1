@@ -5,6 +5,9 @@ $ProjectDir = Resolve-Path (Join-Path $ScriptDir "..\..")
 if (-not $EnvFile) {
     $EnvFile = Join-Path $ProjectDir ".env"
 }
+if (-not $CredentialsFile) {
+    $CredentialsFile = Join-Path $ProjectDir ".env-credentials"
+}
 $BackupBaseDir = if ($env:BACKUP_BASE_DIR) { $env:BACKUP_BASE_DIR } else { Join-Path $ProjectDir "backups" }
 $LockDir = Join-Path $BackupBaseDir ".backup.lock"
 $LockFile = Join-Path $LockDir "pid"
@@ -33,6 +36,23 @@ function Load-Env {
                 $value = $matches[1]
             }
             [Environment]::SetEnvironmentVariable($name, $value, "Process")
+        }
+    }
+
+    # .env-credentials is gitignored; many scripts (backup, restore) need
+    # its variables (POSTGRES_USER, ELASTIC_PASSWORD, etc.) at runtime, so
+    # load it too. Missing is non-fatal here so the same Load-Env can be
+    # used by scripts that only need HOST/STAGE.
+    if (Test-Path $CredentialsFile) {
+        Get-Content $CredentialsFile | ForEach-Object {
+            if ($_ -match '^\s*([^#\s=]+)\s*=\s*(.*)\s*$') {
+                $name = $matches[1]
+                $value = $matches[2]
+                if ($value -match '^["''](.*)["'']$') {
+                    $value = $matches[1]
+                }
+                [Environment]::SetEnvironmentVariable($name, $value, "Process")
+            }
         }
     }
 

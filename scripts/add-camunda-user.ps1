@@ -6,7 +6,8 @@
     Creates a user via the Keycloak Admin REST API and assigns Camunda-specific
     realm roles based on the specified role level.
 
-    Credentials are read from .env in the project root.
+    Credentials are read from .env (non-credential configuration) and
+    .env-credentials (all secrets) in the project root.
 
 .EXAMPLE
     pwsh -File scripts/add-camunda-user.ps1 -Username jdoe -Password "changeme" -Email "jdoe@example.com" -FirstName "John" -LastName "Doe" -Role NormalUser
@@ -39,21 +40,31 @@ param(
 $ErrorActionPreference = "Stop"
 
 # ---------------------------------------------------------------------------
-# Helper: Read .env
+# Helper: Read a key from .env (and .env-credentials, if present).
+# Scans .env first, then .env-credentials — credentials live in
+# .env-credentials, but HOST stays in .env. The order keeps any accidental
+# overlap predictable (later wins, mirroring the other scripts).
 # ---------------------------------------------------------------------------
 function Get-EnvValue {
     param([string]$Key)
-    $envFile = Join-Path $PSScriptRoot "..\.env"
-    if (-not (Test-Path $envFile)) {
-        throw ".env file not found at $envFile"
+    $projectRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
+    $envFile         = Join-Path $projectRoot '.env'
+    $credentialsFile = Join-Path $projectRoot '.env-credentials'
+
+    if (-not (Test-Path $envFile) -and -not (Test-Path $credentialsFile)) {
+        throw ".env (or .env-credentials) not found in $projectRoot"
     }
-    $content = Get-Content $envFile | Where-Object { $_ -notmatch '^\s*#' }
-    foreach ($line in $content) {
-        if ($line -match "^${Key}=(.*)") {
-            return $matches[1].Trim()
+
+    foreach ($file in @($envFile, $credentialsFile)) {
+        if (-not (Test-Path $file)) { continue }
+        foreach ($line in Get-Content $file) {
+            if ($line -match '^\s*#') { continue }
+            if ($line -match "^${Key}=(.*)$") {
+                return $matches[1].Trim()
+            }
         }
     }
-    throw "Key '$Key' not found in .env"
+    throw "Key '$Key' not found in .env or .env-credentials"
 }
 
 # ---------------------------------------------------------------------------

@@ -22,9 +22,21 @@ generate_drill_env() {
     exit 1
   fi
 
+  local source_credentials="$PROJECT_DIR/.env-credentials"
+  if [[ ! -f "$source_credentials" ]]; then
+    log_drill "ERROR: .env-credentials not found at $source_credentials"
+    exit 1
+  fi
+
   mkdir -p "$DRILL_DIR"
 
   cp "$source_env" "$DRILL_ENV"
+  printf '\n' >> "$DRILL_ENV"
+
+  # Append the credentials block so the drill stack has its own copy of
+  # the same secrets. (The drill is a self-contained isolated stack and
+  # cannot rely on .env-credentials from the parent project.)
+  cat "$source_credentials" >> "$DRILL_ENV"
   printf '\n' >> "$DRILL_ENV"
 
   if grep -q '^HOST=' "$DRILL_ENV"; then

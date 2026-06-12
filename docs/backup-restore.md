@@ -89,7 +89,7 @@ The backup system secures the following data:
 | Elasticsearch | Snapshot API | FS repository via Docker volume `elastic-backup`, copied to host after snapshot — Optimize indices only |
 | Keycloak DB | `pg_dump -Fc` | GZIP-compressed (`keycloak.sql.gz`) |
 | Web Modeler DB | `pg_dump -Fc` | GZIP-compressed (`webmodeler.sql.gz`) |
-| Configurations | `tar.gz` | `.env`, `connector-secrets.txt`, `Caddyfile`, `application.yaml` files |
+| Configurations | `tar.gz` | `.env`, `.env-credentials`, `connector-secrets.txt`, `Caddyfile`, `application.yaml` files |
 
 **Not backed up:** `keycloak-theme` volume (initialized automatically by Identity).
 
@@ -152,7 +152,7 @@ Relevant Camunda sizing and retention references:
 
 ## Security
 
-Backups contain secrets in clear text. This includes the Keycloak realm, OAuth client secrets, database passwords, `.env`, and `connector-secrets.txt`. Access to the backup directory MUST be restricted to trusted users. For off-site storage, use transport encryption and at-rest encryption.
+Backups contain secrets in clear text. This includes the Keycloak realm, OAuth client secrets, database passwords, `.env-credentials`, and `connector-secrets.txt`. (`.env` carries only non-credential configuration.) Access to the backup directory MUST be restricted to trusted users. For off-site storage, use transport encryption and at-rest encryption.
 
 For optional local encryption, pass a recipient to the backup script:
 
@@ -191,7 +191,7 @@ The current setup is best described as a **full-stack infrastructure backup** fo
 - Optimize and Zeebe record indices through an Elasticsearch snapshot
 - Keycloak identity data from PostgreSQL
 - Web Modeler data from PostgreSQL
-- Runtime configuration files such as `.env`, `connector-secrets.txt`, `Caddyfile`, and application YAML files
+- Runtime configuration files such as `.env`, `.env-credentials`, `connector-secrets.txt`, `Caddyfile`, and application YAML files
 
 This is intentional for the local/single-node Compose profile because it also covers services outside Camunda's backup API scope, especially Keycloak, Web Modeler, and local configuration. The trade-off is that the stack must stop the application services during the backup window.
 
@@ -412,7 +412,7 @@ Use `--rehost-keycloak` when restoring a backup from one hostname into a cluster
 .\scripts\restore.ps1 --cross-cluster --rehost-keycloak backups\20240115_120000
 ```
 
-`--rehost-keycloak` runs immediately after the Keycloak database restore and before application services start. It patches the restored Keycloak clients for the current `.env`:
+`--rehost-keycloak` runs immediately after the Keycloak database restore and before application services start. It patches the restored Keycloak clients for the current `.env` and `.env-credentials`:
 
 | Client | Rehosted values |
 |---|---|
@@ -423,16 +423,17 @@ Use `--rehost-keycloak` when restoring a backup from one hostname into a cluster
 | `camunda-identity` | root URL, redirect URIs, web origins, client secret |
 | `connectors` | client secret |
 
-This lets the restored Keycloak realm issue tokens and accept redirects for the local hostname, while keeping the restored users, roles, and realm data. The patch uses the current `HOST`, `ORCHESTRATION_CLIENT_SECRET`, `CONNECTORS_CLIENT_SECRET`, `CONSOLE_CLIENT_SECRET`, `OPTIMIZE_CLIENT_SECRET`, and `CAMUNDA_IDENTITY_CLIENT_SECRET` from `.env`.
+This lets the restored Keycloak realm issue tokens and accept redirects for the local hostname, while keeping the restored users, roles, and realm data. The patch uses the current `HOST` from `.env` and the OIDC client secrets (`ORCHESTRATION_CLIENT_SECRET`, `CONNECTORS_CLIENT_SECRET`, `CONSOLE_CLIENT_SECRET`, `OPTIMIZE_CLIENT_SECRET`, `CAMUNDA_IDENTITY_CLIENT_SECRET`) from `.env-credentials`.
 
 `web-modeler` is a public browser client in this stack and has no client secret to rehost. `connectors` uses the client credentials flow only, so it has no redirect URIs or web origins to rehost.
 
-For a production-to-local debugging restore, prepare the local `.env` first:
+For a production-to-local debugging restore, prepare the local `.env` and `.env-credentials` first:
 
-1. Set `HOST` to the local hostname you want to use, e.g. `camunda.dev.local`.
-2. Ensure `CAMUNDA_VERSION` and `ELASTIC_VERSION` match the backup manifest major.minor versions.
-3. Run `scripts/setup-host.ps1` or `scripts/setup-host.sh` so Caddy and hosts entries match the local `HOST`.
-4. Run the restore with `--cross-cluster --rehost-keycloak`.
+1. Set `HOST` in `.env` to the local hostname you want to use, e.g. `camunda.dev.local`.
+2. Ensure `CAMUNDA_VERSION` and `ELASTIC_VERSION` (in `.env`) match the backup manifest major.minor versions.
+3. Make sure `.env-credentials` is in place (`scripts/generate-secrets.ps1` or `cp .env-credentials.example .env-credentials`).
+4. Run `scripts/setup-host.ps1` or `scripts/setup-host.sh` so Caddy and hosts entries match the local `HOST`.
+5. Run the restore with `--cross-cluster --rehost-keycloak`.
 
 If you omit `--rehost-keycloak`, the restored Keycloak database may still contain production redirect URIs, web origins, and client secrets. That mode is useful only when the target cluster intentionally uses compatible Keycloak client configuration, or when you restore without the `keycloak` component.
 
@@ -594,7 +595,7 @@ Use `--verify` (alias `--test`) when you want a fast, lightweight verification t
 
 When you run `restore-drill.sh`, the script:
 
-1. **Generates an isolated environment** — copies your `.env` into `backups/.drill/.env.drill`, overrides `HOST`, `COMPOSE_PROJECT_NAME`, and `ES_PORT`, and creates a compose port-remap override
+1. **Generates an isolated environment** — copies your `.env` and `.env-credentials` into `backups/.drill/.env.drill` (single combined env file with secrets appended), overrides `HOST`, `COMPOSE_PROJECT_NAME`, and `ES_PORT`, and creates a compose port-remap override
 2. **Restores the backup into the drill stack** — invokes the real `restore.sh --force --no-pre-backup --rehost-keycloak` against the isolated project, so you are testing the exact same restore logic you would use in production
 3. **Runs smoke tests** — probes the remapped ports to verify Keycloak, Orchestration, and Web Modeler are healthy
 4. **Tears down unconditionally** — runs `docker compose down --volumes --remove-orphans` and deletes temporary files, even if a previous step failed
@@ -693,7 +694,7 @@ A passing drill means your backup format, restore logic, and stack health checks
 | `--retention-days N` | Deletes backups older than N days (default: `7`) |
 | `--backup-dir DIR` | Base directory for backups (default: `backups/`) |
 | `--encrypt-to ID` | Also writes an encrypted full-backup archive under `backups-encrypted/` using `gpg` or `age` |
-| `--env-file FILE` | Uses a custom env file instead of `.env` |
+| `--env-file FILE` | Uses a custom env file instead of `.env` and `.env-credentials` |
 | `-h, --help` | Shows help |
 
 ### restore.sh / restore.ps1
@@ -738,6 +739,8 @@ The drill also recognizes the environment variables listed in [Restore Drill](#r
 
 # Backup using an alternate environment file
 ./scripts/backup.sh --env-file .env.prod
+# The custom file replaces BOTH .env and .env-credentials for the duration
+# of the backup — pass a combined file (e.g. `cat .env .env-credentials > .env.prod`).
 
 # Restore on same cluster
 ./scripts/restore.sh backups/20240115_120000
@@ -800,7 +803,7 @@ If all 3 retries fail, the backup exits with status `1`. It no longer falls thro
 
 ### Zeebe shutdown timeout
 
-Cold backups stop application services before copying Zeebe state. The stop timeout defaults to 180 seconds and is logged at the start of each backup. For loaded Zeebe instances or long exporter queues, increase it in `.env` to avoid Docker sending SIGKILL before the broker has shut down cleanly:
+Cold backups stop application services before copying Zeebe state. The stop timeout defaults to 180 seconds and is logged at the start of each backup. For loaded Zeebe instances or long exporter queues, increase `BACKUP_STOP_TIMEOUT` in `.env` to avoid Docker sending SIGKILL before the broker has shut down cleanly:
 
 ```env
 BACKUP_STOP_TIMEOUT=300
@@ -865,7 +868,7 @@ If you still see the warning for an old restored stack but the services are heal
 
 ### Version mismatch on cross-cluster restore
 
-Ensure that the major.minor versions in `.env` match the backup. Patch versions may differ and produce a warning instead of an abort:
+Ensure that the major.minor versions in `.env` (`CAMUNDA_VERSION`, `ELASTIC_VERSION`) match the backup. Patch versions may differ and produce a warning instead of an abort:
 
 ```bash
 # Show version from backup

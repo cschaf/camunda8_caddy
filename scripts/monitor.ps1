@@ -5,6 +5,7 @@ $ErrorActionPreference = 'Stop'
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectDir = Resolve-Path (Join-Path $ScriptDir '..')
 $EnvFile = Join-Path $ProjectDir '.env'
+$CredentialsFile = Join-Path $ProjectDir '.env-credentials'
 $LogFile = if ($env:MONITOR_LOG_FILE) { $env:MONITOR_LOG_FILE } else { Join-Path $ProjectDir 'monitor.log' }
 $LogMaxSize = if ($env:MONITOR_LOG_MAX_SIZE) { [int]$env:MONITOR_LOG_MAX_SIZE } else { 10485760 }   # 10 MiB default
 $LogMaxArchives = if ($env:MONITOR_LOG_MAX_ARCHIVES) { [int]$env:MONITOR_LOG_MAX_ARCHIVES } else { 5 }
@@ -77,18 +78,22 @@ if (Test-BackupOrRestoreRunning) {
     exit 0
 }
 
-if (-not (Test-Path $EnvFile)) {
+if (-not (Test-Path $EnvFile) -and -not (Test-Path $CredentialsFile)) {
     Write-Log 'ERROR: .env file not found. Run: cp .env.example .env'
     exit 1
 }
 
 $StageValue = $null
-foreach ($line in Get-Content $EnvFile) {
-    if ($line -match '^\s*#') { continue }
-    if ($line -match '^\s*STAGE\s*=(.*)$') {
-        $StageValue = $matches[1].Trim().ToLowerInvariant()
-        break
+foreach ($file in @($EnvFile, $CredentialsFile)) {
+    if (-not (Test-Path $file)) { continue }
+    foreach ($line in Get-Content $file) {
+        if ($line -match '^\s*#') { continue }
+        if ($line -match '^\s*STAGE\s*=(.*)$') {
+            $StageValue = $matches[1].Trim().ToLowerInvariant()
+            break
+        }
     }
+    if ($StageValue) { break }
 }
 
 if (-not $StageValue) {

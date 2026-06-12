@@ -1,17 +1,29 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Generates .env-credentials with strong random secrets.
+# Reads non-credential defaults (HOST, STAGE, *_CLIENT_ID, etc.) from the
+# committed .env so the generated file matches the active configuration.
+# .env is NOT modified by this script — it is part of the repo and is
+# expected to already exist when generate-secrets is run.
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="$SCRIPT_DIR/../.env"
-ENV_EXAMPLE="$SCRIPT_DIR/../.env.example"
+CREDENTIALS_FILE="$SCRIPT_DIR/../.env-credentials"
 
 FORCE=false
 for arg in "$@"; do
   [[ "$arg" == "--force" ]] && FORCE=true
 done
 
-if [[ -f "$ENV_FILE" && "$FORCE" == false ]]; then
-  echo "ERROR: .env already exists. Use --force to overwrite." >&2
+if [[ -f "$CREDENTIALS_FILE" && "$FORCE" == false ]]; then
+  echo "ERROR: .env-credentials already exists. Use --force to overwrite." >&2
+  exit 1
+fi
+
+if [[ ! -f "$ENV_FILE" ]]; then
+  echo "ERROR: .env not found. It is part of the repo, so this should not happen." >&2
+  echo "       Re-clone the repository, or restore .env from your last commit." >&2
   exit 1
 fi
 
@@ -24,11 +36,13 @@ gen() {
   openssl rand -hex 24
 }
 
+# Read a single KEY=VALUE line from .env (non-credential source). Skips
+# comments and blank lines. Returns the empty string if not found.
 get_val() {
-  grep "^$1=" "$ENV_EXAMPLE" | head -1 | cut -d= -f2-
+  grep "^$1=" "$ENV_FILE" | head -1 | cut -d= -f2-
 }
 
-# Pre-generate secrets that are needed both in .env and for file generation
+# Pre-generate secrets that are written to .env-credentials
 ELASTIC_PASSWORD=$(gen)
 POSTGRES_PASSWORD=$(gen)
 CAMUNDA_DB_PASSWORD=$(gen)
@@ -38,49 +52,12 @@ WEBMODELER_PUSHER_KEY=$(gen)
 WEBMODELER_PUSHER_SECRET=$(gen)
 DEMO_USER_PASSWORD=$(gen)
 
-cat > "$ENV_FILE" <<EOF
-## Image versions ##
-$(grep '^# renovate:' "$ENV_EXAMPLE" | head -1 || true)
-CAMUNDA_VERSION=$(get_val CAMUNDA_VERSION)
-CAMUNDA_CONNECTORS_VERSION=$(get_val CAMUNDA_CONNECTORS_VERSION)
-CAMUNDA_IDENTITY_VERSION=$(get_val CAMUNDA_IDENTITY_VERSION)
-CAMUNDA_OPERATE_VERSION=$(get_val CAMUNDA_OPERATE_VERSION)
-CAMUNDA_OPTIMIZE_VERSION=$(get_val CAMUNDA_OPTIMIZE_VERSION)
-CAMUNDA_TASKLIST_VERSION=$(get_val CAMUNDA_TASKLIST_VERSION)
-CAMUNDA_WEB_MODELER_VERSION=$(get_val CAMUNDA_WEB_MODELER_VERSION)
-CAMUNDA_CONSOLE_VERSION=$(get_val CAMUNDA_CONSOLE_VERSION)
-ELASTIC_VERSION=$(get_val ELASTIC_VERSION)
-KEYCLOAK_SERVER_VERSION=$(get_val KEYCLOAK_SERVER_VERSION)
-MAILPIT_VERSION=$(get_val MAILPIT_VERSION)
-POSTGRES_VERSION=$(get_val POSTGRES_VERSION)
-
-## Network Configuration ##
-HOST=$(get_val HOST)
-KEYCLOAK_HOST=$(get_val KEYCLOAK_HOST)
-
-## Stage / Environment Label ##
-STAGE=$(get_val STAGE)
-
-## Dashboard Banner ##
-BANNER_DARKMODE=$(get_val BANNER_DARKMODE)
-BANNER_LIGHTMODE=$(get_val BANNER_LIGHTMODE)
-
-## Camunda License (Optional for non-production, required for production use) ##
-# Keep the real key only in .env. For multi-line keys, use single quotes so
-# docker compose and this bash start script keep the value as one variable.
-# CAMUNDA_LICENSE_KEY='--------------- BEGIN CAMUNDA LICENSE KEY ---------------
-# ... complete key from Camunda ...
-# --------------- END CAMUNDA LICENSE KEY ---------------'
-
-## Backup Configuration ##
-BACKUP_STOP_TIMEOUT=$(get_val BACKUP_STOP_TIMEOUT)
-ES_HOST=$(get_val ES_HOST)
-ES_PORT=$(get_val ES_PORT)
-RESTORE_HEALTH_TIMEOUT=$(get_val RESTORE_HEALTH_TIMEOUT)
-
-## TLS Certificates (Optional) ##
-FULLCHAIN_PEM=$(get_val FULLCHAIN_PEM)
-PRIVATEKEY_PEM=$(get_val PRIVATEKEY_PEM)
+cat > "$CREDENTIALS_FILE" <<EOF
+## Camunda Private Registry (Optional) ##
+# Used by scripts/registry-info.{ps1,sh} to query Camunda's Harbor registry.
+# Credentials are issued by Camunda to enterprise customers (robot accounts).
+CAMUNDA_REGISTRY_USERNAME=$(get_val CAMUNDA_REGISTRY_USERNAME)
+CAMUNDA_REGISTRY_PASSWORD=$(gen)
 
 ## OIDC Client Configuration ##
 ORCHESTRATION_CLIENT_ID=$(get_val ORCHESTRATION_CLIENT_ID)
@@ -120,18 +97,13 @@ WEBMODELER_PUSHER_APP_ID=$(get_val WEBMODELER_PUSHER_APP_ID)
 WEBMODELER_PUSHER_KEY=$WEBMODELER_PUSHER_KEY
 WEBMODELER_PUSHER_SECRET=$WEBMODELER_PUSHER_SECRET
 
-WEBMODELER_MAIL_FROM_ADDRESS=$(get_val WEBMODELER_MAIL_FROM_ADDRESS)
-
 ## Demo User ##
 DEMO_USER_PASSWORD=$DEMO_USER_PASSWORD
-
-## Feature Flags ##
-RESOURCE_AUTHORIZATIONS_ENABLED=$(get_val RESOURCE_AUTHORIZATIONS_ENABLED)
 EOF
 
-chmod 600 "$ENV_FILE"
+chmod 600 "$CREDENTIALS_FILE"
 
-echo "Generated .env with strong random secrets (chmod 600)."
+echo "Generated .env-credentials with strong random secrets (chmod 600)."
 echo ""
 echo "Generated secrets for:"
 echo "  ORCHESTRATION_CLIENT_SECRET, CONNECTORS_CLIENT_SECRET, CONSOLE_CLIENT_SECRET"

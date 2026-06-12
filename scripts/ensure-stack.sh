@@ -4,19 +4,23 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 ENV_FILE="$PROJECT_DIR/.env"
+CREDENTIALS_FILE="$PROJECT_DIR/.env-credentials"
 
 log() {
   printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*"
 }
 
-if [[ ! -f "$ENV_FILE" ]]; then
+if [[ ! -f "$ENV_FILE" && ! -f "$CREDENTIALS_FILE" ]]; then
   log "ERROR: .env file not found. Run: cp .env.example .env"
   exit 1
 fi
 
 set -a
 # shellcheck source=/dev/null
-source "$ENV_FILE"
+for source_file in "$ENV_FILE" "$CREDENTIALS_FILE"; do
+  [[ -f "$source_file" ]] || continue
+  source "$source_file"
+done
 set +a
 
 stage="$(printf '%s' "${STAGE:-}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"

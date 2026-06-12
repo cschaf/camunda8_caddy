@@ -4,6 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 ENV_FILE="${ENV_FILE:-$PROJECT_DIR/.env}"
+CREDENTIALS_FILE="${CREDENTIALS_FILE:-$PROJECT_DIR/.env-credentials}"
 BACKUP_BASE_DIR="${BACKUP_BASE_DIR:-$PROJECT_DIR/backups}"
 LOCK_DIR="$BACKUP_BASE_DIR/.backup.lock"
 LOCK_FILE="$LOCK_DIR/pid"
@@ -27,6 +28,13 @@ load_env() {
   # shellcheck source=/dev/null
   # Remove UTF-8 BOM if present (common on Windows)
   source <(sed '1s/^\xEF\xBB\xBF//' "$ENV_FILE")
+  # .env-credentials is gitignored; many scripts (backup, restore) need
+  # its variables (POSTGRES_USER, ELASTIC_PASSWORD, etc.) at runtime, so
+  # source it too. Missing is non-fatal here so the same load_env() can
+  # be used by scripts that only need HOST/STAGE.
+  if [[ -f "$CREDENTIALS_FILE" ]]; then
+    source <(sed '1s/^\xEF\xBB\xBF//' "$CREDENTIALS_FILE")
+  fi
   set +a
 
   # Recompute derived paths in case BACKUP_BASE_DIR was overridden by .env

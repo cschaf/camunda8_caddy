@@ -5,6 +5,7 @@ $ErrorActionPreference = 'Stop'
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectDir = Resolve-Path (Join-Path $ScriptDir '..')
 $EnvFile = Join-Path $ProjectDir '.env'
+$CredentialsFile = Join-Path $ProjectDir '.env-credentials'
 
 function Write-Log {
     param(
@@ -16,18 +17,22 @@ function Write-Log {
     Write-Host "[$timestamp] $Message"
 }
 
-if (-not (Test-Path $EnvFile)) {
+if (-not (Test-Path $EnvFile) -and -not (Test-Path $CredentialsFile)) {
     Write-Log "ERROR: .env file not found. Run: cp .env.example .env"
     exit 1
 }
 
 $StageValue = $null
-foreach ($line in Get-Content $EnvFile) {
-    if ($line -match '^\s*#') { continue }
-    if ($line -match '^\s*STAGE\s*=(.*)$') {
-        $StageValue = $matches[1].Trim().ToLowerInvariant()
-        break
+foreach ($file in @($EnvFile, $CredentialsFile)) {
+    if (-not (Test-Path $file)) { continue }
+    foreach ($line in Get-Content $file) {
+        if ($line -match '^\s*#') { continue }
+        if ($line -match '^\s*STAGE\s*=(.*)$') {
+            $StageValue = $matches[1].Trim().ToLowerInvariant()
+            break
+        }
     }
+    if ($StageValue) { break }
 }
 
 if (-not $StageValue) {

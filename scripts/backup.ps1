@@ -211,11 +211,12 @@ function Main {
         $configArchive = Join-Path $backupDir "configs.tar.gz"
         if ($TestMode) {
             Log "[TEST] Would create config archive: $configArchive"
-            Log "[TEST] Including: .env, connector-secrets.txt, Caddyfile, .*/application.yaml"
+            Log "[TEST] Including: .env, .env-credentials, connector-secrets.txt, Caddyfile, .*/application.yaml"
         }
         else {
             $configItems = @(
                 (Join-Path $ProjectDir ".env"),
+                (Join-Path $ProjectDir ".env-credentials"),
                 (Join-Path $ProjectDir "connector-secrets.txt"),
                 (Join-Path $ProjectDir "Caddyfile"),
                 (Join-Path $ProjectDir ".orchestration\application.yaml"),

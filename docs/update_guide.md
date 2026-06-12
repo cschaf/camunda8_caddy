@@ -6,7 +6,7 @@ For patch-only updates inside the same minor line, for example `8.9.1` to `8.9.2
 
 ## Current Version Sources
 
-The main version pins are in `.env.example`. The running stack uses `.env`, which is gitignored and must be updated separately.
+The main version pins are in `.env.example`. The running stack uses `.env` (committed) for non-credential configuration, with secrets in the gitignored `.env-credentials`. Update both example files and your local files when variables are added or renamed.
 
 | Component | Version variable | Image used in `docker-compose.yaml` |
 |---|---|---|
@@ -53,14 +53,14 @@ For a minor Camunda upgrade, also read the migration/update notes for the target
 
 ### 1. Version files
 
-Update both `.env.example` and the local `.env`.
+Update both `.env.example` and the local `.env`. If a migration guide introduces new credential variables, update `.env-credentials.example` and regenerate `.env-credentials` with `scripts/generate-secrets.sh` / `.ps1`.
 
 Required checks:
 
 - Keep all Camunda core components on the same minor line unless Camunda explicitly documents otherwise.
 - Use the exact Console patch version that exists for the target minor. Console often has a different patch number from the platform images.
 - Confirm the target Elasticsearch version is supported by the target Camunda minor before changing `ELASTIC_VERSION`.
-- Do not overwrite production secrets in `.env`; edit only the version values unless a migration guide explicitly requires new variables.
+- Do not overwrite production secrets in `.env-credentials`; edit only the version values in `.env` and add new credential variables through `scripts/generate-secrets.sh` / `.ps1` instead of by hand-editing the live file.
 
 ### 2. `docker-compose.yaml`
 
@@ -183,11 +183,12 @@ The backup captures:
 - Keycloak/Identity data from `postgres`
 - Web Modeler data from `web-modeler-db`
 - Elasticsearch snapshot data for Optimize and exported records
-- configuration files such as `.env`, `connector-secrets.txt`, `Caddyfile`, and application YAML files
+- configuration files such as `.env`, `.env-credentials`, `connector-secrets.txt`, `Caddyfile`, and application YAML files
 
 Also copy critical local files to a separate safe location before replacing the project directory:
 
 - `.env`
+- `.env-credentials`
 - `connector-secrets.txt`
 - `Caddyfile`
 - `certs/`
@@ -210,13 +211,14 @@ Use this when you want to move the project files to another folder or host befor
 From the parent directory:
 
 ```powershell
-robocopy CamundaComposeNVL CamundaComposeNVL-copy /MIR /XD .git .worktrees backups /XF .env connector-secrets.txt Caddyfile
+robocopy CamundaComposeNVL CamundaComposeNVL-copy /MIR /XD .git .worktrees backups /XF .env .env-credentials connector-secrets.txt Caddyfile
 ```
 
 Then copy the sensitive files intentionally, after deciding whether the target should reuse the same secrets and hostnames:
 
 ```powershell
 Copy-Item CamundaComposeNVL\.env CamundaComposeNVL-copy\.env
+Copy-Item CamundaComposeNVL\.env-credentials CamundaComposeNVL-copy\.env-credentials
 Copy-Item CamundaComposeNVL\connector-secrets.txt CamundaComposeNVL-copy\connector-secrets.txt
 Copy-Item CamundaComposeNVL\Caddyfile CamundaComposeNVL-copy\Caddyfile
 Copy-Item CamundaComposeNVL\certs CamundaComposeNVL-copy\certs -Recurse
@@ -232,6 +234,7 @@ rsync -a --delete \
   --exclude .worktrees \
   --exclude backups \
   --exclude .env \
+  --exclude .env-credentials \
   --exclude connector-secrets.txt \
   --exclude Caddyfile \
   CamundaComposeNVL/ CamundaComposeNVL-copy/
@@ -241,19 +244,20 @@ Then copy sensitive files intentionally if the target should use the same secret
 
 ```bash
 cp CamundaComposeNVL/.env CamundaComposeNVL-copy/.env
+cp CamundaComposeNVL/.env-credentials CamundaComposeNVL-copy/.env-credentials
 cp CamundaComposeNVL/connector-secrets.txt CamundaComposeNVL-copy/connector-secrets.txt
 cp CamundaComposeNVL/Caddyfile CamundaComposeNVL-copy/Caddyfile
 cp -a CamundaComposeNVL/certs CamundaComposeNVL-copy/certs
 ```
 
-Be careful with `/MIR`, `--delete`, and any copy-over-existing operation. They can remove local-only files in the destination. Back up the destination's `.env`, `connector-secrets.txt`, `Caddyfile`, `certs/`, and `backups/` before overwriting.
+Be careful with `/MIR`, `--delete`, and any copy-over-existing operation. They can remove local-only files in the destination. Back up the destination's `.env`, `.env-credentials`, `connector-secrets.txt`, `Caddyfile`, `certs/`, and `backups/` before overwriting.
 
 ## Update Procedure
 
 1. Read the target minor release notes and supported-environment matrix.
 2. Create and verify a full backup with the project backup scripts.
 3. Create a Git branch for the update.
-4. Update `.env.example` and `.env` version variables.
+4. Update `.env.example` and `.env` version variables. Update `.env-credentials.example` only if new credential variables are introduced.
 5. Review and update `docker-compose.yaml`, application configs, stage overlays, Caddy config, scripts, and docs.
 6. Pull the new images:
 
@@ -315,7 +319,7 @@ docker logs web-modeler-restapi --tail 120
 
 1. Look up the target Camunda minor and compatible Elasticsearch version.
 2. Back up the current stack and run `restore --verify`.
-3. Copy `.env`, `connector-secrets.txt`, `Caddyfile`, `certs/`, and the newest backup to a safe location.
+3. Copy `.env`, `.env-credentials`, `connector-secrets.txt`, `Caddyfile`, `certs/`, and the newest backup to a safe location.
 4. Change the version variables in `.env.example` and `.env`.
 5. Apply required config changes from the Camunda migration notes.
 6. Update stage files, Caddy routes, scripts, and docs if the service layout changed.

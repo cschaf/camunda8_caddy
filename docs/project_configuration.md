@@ -477,14 +477,21 @@ The demo user is assigned these roles:
 
 ## 7. Secrets Management
 
+The project splits environment configuration across two files so non-credentials can ship with the repo while secrets stay out of version control:
+
+- **`.env`** — committed. Image versions, `HOST`, `KEYCLOAK_HOST`, `STAGE` / `DISPLAY_STAGE`, banner paths, backup/TLS configuration, feature flags, mail address, registry URL. **No secrets.**
+- **`.env-credentials`** — **gitignored**. Every credential: OIDC client IDs and secrets, database names / users / passwords, Keycloak admin, Pusher app ID / key / secret, `ELASTIC_PASSWORD`, `CAMUNDA_REGISTRY_USERNAME` / `PASSWORD`, `DEMO_USER_PASSWORD`, and the Camunda license key.
+
+Docker Compose loads both files: `start.sh` / `start.ps1` pass `--env-file .env --env-file .env-credentials` to Compose (so `${VAR}` interpolation in `docker-compose.yaml` works for both), and the credential-relevant services additionally have `env_file: - path: .env-credentials / required: true` in `docker-compose.yaml` (defense in depth: `docker compose up` without the start scripts still works).
+
 ### Generated Secrets (`scripts/generate-secrets.sh` / `.ps1`)
 
-The `generate-secrets.sh` script creates a production-quality `.env` file:
+The `generate-secrets.sh` script creates a production-quality `.env-credentials` file:
 
-- **Aborts if `.env` exists** unless `--force` is passed — prevents accidental overwrite of live secrets
-- **Reads non-secret values from `.env.example`** — preserves image versions, HOST, KEYCLOAK_HOST, etc.
+- **Aborts if `.env-credentials` exists** unless `--force` is passed — prevents accidental overwrite of live secrets
+- **Reads non-secret defaults from `.env`** — preserves image versions, HOST, KEYCLOAK_HOST, etc.
 - **Generates 48-character hex secrets** using `openssl rand -hex 24` (bash) or `[System.Security.Cryptography.RandomNumberGenerator]::GetBytes(24)` (PowerShell)
-- **Sets `chmod 600`** on the generated `.env` (bash only)
+- **Sets `chmod 600`** on the generated `.env-credentials` (bash only) or restrictive ACL on Windows
 
 ### Secrets Generated
 
@@ -503,6 +510,12 @@ The `generate-secrets.sh` script creates a production-quality `.env` file:
 | `DEMO_USER_PASSWORD` | Identity (creates demo user) | Password for the demo user account |
 | `ELASTIC_PASSWORD` | Elasticsearch, Optimize, orchestration, backup/restore scripts | Password for the Elasticsearch `elastic` user; used by Optimize and Zeebe Exporter for authenticated ES access |
 | `CAMUNDA_DB_PASSWORD` | `camunda-db`, orchestration | Database password for the Camunda core PostgreSQL database |
+| `CAMUNDA_REGISTRY_USERNAME` / `CAMUNDA_REGISTRY_PASSWORD` | `scripts/registry-info.sh` / `.ps1` | Harbor registry credentials for tag lookups |
+| `CAMUNDA_LICENSE_KEY` (optional) | orchestration, optimize, web-modeler-restapi, console | Camunda 8 Self-Managed license key — comment block in `.env-credentials.example` shows the format |
+
+### Where do backups store the credentials?
+
+`scripts/backup.sh` / `.ps1` archive `.env` and `.env-credentials` into the `configs.tar.gz` portion of every backup. A restore from such a backup recreates both files on the target host. See [`docs/backup-restore.md`](backup-restore.md) for the backup layout.
 
 ### Why No Hardcoded Fallbacks?
 
@@ -949,8 +962,8 @@ The base Compose file and `stages/prod.yaml` are configured as a production-read
 
 | Secret | Current Value | Production Requirement |
 |---------|---------------|----------------------|
-| `KEYCLOAK_ADMIN_PASSWORD` | `admin` (in `.env.example`) | Strong random password |
-| `DEMO_USER_PASSWORD` | `demo` (in `.env.example`) | Strong random password |
+| `KEYCLOAK_ADMIN_PASSWORD` | `admin` (in `.env-credentials.example`) | Strong random password |
+| `DEMO_USER_PASSWORD` | `demo` (in `.env-credentials.example`) | Strong random password |
 | `POSTGRES_PASSWORD` | `demo-postgres-password` | Strong random password |
 | All `*_CLIENT_SECRET` | Weak demo values | Strong random passwords |
 

@@ -7,19 +7,27 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-# Read HOST and optional TLS cert paths from .env
-$envFile = Join-Path $PSScriptRoot "..\.env"
-if (-not (Test-Path $envFile)) {
+# Read HOST and optional TLS cert paths from .env (and .env-credentials, for
+# consistency with the other scripts — none of the keys below live in
+# .env-credentials today, but the order is preserved so future additions
+# land predictably).
+$projectRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
+$envFile         = Join-Path $projectRoot '.env'
+$credentialsFile = Join-Path $projectRoot '.env-credentials'
+if (-not (Test-Path $envFile) -and -not (Test-Path $credentialsFile)) {
     Write-Error ".env file not found. Run: cp .env.example .env"
 }
-$envContent = Get-Content $envFile | Where-Object { $_ -notmatch '^\s*#' }
 $EnvHost = $null
 $FULLCHAIN_PEM = $null
 $PRIVATEKEY_PEM = $null
-foreach ($line in $envContent) {
-    if ($line -match '^HOST=(.*)') { $EnvHost = $matches[1].Trim() }
-    if ($line -match '^FULLCHAIN_PEM=(.*)') { $FULLCHAIN_PEM = $matches[1].Trim() }
-    if ($line -match '^PRIVATEKEY_PEM=(.*)') { $PRIVATEKEY_PEM = $matches[1].Trim() }
+foreach ($file in @($envFile, $credentialsFile)) {
+    if (-not (Test-Path $file)) { continue }
+    foreach ($line in Get-Content $file) {
+        if ($line -match '^\s*#') { continue }
+        if ($line -match '^HOST=(.*)') { $EnvHost = $matches[1].Trim() }
+        if ($line -match '^FULLCHAIN_PEM=(.*)') { $FULLCHAIN_PEM = $matches[1].Trim() }
+        if ($line -match '^PRIVATEKEY_PEM=(.*)') { $PRIVATEKEY_PEM = $matches[1].Trim() }
+    }
 }
 if (-not $EnvHost) {
     Write-Error "HOST not found in .env"

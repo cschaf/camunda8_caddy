@@ -5,9 +5,19 @@ $ErrorActionPreference = 'Stop'
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectDir = Resolve-Path (Join-Path $ScriptDir '..')
 $EnvFile = Join-Path $ProjectDir '.env'
+$CredentialsFile = Join-Path $ProjectDir '.env-credentials'
 
 if (-not (Test-Path $EnvFile)) {
-    Write-Error ".env file not found. Run: cp .env.example .env"
+    Write-Error ".env file not found. It is part of the repo, so this should not happen."
+    Write-Error "Re-clone the repository, or restore .env from your last commit."
+    exit 1
+}
+
+if (-not (Test-Path $CredentialsFile)) {
+    Write-Error ".env-credentials file not found."
+    Write-Error "Run one of:"
+    Write-Error "  pwsh -File scripts/generate-secrets.ps1             # generate strong random secrets"
+    Write-Error "  Copy-Item .env-credentials.example .env-credentials  # copy the demo template"
     exit 1
 }
 
@@ -28,6 +38,18 @@ foreach ($line in Get-Content $EnvFile) {
     }
     if ($line -match '^\s*DISPLAY_STAGE\s*=(.*)$') {
         $DisplayStageValue = $matches[1].Trim()
+    }
+}
+
+# .env no longer holds the password; pull it from .env-credentials for the
+# optimize template render. We use a quick regex scan instead of dot-sourcing
+# (PSCore can dot-source KEY=VALUE files but it's a bit more ceremony).
+if (-not $ElasticPassword) {
+    foreach ($line in Get-Content $CredentialsFile) {
+        if ($line -match '^\s*ELASTIC_PASSWORD\s*=(.*)$') {
+            $ElasticPassword = $matches[1].Trim()
+            break
+        }
     }
 }
 
@@ -80,14 +102,21 @@ if ((Test-Path $OptimizeTemplate) -and $ElasticPassword) {
 Write-Host '>> Starting Elasticsearch (pre-flight dependency)...'
 $ComposeFile = Join-Path $ProjectDir 'docker-compose.yaml'
 $StageFile   = Join-Path $ProjectDir "stages/$StageValue.yaml"
-docker compose -f $ComposeFile -f $StageFile up -d elasticsearch | Out-Null
+# Pass both .env (committed, non-secret config) and .env-credentials (gitignored,
+# secrets) so ${VAR} interpolation in docker-compose.yaml works for both.
+$ComposeBase = @('docker', 'compose',
+    '--env-file', $EnvFile,
+    '--env-file', $CredentialsFile,
+    '-f', $ComposeFile,
+    '-f', $StageFile)
+& $ComposeBase up -d elasticsearch | Out-Null
 
 Write-Host '>> Waiting for Elasticsearch to become healthy (timeout 300s)...'
 $Attempts = 0
 $MaxAttempts = 60
 $EsHealthy = $false
 while ($Attempts -lt $MaxAttempts) {
-    $Status = (docker compose -f $ComposeFile -f $StageFile ps --format '{{.Status}}' elasticsearch 2>$null) -as [string]
+    $Status = (& $ComposeBase ps --format '{{.Status}}' elasticsearch 2>$null) -as [string]
     if ($Status -and $Status -match '\(healthy\)') {
         $EsHealthy = $true
         break
@@ -101,8 +130,7 @@ if (-not $EsHealthy) {
     Write-Warning 'If optimize does not come up, run: pwsh -File scripts\optimize-upgrade.ps1'
 } else {
     Write-Host '>> Pre-flight: Optimize schema check (idempotent)...'
-    & docker compose -f $ComposeFile -f $StageFile `
-        run --rm --no-deps -T `
+    & $ComposeBase run --rm --no-deps -T `
         --entrypoint bash optimize `
         /optimize/upgrade/upgrade.sh --skip-warning
     if ($LASTEXITCODE -ne 0) {
@@ -112,4 +140,4 @@ if (-not $EsHealthy) {
 }
 
 Write-Host "Starting Camunda stack with STAGE=$StageValue"
-docker compose -f $ComposeFile -f $StageFile up -d
+& $ComposeBase up -d

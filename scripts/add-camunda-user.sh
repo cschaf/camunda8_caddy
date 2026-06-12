@@ -7,7 +7,8 @@
 #     Creates a user via the Keycloak Admin REST API and assigns Camunda-specific
 #     realm roles based on the specified role level.
 #
-#     Credentials are read from .env in the project root.
+#     Credentials are read from .env (non-credential configuration) and
+#     .env-credentials (all secrets) in the project root.
 #
 # EXAMPLES
 #     bash scripts/add-camunda-user.sh --username jdoe --password "changeme" --email "jdoe@example.com" --first-name John --last-name Doe --role NormalUser
@@ -20,6 +21,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 ENV_FILE="$PROJECT_DIR/.env"
+CREDENTIALS_FILE="$PROJECT_DIR/.env-credentials"
 
 ADMIN_USER="${ADMIN_USER:-admin}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:-admin}"
@@ -115,12 +117,17 @@ PYEND
 }
 
 # ---------------------------------------------------------------------------
-# Read HOST and ORCHESTRATION_CLIENT_SECRET from .env
+# Read HOST, ORCHESTRATION_CLIENT_SECRET, and Keycloak admin credentials.
+# Scans .env first, then .env-credentials — credentials live in
+# .env-credentials, but HOST stays in .env. (No keys overlap, but the
+# .env-first/.env-credentials-second order is consistent with the other
+# scripts and makes overlap behavior obvious.)
 # ---------------------------------------------------------------------------
 
 HOST=""
 ORCHESTRATION_CLIENT_SECRET=""
-if [[ -f "$ENV_FILE" ]]; then
+for source_file in "$ENV_FILE" "$CREDENTIALS_FILE"; do
+    [[ -f "$source_file" ]] || continue
     while IFS= read -r line || [[ -n "$line" ]]; do
         [[ "$line" =~ ^[[:space:]]*# ]] && continue
         [[ -z "$line" ]] && continue
@@ -144,8 +151,8 @@ if [[ -f "$ENV_FILE" ]]; then
             ADMIN_PASSWORD="${ADMIN_PASSWORD//[[:space:]]/}"
             ADMIN_PASSWORD="$(strip_outer_quotes "$ADMIN_PASSWORD")"
         fi
-    done < "$ENV_FILE"
-fi
+    done < "$source_file"
+done
 
 REQUESTED_KEYCLOAK_HOST="${KEYCLOAK_HOST:-}"
 if [[ -z "$REQUESTED_KEYCLOAK_HOST" || "$REQUESTED_KEYCLOAK_HOST" == "keycloak" ]]; then

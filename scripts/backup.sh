@@ -256,11 +256,12 @@ main() {
   local config_archive="$backup_dir/configs.tar.gz"
   if [[ "$TEST_MODE" == true ]]; then
     log "[TEST] Would create config archive: $config_archive"
-    log "[TEST] Including: .env, connector-secrets.txt, Caddyfile, .*/application.yaml"
+    log "[TEST] Including: .env, .env-credentials, connector-secrets.txt, Caddyfile, .*/application.yaml"
   else
     local config_files=()
     local all_config_paths=(
       ".env"
+      ".env-credentials"
       "connector-secrets.txt"
       "Caddyfile"
       ".orchestration/application.yaml"

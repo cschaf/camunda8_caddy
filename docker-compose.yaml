@@ -58,6 +58,8 @@ services:
     env_file:
       - path: .env
         required: true
+      - path: .env-credentials
+        required: true
     labels:
       - autoheal=true
     restart: unless-stopped
@@ -104,7 +106,11 @@ services:
       CAMUNDA_CLIENT_AUTH_CLIENTSECRET: ${CONNECTORS_CLIENT_SECRET:?CONNECTORS_CLIENT_SECRET is required}
       CAMUNDA_LICENSE_KEY: ${CAMUNDA_LICENSE_KEY:-}
       JAVA_TOOL_OPTIONS: "-Xmx768m"
-    env_file: connector-secrets.txt
+    env_file:
+      - path: .env-credentials
+        required: true
+      - path: connector-secrets.txt
+        required: true
     labels:
       - autoheal=true
     restart: unless-stopped
@@ -157,6 +163,9 @@ services:
       management.endpoint.health.probes.enabled: "true"
       CAMUNDA_LICENSE_KEY: ${CAMUNDA_LICENSE_KEY:-}
       JAVA_TOOL_OPTIONS: "-Xms2304m -Xmx2304m"
+    env_file:
+      - path: .env-credentials
+        required: true
     healthcheck:
       test: ["CMD", "wget", "-q", "--tries=1", "--spider", "http://localhost:8090/api/readyz"]
       interval: 30s
@@ -213,6 +222,9 @@ services:
       DEMO_USER_PASSWORD: ${DEMO_USER_PASSWORD:?DEMO_USER_PASSWORD is required}
       CAMUNDA_LICENSE_KEY: ${CAMUNDA_LICENSE_KEY:-}
       JAVA_TOOL_OPTIONS: "-Xms256m -Xmx768m"
+    env_file:
+      - path: .env-credentials
+        required: true
     healthcheck:
       test: ["CMD", "wget", "-q", "--tries=1", "--spider", "http://localhost:8082/actuator/health"]
       interval: 5s
@@ -249,6 +261,9 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
       POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    env_file:
+      - path: .env-credentials
+        required: true
     labels:
       - autoheal=true
     restart: unless-stopped
@@ -280,6 +295,9 @@ services:
       POSTGRES_DB: camunda
       POSTGRES_USER: camunda
       POSTGRES_PASSWORD: ${CAMUNDA_DB_PASSWORD:?CAMUNDA_DB_PASSWORD is required}
+    env_file:
+      - path: .env-credentials
+        required: true
     labels:
       - autoheal=true
     restart: unless-stopped
@@ -321,6 +339,9 @@ services:
       KEYCLOAK_ADMIN_USER: ${KEYCLOAK_ADMIN_USER:?KEYCLOAK_ADMIN_USER is required}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?KEYCLOAK_ADMIN_PASSWORD is required}
       KEYCLOAK_PROXY_HEADERS: xforwarded
+    env_file:
+      - path: .env-credentials
+        required: true
     labels:
       - autoheal=true
     restart: unless-stopped
@@ -367,6 +388,9 @@ services:
       - indices.breaker.total.limit=75%
       - path.repo=/usr/share/elasticsearch/backup
       - "ES_JAVA_OPTS=-Xms2g -Xmx2g"
+    env_file:
+      - path: .env-credentials
+        required: true
     ulimits:
       memlock:
         soft: -1
@@ -420,6 +444,9 @@ services:
       POSTGRES_DB: ${WEBMODELER_DB_NAME:?WEBMODELER_DB_NAME is required}
       POSTGRES_USER: ${WEBMODELER_DB_USER:?WEBMODELER_DB_USER is required}
       POSTGRES_PASSWORD: ${WEBMODELER_DB_PASSWORD:?WEBMODELER_DB_PASSWORD is required}
+    env_file:
+      - path: .env-credentials
+        required: true
     networks:
       - web-modeler
     extra_hosts:
@@ -530,6 +557,9 @@ services:
       OAUTH2_TOKEN_ISSUER: https://keycloak.${HOST:?HOST is required}/auth/realms/camunda-platform
       IDENTITY_BASE_URL: http://identity:8084/
       CAMUNDA_LICENSE_KEY: ${CAMUNDA_LICENSE_KEY:-}
+    env_file:
+      - path: .env-credentials
+        required: true
     networks:
       - web-modeler
       - camunda-platform
@@ -564,6 +594,9 @@ services:
       PUSHER_APP_ID: ${WEBMODELER_PUSHER_APP_ID:?WEBMODELER_PUSHER_APP_ID is required}
       PUSHER_APP_KEY: ${WEBMODELER_PUSHER_KEY:?WEBMODELER_PUSHER_KEY is required}
       PUSHER_APP_SECRET: ${WEBMODELER_PUSHER_SECRET:?WEBMODELER_PUSHER_SECRET is required}
+    env_file:
+      - path: .env-credentials
+        required: true
     networks:
       - web-modeler
     extra_hosts:
@@ -584,6 +617,9 @@ services:
       CAMUNDA_IDENTITY_AUDIENCE: console
       CAMUNDA_LICENSE_KEY: ${CAMUNDA_LICENSE_KEY:-}
       JAVA_TOOL_OPTIONS: -Xms256m -Xmx768m
+    env_file:
+      - path: .env-credentials
+        required: true
     labels:
       - autoheal=true
     healthcheck:

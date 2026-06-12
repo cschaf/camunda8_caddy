@@ -4,6 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 ENV_FILE="$PROJECT_DIR/.env"
+CREDENTIALS_FILE="$PROJECT_DIR/.env-credentials"
 LOG_FILE="${MONITOR_LOG_FILE:-$PROJECT_DIR/monitor.log}"
 LOG_MAX_SIZE="${MONITOR_LOG_MAX_SIZE:-10485760}"   # 10 MiB default
 LOG_MAX_ARCHIVES="${MONITOR_LOG_MAX_ARCHIVES:-5}"
@@ -58,9 +59,11 @@ is_backup_or_restore_running() {
   return 1
 }
 
-# Load environment from .env
+# Load environment from .env (and .env-credentials, for consistency — the
+# keys used by this script live in .env, but the order is preserved so any
+# future overlap with .env-credentials is predictable).
 load_env() {
-  if [[ ! -f "$ENV_FILE" ]]; then
+  if [[ ! -f "$ENV_FILE" && ! -f "$CREDENTIALS_FILE" ]]; then
     log "ERROR: .env file not found. Run: cp .env.example .env"
     exit 1
   fi
@@ -68,7 +71,10 @@ load_env() {
   set -a
   # shellcheck source=/dev/null
   # Remove UTF-8 BOM if present (common on Windows)
-  source <(sed '1s/^\xEF\xBB\xBF//' "$ENV_FILE")
+  for source_file in "$ENV_FILE" "$CREDENTIALS_FILE"; do
+    [[ -f "$source_file" ]] || continue
+    source <(sed '1s/^\xEF\xBB\xBF//' "$source_file")
+  done
   set +a
 }
 

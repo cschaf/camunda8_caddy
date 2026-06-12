@@ -1,14 +1,30 @@
 #Requires -Version 7
+<#
+.SYNOPSIS
+    Generates .env-credentials with strong random secrets.
+
+.DESCRIPTION
+    Reads non-credential defaults (HOST, STAGE, *_CLIENT_ID, etc.) from the
+    committed .env so the generated file matches the active configuration.
+    .env is NOT modified by this script — it is part of the repo and is
+    expected to already exist when generate-secrets is run.
+#>
 param([switch]$Force)
 
 $ErrorActionPreference = 'Stop'
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$EnvFile   = Join-Path $ScriptDir '..' '.env'
-$EnvExample = Join-Path $ScriptDir '..' '.env.example'
+$EnvFile         = Join-Path $ScriptDir '..' '.env'
+$CredentialsFile = Join-Path $ScriptDir '..' '.env-credentials'
 
-if ((Test-Path $EnvFile) -and -not $Force) {
-    Write-Error ".env already exists. Use -Force to overwrite."
+if ((Test-Path $CredentialsFile) -and -not $Force) {
+    Write-Error ".env-credentials already exists. Use -Force to overwrite."
+    exit 1
+}
+
+if (-not (Test-Path $EnvFile)) {
+    Write-Error ".env not found. It is part of the repo, so this should not happen."
+    Write-Error "Re-clone the repository, or restore .env from your last commit."
     exit 1
 }
 
@@ -17,67 +33,30 @@ function gen {
     return ([System.BitConverter]::ToString($bytes)).Replace('-', '').ToLower()
 }
 
+# Read a single KEY=VALUE line from .env (non-credential source). Skips
+# comments and blank lines. Returns '' if not found.
 function Get-EnvVal([string]$Key) {
-    $line = Get-Content $EnvExample | Where-Object { $_ -match "^$Key=" } | Select-Object -First 1
+    $line = Get-Content $EnvFile | Where-Object { $_ -match "^$Key=" } | Select-Object -First 1
     if (-not $line) { return '' }
     return $line.Substring($Key.Length + 1)
 }
 
-$renovateLine = (Get-Content $EnvExample | Where-Object { $_ -match '^# renovate:' } | Select-Object -First 1) ?? ''
-
-# Pre-generate secrets that are needed both in .env and for file generation
-$elasticPassword = gen
-$postgresPassword = gen
-$camundaDbPassword = gen
-$webmodelerDbPassword = gen
-$keycloakAdminPassword = gen
-$webmodelerPusherKey = gen
-$webmodelerPusherSecret = gen
-$demoUserPassword = gen
+# Pre-generate secrets that are written to .env-credentials
+$elasticPassword         = gen
+$postgresPassword        = gen
+$camundaDbPassword       = gen
+$webmodelerDbPassword    = gen
+$keycloakAdminPassword   = gen
+$webmodelerPusherKey     = gen
+$webmodelerPusherSecret  = gen
+$demoUserPassword        = gen
 
 $content = @"
-## Image versions ##
-$renovateLine
-CAMUNDA_VERSION=$(Get-EnvVal 'CAMUNDA_VERSION')
-CAMUNDA_CONNECTORS_VERSION=$(Get-EnvVal 'CAMUNDA_CONNECTORS_VERSION')
-CAMUNDA_IDENTITY_VERSION=$(Get-EnvVal 'CAMUNDA_IDENTITY_VERSION')
-CAMUNDA_OPERATE_VERSION=$(Get-EnvVal 'CAMUNDA_OPERATE_VERSION')
-CAMUNDA_OPTIMIZE_VERSION=$(Get-EnvVal 'CAMUNDA_OPTIMIZE_VERSION')
-CAMUNDA_TASKLIST_VERSION=$(Get-EnvVal 'CAMUNDA_TASKLIST_VERSION')
-CAMUNDA_WEB_MODELER_VERSION=$(Get-EnvVal 'CAMUNDA_WEB_MODELER_VERSION')
-CAMUNDA_CONSOLE_VERSION=$(Get-EnvVal 'CAMUNDA_CONSOLE_VERSION')
-ELASTIC_VERSION=$(Get-EnvVal 'ELASTIC_VERSION')
-KEYCLOAK_SERVER_VERSION=$(Get-EnvVal 'KEYCLOAK_SERVER_VERSION')
-MAILPIT_VERSION=$(Get-EnvVal 'MAILPIT_VERSION')
-POSTGRES_VERSION=$(Get-EnvVal 'POSTGRES_VERSION')
-
-## Network Configuration ##
-HOST=$(Get-EnvVal 'HOST')
-KEYCLOAK_HOST=$(Get-EnvVal 'KEYCLOAK_HOST')
-
-## Stage / Environment Label ##
-STAGE=$(Get-EnvVal 'STAGE')
-
-## Dashboard Banner ##
-BANNER_DARKMODE=$(Get-EnvVal 'BANNER_DARKMODE')
-BANNER_LIGHTMODE=$(Get-EnvVal 'BANNER_LIGHTMODE')
-
-## Camunda License (Optional for non-production, required for production use) ##
-# Keep the real key only in .env. For multi-line keys, use single quotes so
-# docker compose and the bash start script keep the value as one variable.
-# CAMUNDA_LICENSE_KEY='--------------- BEGIN CAMUNDA LICENSE KEY ---------------
-# ... complete key from Camunda ...
-# --------------- END CAMUNDA LICENSE KEY ---------------'
-
-## Backup Configuration ##
-BACKUP_STOP_TIMEOUT=$(Get-EnvVal 'BACKUP_STOP_TIMEOUT')
-ES_HOST=$(Get-EnvVal 'ES_HOST')
-ES_PORT=$(Get-EnvVal 'ES_PORT')
-RESTORE_HEALTH_TIMEOUT=$(Get-EnvVal 'RESTORE_HEALTH_TIMEOUT')
-
-## TLS Certificates (Optional) ##
-FULLCHAIN_PEM=$(Get-EnvVal 'FULLCHAIN_PEM')
-PRIVATEKEY_PEM=$(Get-EnvVal 'PRIVATEKEY_PEM')
+## Camunda Private Registry (Optional) ##
+# Used by scripts/registry-info.{ps1,sh} to query Camunda's Harbor registry.
+# Credentials are issued by Camunda to enterprise customers (robot accounts).
+CAMUNDA_REGISTRY_USERNAME=$(Get-EnvVal 'CAMUNDA_REGISTRY_USERNAME')
+CAMUNDA_REGISTRY_PASSWORD=$(gen)
 
 ## OIDC Client Configuration ##
 ORCHESTRATION_CLIENT_ID=$(Get-EnvVal 'ORCHESTRATION_CLIENT_ID')
@@ -117,35 +96,30 @@ WEBMODELER_PUSHER_APP_ID=$(Get-EnvVal 'WEBMODELER_PUSHER_APP_ID')
 WEBMODELER_PUSHER_KEY=$webmodelerPusherKey
 WEBMODELER_PUSHER_SECRET=$webmodelerPusherSecret
 
-WEBMODELER_MAIL_FROM_ADDRESS=$(Get-EnvVal 'WEBMODELER_MAIL_FROM_ADDRESS')
-
 ## Demo User ##
 DEMO_USER_PASSWORD=$demoUserPassword
-
-## Feature Flags ##
-RESOURCE_AUTHORIZATIONS_ENABLED=$(Get-EnvVal 'RESOURCE_AUTHORIZATIONS_ENABLED')
 "@
 
-[System.IO.File]::WriteAllText($EnvFile, $content, [System.Text.Encoding]::UTF8)
+[System.IO.File]::WriteAllText($CredentialsFile, $content, [System.Text.Encoding]::UTF8)
 
 # Restrict permissions on Windows (owner read/write only)
-$acl = Get-Acl $EnvFile
+$acl = Get-Acl $CredentialsFile
 $acl.SetAccessRuleProtection($true, $false)
 $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(
     [System.Security.Principal.WindowsIdentity]::GetCurrent().Name,
     'Read,Write', 'Allow'
 )
 $acl.AddAccessRule($rule)
-Set-Acl $EnvFile $acl
+Set-Acl $CredentialsFile $acl
 
-Write-Host "Generated .env with strong random secrets."
-Write-Host ""
-Write-Host "Generated secrets for:"
-Write-Host "  ORCHESTRATION_CLIENT_SECRET, CONNECTORS_CLIENT_SECRET, CONSOLE_CLIENT_SECRET"
-Write-Host "  OPTIMIZE_CLIENT_SECRET, CAMUNDA_IDENTITY_CLIENT_SECRET"
-Write-Host "  ELASTIC_PASSWORD"
-Write-Host "  POSTGRES_PASSWORD, WEBMODELER_DB_PASSWORD, CAMUNDA_DB_PASSWORD"
-Write-Host "  KEYCLOAK_ADMIN_PASSWORD, WEBMODELER_PUSHER_KEY, WEBMODELER_PUSHER_SECRET"
-Write-Host "  DEMO_USER_PASSWORD"
-Write-Host ""
-Write-Host "Edit HOST in .env before starting the stack if needed."
+Write-Host 'Generated .env-credentials with strong random secrets.'
+Write-Host ''
+Write-Host 'Generated secrets for:'
+Write-Host '  ORCHESTRATION_CLIENT_SECRET, CONNECTORS_CLIENT_SECRET, CONSOLE_CLIENT_SECRET'
+Write-Host '  OPTIMIZE_CLIENT_SECRET, CAMUNDA_IDENTITY_CLIENT_SECRET'
+Write-Host '  ELASTIC_PASSWORD'
+Write-Host '  POSTGRES_PASSWORD, WEBMODELER_DB_PASSWORD, CAMUNDA_DB_PASSWORD'
+Write-Host '  KEYCLOAK_ADMIN_PASSWORD, WEBMODELER_PUSHER_KEY, WEBMODELER_PUSHER_SECRET'
+Write-Host '  DEMO_USER_PASSWORD'
+Write-Host ''
+Write-Host 'Edit HOST in .env before starting the stack if needed.'

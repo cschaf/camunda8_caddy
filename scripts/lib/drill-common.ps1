@@ -20,8 +20,19 @@ function Generate-DrillEnv {
         exit 1
     }
 
+    $sourceCredentials = Join-Path $ProjectDir ".env-credentials"
+    if (-not (Test-Path $sourceCredentials)) {
+        Log-Drill "ERROR: .env-credentials not found at $sourceCredentials"
+        exit 1
+    }
+
     New-Item -ItemType Directory -Path $DrillDir -Force | Out-Null
     Copy-Item -Path $sourceEnv -Destination $DrillEnv -Force
+
+    # Append the credentials block so the drill stack has its own copy of
+    # the same secrets. (The drill is a self-contained isolated stack and
+    # cannot rely on .env-credentials from the parent project.)
+    Get-Content $sourceCredentials | Add-Content -Path $DrillEnv
 
     $content = Get-Content $DrillEnv
     $content = $content -replace '^HOST=.*', "HOST=$DrillHost"

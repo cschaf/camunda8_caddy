@@ -27,7 +27,14 @@ For end user usage, please check the official documentation of [Camunda 8 Self-M
 
 Complete these steps in order after a fresh clone.
 
-### 1. Generate environment file with strong random secrets
+### 1. Configuration and credentials
+
+The project ships two environment files:
+
+- **`.env`** — committed, contains non-credential configuration (image versions, `HOST`, `STAGE`, banner paths, backup/TLS paths, registry URL, mail address, feature flags). All operators start from the same defaults.
+- **`.env-credentials`** — **gitignored**, contains every secret (OIDC client secrets, database passwords, Elasticsearch password, Keycloak admin, Pusher keys, registry credentials, Camunda license key). Generate this on the target host.
+
+#### Generate `.env-credentials` with strong random secrets (recommended)
 
 ```bash
 # Linux / macOS
@@ -37,15 +44,20 @@ bash scripts/generate-secrets.sh
 pwsh -File scripts/generate-secrets.ps1
 ```
 
-This creates `.env` with cryptographically random secrets (48-character hex strings via `openssl rand -hex 24` / `System.Security.Cryptography.RandomNumberGenerator`). The file is given restricted permissions (`chmod 600` on Linux/macOS).
+This creates `.env-credentials` with cryptographically random secrets (48-character hex strings via `openssl rand -hex 24` / `System.Security.Cryptography.RandomNumberGenerator`). The file is given restricted permissions (`chmod 600` on Linux/macOS).
 
-> **Always use `--force` / `-Force` with caution** — it overwrites an existing `.env`, invalidating all current secrets. Not recommended on an already-running deployment.
+> **Always use `--force` / `-Force` with caution** — it overwrites an existing `.env-credentials`, invalidating all current secrets. Not recommended on an already-running deployment.
 
-**Local demo fallback:** If you need weak demo secrets for a quick local demo (never use this in any environment where security matters), copy `.env.example` instead:
+#### Local demo fallback (never use in production)
+
+If you need weak demo secrets for a quick local demo, copy both example files:
+
 ```bash
 cp .env.example .env
+cp .env-credentials.example .env-credentials
 ```
-The `.env.example` file contains known weak values (`admin`, `demo`, `demo-connectors-secret`, etc.) and is clearly marked unsafe for production.
+
+The example files contain known weak values (`admin`, `demo`, `demo-connectors-secret`, etc.) and are clearly marked unsafe for production.
 
 > **Use lowercase for `HOST`:** Browsers normalize domain names to lowercase in HTTP Host headers, and Keycloak validates redirect URIs with case-sensitive string matching. If `HOST` contains uppercase letters (e.g. `Camunda.Dev.Local`), services that derive their `redirect_uri` from the incoming Host header will produce a lowercase URI that does not match the uppercase URI registered in Keycloak, causing "Invalid parameter: redirect_uri" errors. Always set `HOST` to lowercase (e.g. `camunda.dev.local`).
 >
@@ -53,7 +65,7 @@ The `.env.example` file contains known weak values (`admin`, `demo`, `demo-conne
 
 ### Optional: Add a Camunda Self-Managed license
 
-For production use, add the Camunda license key to `.env`. The key is injected into the Camunda containers as `CAMUNDA_LICENSE_KEY`; `.env` is gitignored and must not be committed.
+For production use, add the Camunda license key to `.env-credentials`. The key is injected into the Camunda containers as `CAMUNDA_LICENSE_KEY`; the file is gitignored and must not be committed.
 
 ```env
 CAMUNDA_LICENSE_KEY='--------------- BEGIN CAMUNDA LICENSE KEY ---------------
