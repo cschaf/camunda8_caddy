@@ -188,7 +188,7 @@ bash scripts/start.sh
 pwsh -File scripts/start.ps1
 ```
 
-> **Note:** PowerShell 7+ required on Windows. For PS 5.1, use `docker compose -f docker-compose.yaml -f stages/$env:STAGE.yaml up -d` directly.
+> **Note:** PowerShell 7+ required on Windows. For Windows PowerShell 5.1, use Git Bash and run `bash scripts/start.sh`.
 
 Wait for all services to be healthy:
 
@@ -198,7 +198,7 @@ docker compose ps
 
 > **Expect a slow first start (5–10 minutes).** The very first `up` runs a one-time bootstrap regardless of stage: Keycloak imports the realm, Identity provisions all OIDC clients in Keycloak, Postgres and web-modeler-db run schema migrations, and Elasticsearch creates index templates and ILM policies. During this phase `keycloak`, `identity`, and `web-modeler-restapi` are CPU-heavy and the UIs feel unresponsive. Subsequent starts reuse the persisted named volumes (`postgres`, `keycloak-theme`, `elastic`, `postgres-web`, …) and come up in 1–2 minutes. If a *later* start ever feels slow again, a volume was likely wiped (e.g. `docker compose down -v`) and you are paying the bootstrap cost a second time — check `docker volume ls` before assuming a config issue.
 >
-> **Always use the start scripts — not bare `docker compose up -d`.** The scripts read `STAGE` from `.env` and overlay `stages/<stage>.yaml` on top of `docker-compose.yaml`. Plain `docker compose up -d` loads only the base file, which is sized for `prod`. With `STAGE=dev` or `STAGE=test` you must use the wrapper, otherwise the JVM heap settings from the stage overlay are not applied and Java services get the production heap (e.g. `-Xms4500m` for orchestration, `-Xms4g` for Elasticsearch) inside smaller container memory limits — the kernel OOM-killer terminates them on startup (exit 137). At `STAGE=prod` the base and the overlay match, so bare `docker compose up -d` works but bypasses `STAGE` validation; using the wrapper consistently avoids the trap.
+> **Always use the start scripts — not bare `docker compose up -d`.** The scripts pass both `.env` and `.env-credentials` to Compose for interpolation, read `STAGE` from `.env`, and overlay `stages/<stage>.yaml` on top of `docker-compose.yaml`. Plain `docker compose up -d` does not load `.env-credentials` for `${VAR}` interpolation and loads only the base file, which is sized for `prod`. With `STAGE=dev` or `STAGE=test` you must use the wrapper, otherwise the JVM heap settings from the stage overlay are not applied and Java services get the production heap (e.g. `-Xms4500m` for orchestration, `-Xms4g` for Elasticsearch) inside smaller container memory limits — the kernel OOM-killer terminates them on startup (exit 137).
 
 The stack also includes an `autoheal` sidecar that watches labeled containers and restarts them when Docker marks them as `unhealthy`. It complements `restart: unless-stopped`, which covers unexpected process exits. `autoheal` does not restart containers that were stopped intentionally with `docker stop` or removed with `docker compose down`.
 
@@ -246,10 +246,14 @@ STAGE=DEV
 DISPLAY_STAGE=TEST
 ```
 
-If `DISPLAY_STAGE` is unset, both surfaces fall back to `STAGE` (existing setups are unaffected). Casing of `DISPLAY_STAGE` is preserved verbatim, so `DISPLAY_STAGE=Staging-A` shows up exactly as `Staging-A`. After changing `DISPLAY_STAGE`, rerun the start script and restart the affected containers:
+If `DISPLAY_STAGE` is unset, both surfaces fall back to `STAGE` (existing setups are unaffected). Casing of `DISPLAY_STAGE` is preserved verbatim, so `DISPLAY_STAGE=Staging-A` shows up exactly as `Staging-A`. After changing `DISPLAY_STAGE`, rerun the stage-aware start script:
 
 ```bash
-docker compose up -d reverse-proxy console
+# Linux / macOS
+bash scripts/start.sh
+
+# Windows PowerShell
+pwsh -File scripts/start.ps1
 ```
 
 Start the stack with the stage-aware wrapper:
@@ -275,7 +279,7 @@ pwsh -File scripts/stop.ps1
 Internally, the start scripts run Docker Compose with the base file and the selected stage override, for example:
 
 ```bash
-docker compose -f docker-compose.yaml -f stages/dev.yaml up -d
+docker compose --env-file .env --env-file .env-credentials -f docker-compose.yaml -f stages/dev.yaml up -d
 ```
 
 To run the stack guard from cron on Linux every 30 minutes, add an entry similar to:
@@ -318,7 +322,7 @@ The script stops the broken `optimize` service, runs the upgrade container that 
 
 Every patch bump of Optimize will require this step, so the script belongs in the standard post-update workflow alongside `docker compose pull` and a fresh backup.
 
-> **Pre-flight:** `scripts/start.sh` and `scripts/start.ps1` run the same upgrade one-shot automatically after pulling the new image and waiting for Elasticsearch to become healthy, so a normal `start` of the stack will not hit this error. The script above is only needed as a manual fallback — for example, if the pre-flight is bypassed (someone runs `docker compose up -d` directly) or if the pre-flight itself fails.
+> **Pre-flight:** `scripts/start.sh` and `scripts/start.ps1` run the same upgrade one-shot automatically after pulling the new image and waiting for Elasticsearch to become healthy, so a normal `start` of the stack will not hit this error. The script above is only needed as a manual fallback — for example, if the pre-flight is bypassed or if the pre-flight itself fails.
 
 > **Future-proof across 8.x:** The pre-flight and the manual `optimize-upgrade` script are not pinned to any specific Optimize version. Both invoke `/optimize/upgrade/upgrade.sh --skip-warning` *inside* the freshly-pulled Optimize image, so the next start after a `CAMUNDA_OPTIMIZE_VERSION` bump automatically runs the new image's bundled upgrade logic. No edits to `start.sh` / `start.ps1` or to the recovery script are required for future 8.x → 8.x patch or minor releases. The pre-flight only needs re-checking if Camunda renames the upgrade path inside the image or renames the `optimize` service in `docker-compose.yaml` (both would surface as a recurring `Optimize schema pre-flight failed` warning). For an 8 → 9 major jump, follow the official Camunda migration guide on top of the pre-flight.
 
@@ -331,8 +335,8 @@ All configuration is driven by the `HOST` variable in `.env`. To switch domain:
 1. Edit `.env` and set `HOST=your-new-domain`
 2. If you want trusted TLS, place certificate files in `certs/` and set `FULLCHAIN_PEM`/`PRIVATEKEY_PEM` in `.env` (see [Custom TLS certificates](#custom-tls-certificates-optional) above)
 3. Run `scripts/setup-host.sh` (Linux/macOS) or `pwsh -File scripts/setup-host.ps1` **as Administrator** (Windows) to update Caddyfile and hosts file
-4. Start/restart the cluster with `bash scripts/start.sh` (Linux/macOS) or `pwsh -File scripts/start.ps1` (Windows) — or `docker compose restart reverse-proxy` if already running
-5. If Keycloak data persists, the redirect URIs from `.identity/application.yaml` are already correct. Only if you see "Invalid redirect_uri" errors after hostname changes, wipe Keycloak's database volume and restart (`docker compose down -v keycloak-theme postgres && bash scripts/start.sh`).
+4. Start/restart the cluster with `bash scripts/start.sh` (Linux/macOS) or `pwsh -File scripts/start.ps1` (Windows)
+5. If Keycloak data persists, the redirect URIs from `.identity/application.yaml` are already correct. Only if you see "Invalid redirect_uri" errors after hostname changes, stop the stack, remove the Keycloak/Identity database volumes for this Compose project, and rerun the start script.
 
 ### Accessing from other machines on the network
 

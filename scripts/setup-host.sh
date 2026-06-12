@@ -183,4 +183,4 @@ _write_hosts
 echo "Updated hosts file (replaced *.localhost -> *.$HOST)"
 
 echo ""
-echo "Done! Restart Caddy or run: docker compose restart reverse-proxy"
+echo "Done! Restart the stack with: bash scripts/start.sh"

@@ -24,8 +24,28 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+ENV_FILE="$PROJECT_DIR/.env"
+CREDENTIALS_FILE="$PROJECT_DIR/.env-credentials"
 
 cd "$PROJECT_DIR"
+
+if [[ ! -f "$ENV_FILE" ]]; then
+  echo "ERROR: .env file not found. It is part of the repo, so this should not happen." >&2
+  exit 1
+fi
+
+if [[ ! -f "$CREDENTIALS_FILE" ]]; then
+  echo "ERROR: .env-credentials file not found." >&2
+  echo "       Run: bash scripts/generate-secrets.sh" >&2
+  echo "       Or:  cp .env-credentials.example .env-credentials" >&2
+  exit 1
+fi
+
+COMPOSE_BASE=(
+  docker compose
+  --env-file "$ENV_FILE"
+  --env-file "$CREDENTIALS_FILE"
+)
 
 # Disable Git Bash on Windows path translation. The Optimize upgrade script
 # lives at /optimize/upgrade/upgrade.sh inside the container; the leading
@@ -35,7 +55,7 @@ export MSYS_NO_PATHCONV=1
 
 # Show what is about to happen.
 echo ">> Stopping the (currently broken) optimize service..."
-docker compose stop optimize
+"${COMPOSE_BASE[@]}" stop optimize
 
 echo
 echo ">> Running Camunda Optimize schema upgrade one-shot..."
@@ -50,21 +70,21 @@ echo
 # The //optimize/upgrade/upgrade.sh path is the container-internal Linux
 # path; the leading double-slash is the Git Bash MSYS path translation
 # workaround documented above.
-docker compose run --rm --no-deps -T \
+"${COMPOSE_BASE[@]}" run --rm --no-deps -T \
   --entrypoint bash \
   optimize \
   //optimize/upgrade/upgrade.sh --skip-warning
 
 echo
 echo ">> Upgrade finished. Starting the regular optimize service..."
-docker compose up -d optimize
+"${COMPOSE_BASE[@]}" up -d optimize
 
 echo
 echo ">> Waiting for optimize to become healthy (timeout 120s)..."
 ATTEMPTS=0
 MAX_ATTEMPTS=24
 until [ "$ATTEMPTS" -ge "$MAX_ATTEMPTS" ]; do
-  STATUS=$(docker compose ps --format '{{.Status}}' optimize 2>/dev/null || true)
+  STATUS=$("${COMPOSE_BASE[@]}" ps --format '{{.Status}}' optimize 2>/dev/null || true)
   if echo "$STATUS" | grep -q "(healthy)"; then
     echo "   optimize is healthy: $STATUS"
     exit 0

@@ -41,6 +41,28 @@ function Get-EnvVal([string]$Key) {
     return $line.Substring($Key.Length + 1)
 }
 
+function Get-DefaultVal([string]$Key) {
+    switch ($Key) {
+        'ORCHESTRATION_CLIENT_ID' { return 'orchestration' }
+        'CONNECTORS_CLIENT_ID' { return 'connectors' }
+        'POSTGRES_DB' { return 'bitnami_keycloak' }
+        'POSTGRES_USER' { return 'bn_keycloak' }
+        'CAMUNDA_DB_NAME' { return 'camunda' }
+        'CAMUNDA_DB_USER' { return 'camunda' }
+        'WEBMODELER_DB_NAME' { return 'web-modeler-db' }
+        'WEBMODELER_DB_USER' { return 'web-modeler-db-user' }
+        'KEYCLOAK_ADMIN_USER' { return 'admin' }
+        'WEBMODELER_PUSHER_APP_ID' { return 'web-modeler-app' }
+        default { return '' }
+    }
+}
+
+function Get-EnvValOrDefault([string]$Key) {
+    $value = Get-EnvVal $Key
+    if ($value) { return $value }
+    return Get-DefaultVal $Key
+}
+
 # Pre-generate secrets that are written to .env-credentials
 $elasticPassword         = gen
 $postgresPassword        = gen
@@ -59,10 +81,10 @@ CAMUNDA_REGISTRY_USERNAME=$(Get-EnvVal 'CAMUNDA_REGISTRY_USERNAME')
 CAMUNDA_REGISTRY_PASSWORD=$(gen)
 
 ## OIDC Client Configuration ##
-ORCHESTRATION_CLIENT_ID=$(Get-EnvVal 'ORCHESTRATION_CLIENT_ID')
+ORCHESTRATION_CLIENT_ID=$(Get-EnvValOrDefault 'ORCHESTRATION_CLIENT_ID')
 ORCHESTRATION_CLIENT_SECRET=$(gen)
 
-CONNECTORS_CLIENT_ID=$(Get-EnvVal 'CONNECTORS_CLIENT_ID')
+CONNECTORS_CLIENT_ID=$(Get-EnvValOrDefault 'CONNECTORS_CLIENT_ID')
 CONNECTORS_CLIENT_SECRET=$(gen)
 
 CONSOLE_CLIENT_SECRET=$(gen)
@@ -75,24 +97,24 @@ CAMUNDA_IDENTITY_CLIENT_SECRET=$(gen)
 ELASTIC_PASSWORD=$elasticPassword
 
 ## Database Configuration ##
-POSTGRES_DB=$(Get-EnvVal 'POSTGRES_DB')
-POSTGRES_USER=$(Get-EnvVal 'POSTGRES_USER')
+POSTGRES_DB=$(Get-EnvValOrDefault 'POSTGRES_DB')
+POSTGRES_USER=$(Get-EnvValOrDefault 'POSTGRES_USER')
 POSTGRES_PASSWORD=$postgresPassword
 
-CAMUNDA_DB_NAME=$(Get-EnvVal 'CAMUNDA_DB_NAME')
-CAMUNDA_DB_USER=$(Get-EnvVal 'CAMUNDA_DB_USER')
+CAMUNDA_DB_NAME=$(Get-EnvValOrDefault 'CAMUNDA_DB_NAME')
+CAMUNDA_DB_USER=$(Get-EnvValOrDefault 'CAMUNDA_DB_USER')
 CAMUNDA_DB_PASSWORD=$camundaDbPassword
 
-WEBMODELER_DB_NAME=$(Get-EnvVal 'WEBMODELER_DB_NAME')
-WEBMODELER_DB_USER=$(Get-EnvVal 'WEBMODELER_DB_USER')
+WEBMODELER_DB_NAME=$(Get-EnvValOrDefault 'WEBMODELER_DB_NAME')
+WEBMODELER_DB_USER=$(Get-EnvValOrDefault 'WEBMODELER_DB_USER')
 WEBMODELER_DB_PASSWORD=$webmodelerDbPassword
 
 ## Keycloak Admin Credentials ##
-KEYCLOAK_ADMIN_USER=$(Get-EnvVal 'KEYCLOAK_ADMIN_USER')
+KEYCLOAK_ADMIN_USER=$(Get-EnvValOrDefault 'KEYCLOAK_ADMIN_USER')
 KEYCLOAK_ADMIN_PASSWORD=$keycloakAdminPassword
 
 ## Web Modeler Configuration ##
-WEBMODELER_PUSHER_APP_ID=$(Get-EnvVal 'WEBMODELER_PUSHER_APP_ID')
+WEBMODELER_PUSHER_APP_ID=$(Get-EnvValOrDefault 'WEBMODELER_PUSHER_APP_ID')
 WEBMODELER_PUSHER_KEY=$webmodelerPusherKey
 WEBMODELER_PUSHER_SECRET=$webmodelerPusherSecret
 

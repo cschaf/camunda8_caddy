@@ -98,4 +98,4 @@ $hostsLines += $hostsBlock
 Set-Content -Path $HostsFile -Value $hostsLines
 Write-Host "Updated hosts file (replaced *.localhost -> *.$EnvHost)"
 
-Write-Host "`nDone! Restart Caddy or run: docker compose restart reverse-proxy"
+Write-Host "`nDone! Restart the stack with: pwsh -File scripts/start.ps1"

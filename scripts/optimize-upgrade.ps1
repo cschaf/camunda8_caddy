@@ -30,15 +30,36 @@ $ErrorActionPreference = 'Stop'
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectDir = Resolve-Path (Join-Path $ScriptDir '..')
+$EnvFile = Join-Path $ProjectDir '.env'
+$CredentialsFile = Join-Path $ProjectDir '.env-credentials'
 
 Set-Location $ProjectDir
+
+if (-not (Test-Path $EnvFile)) {
+    Write-Error ".env file not found. It is part of the repo, so this should not happen."
+    exit 1
+}
+
+if (-not (Test-Path $CredentialsFile)) {
+    Write-Error ".env-credentials file not found."
+    Write-Error "Run one of:"
+    Write-Error "  pwsh -File scripts/generate-secrets.ps1"
+    Write-Error "  Copy-Item .env-credentials.example .env-credentials"
+    exit 1
+}
+
+$ComposeArgs = @(
+    'compose',
+    '--env-file', $EnvFile,
+    '--env-file', $CredentialsFile
+)
 
 # The Optimize upgrade script lives at /optimize/upgrade/upgrade.sh inside
 # the container. PowerShell on Windows does not rewrite leading slashes, so
 # a single forward-slash path is enough.
 
 Write-Host '>> Stopping the (currently broken) optimize service...'
-docker compose stop optimize
+docker @ComposeArgs stop optimize
 
 Write-Host ''
 Write-Host '>> Running Camunda Optimize schema upgrade one-shot...'
@@ -49,21 +70,21 @@ Write-Host ''
 # --no-deps  : don't start dependencies (we just stopped optimize, ES is up).
 # --rm       : remove the one-shot container when it exits.
 # -T         : disable pseudo-TTY so output is plain log lines.
-& docker compose run --rm --no-deps -T `
+docker @ComposeArgs run --rm --no-deps -T `
   --entrypoint bash `
   optimize `
   /optimize/upgrade/upgrade.sh --skip-warning
 
 Write-Host ''
 Write-Host '>> Upgrade finished. Starting the regular optimize service...'
-docker compose up -d optimize
+docker @ComposeArgs up -d optimize
 
 Write-Host ''
 Write-Host '>> Waiting for optimize to become healthy (timeout 120s)...'
 $Attempts = 0
 $MaxAttempts = 24
 while ($Attempts -lt $MaxAttempts) {
-    $Status = (docker compose ps --format '{{.Status}}' optimize 2>$null) -as [string]
+    $Status = (docker @ComposeArgs ps --format '{{.Status}}' optimize 2>$null) -as [string]
     if ($Status -and $Status -match '\(healthy\)') {
         Write-Host "   optimize is healthy: $Status"
         exit 0

@@ -262,7 +262,7 @@ Be careful with `/MIR`, `--delete`, and any copy-over-existing operation. They c
 6. Pull the new images:
 
 ```powershell
-docker compose -f docker-compose.yaml -f stages/prod.yaml pull
+docker compose --env-file .env --env-file .env-credentials -f docker-compose.yaml -f stages/prod.yaml pull
 ```
 
 7. Start the stack:
@@ -274,7 +274,7 @@ docker compose -f docker-compose.yaml -f stages/prod.yaml pull
 8. Check container health:
 
 ```powershell
-docker compose -f docker-compose.yaml -f stages/prod.yaml ps
+docker compose --env-file .env --env-file .env-credentials -f docker-compose.yaml -f stages/prod.yaml ps
 ```
 
 9. Check logs for migration errors:
