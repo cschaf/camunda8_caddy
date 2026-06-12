@@ -104,19 +104,26 @@ $ComposeFile = Join-Path $ProjectDir 'docker-compose.yaml'
 $StageFile   = Join-Path $ProjectDir "stages/$StageValue.yaml"
 # Pass both .env (committed, non-secret config) and .env-credentials (gitignored,
 # secrets) so ${VAR} interpolation in docker-compose.yaml works for both.
-$ComposeBase = @('docker', 'compose',
+# NOTE: do NOT prepend 'docker' to this array. PowerShell's `&` call operator
+# on a native executable joins array elements into a single command string,
+# so `& $ComposeBase ...` becomes a single command name. Use `docker @ComposeArgs`
+# (splat) instead — that is the pattern used by monitor.ps1 / ensure-stack.ps1
+# and is the one PowerShell splits correctly.
+$ComposeArgs = @(
+    'compose',
     '--env-file', $EnvFile,
     '--env-file', $CredentialsFile,
     '-f', $ComposeFile,
-    '-f', $StageFile)
-& $ComposeBase up -d elasticsearch | Out-Null
+    '-f', $StageFile
+)
+docker @ComposeArgs up -d elasticsearch | Out-Null
 
 Write-Host '>> Waiting for Elasticsearch to become healthy (timeout 300s)...'
 $Attempts = 0
 $MaxAttempts = 60
 $EsHealthy = $false
 while ($Attempts -lt $MaxAttempts) {
-    $Status = (& $ComposeBase ps --format '{{.Status}}' elasticsearch 2>$null) -as [string]
+    $Status = (docker @ComposeArgs ps --format '{{.Status}}' elasticsearch 2>$null) -as [string]
     if ($Status -and $Status -match '\(healthy\)') {
         $EsHealthy = $true
         break
@@ -130,7 +137,7 @@ if (-not $EsHealthy) {
     Write-Warning 'If optimize does not come up, run: pwsh -File scripts\optimize-upgrade.ps1'
 } else {
     Write-Host '>> Pre-flight: Optimize schema check (idempotent)...'
-    & $ComposeBase run --rm --no-deps -T `
+    docker @ComposeArgs run --rm --no-deps -T `
         --entrypoint bash optimize `
         /optimize/upgrade/upgrade.sh --skip-warning
     if ($LASTEXITCODE -ne 0) {
@@ -140,4 +147,4 @@ if (-not $EsHealthy) {
 }
 
 Write-Host "Starting Camunda stack with STAGE=$StageValue"
-& $ComposeBase up -d
+docker @ComposeArgs up -d
