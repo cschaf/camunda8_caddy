@@ -1,0 +1,159 @@
+stages:
+  # Alle Jobs liegen in derselben Stage. Die Reihenfolge wird durch die Branch-Regeln
+  # und die Runner-Tags bestimmt, nicht durch mehrere Pipeline-Stages.
+  - deploy
+
+variables:
+  # Zielverzeichnis auf jedem Server. Die Shell Runner laufen direkt auf dem
+  # jeweiligen Zielserver, deshalb ist kein SSH-Ziel notwendig.
+  DEPLOY_PATH: "/opt/camunda"
+
+deploy-sandbox:
+  stage: deploy
+  tags:
+    # Dieser Job läuft nur auf dem Sandbox-Server, weil nur dort dieser Runner-Tag
+    # registriert sein sollte.
+    - camunda-runner-sandbox
+  # Verhindert, dass zwei Sandbox-Deployments parallel in dasselbe Verzeichnis
+  # synchronisieren.
+  resource_group: sandbox
+  environment:
+    name: sandbox
+  script:
+    # Abbruch, wenn das Zielverzeichnis oder die serverlokalen Env-Dateien fehlen.
+    # Diese Dateien werden absichtlich nicht aus dem Repository überschrieben.
+    - sudo test -d "$DEPLOY_PATH"
+    - sudo test -f "$DEPLOY_PATH/.env"
+    - sudo test -f "$DEPLOY_PATH/.env-credentials"
+    # Sandbox wird aktiv neu gestartet. "|| true" verhindert, dass ein bereits
+    # gestoppter oder noch nicht initialisierter Stack das Deployment blockiert.
+    - sudo bash "$DEPLOY_PATH/scripts/stop.sh" || true
+    - |
+      # --delete entfernt Dateien auf dem Server, die nicht mehr im Repo-Paket sind.
+      # Die Excludes darunter schützen lokale Konfiguration, Secrets, Zertifikate,
+      # Backups und generierte Runtime-Dateien vor Löschen oder Überschreiben.
+      sudo rsync -av --delete --delete-delay \
+        --exclude='.env' \
+        --exclude='.env-credentials' \
+        --exclude='connector-secrets.txt' \
+        --exclude='Caddyfile' \
+        --exclude='certs/' \
+        --exclude='backups/' \
+        --exclude='.console/application.yaml' \
+        --exclude='.optimize/environment-config.yaml' \
+        --exclude='monitor.log' \
+        --exclude='monitor.log.*' \
+        ./ "$DEPLOY_PATH/"
+    # Dateien nach dem Sync dem Betriebsuser übergeben.
+    - sudo chown -R camunda-admin:camunda-admin "$DEPLOY_PATH"
+    # Optimize liest diese gemountete Config im Container als User "camunda".
+    # Sie muss daher fuer andere Benutzer lesbar sein, sonst startet Optimize
+    # mit einem NullPointerException beim Laden der Konfiguration nicht.
+    - sudo test ! -f "$DEPLOY_PATH/.optimize/environment-config.yaml" || sudo chmod 0644 "$DEPLOY_PATH/.optimize/environment-config.yaml"
+    # Console nutzt ebenfalls eine serverlokale gemountete Config-Datei.
+    - sudo test ! -f "$DEPLOY_PATH/.console/application.yaml" || sudo chmod 0644 "$DEPLOY_PATH/.console/application.yaml"
+    # Nur Shell-Skripte ausführbar machen. Kein breites chmod auf alle Dateien,
+    # damit Konfigurations- und Secret-Rechte nicht unnötig verändert werden.
+    - sudo find "$DEPLOY_PATH/scripts" -type f -name "*.sh" -exec chmod 750 {} +
+    # Der Stack wird über das repo-eigene Startskript gestartet, damit .env,
+    # .env-credentials und das passende stages/<stage>.yaml korrekt geladen werden.
+    - sudo -u camunda-admin bash "$DEPLOY_PATH/scripts/start.sh"
+    # Startskripte können generierte Dateien schreiben; danach nochmal Ownership
+    # glattziehen.
+    - sudo chown -R camunda-admin:camunda-admin "$DEPLOY_PATH"
+  only:
+    # Sandbox-Deployment nur vom Branch "sandbox".
+    - sandbox
+
+deploy-dev:
+  stage: deploy
+  tags:
+    # Dieser Job läuft auf dem Dev-Server. Er synchronisiert nur Dateien und startet
+    # den Stack nicht neu.
+    - camunda-runner-dev
+  # Schutz gegen parallele Syncs auf denselben Dev-Server.
+  resource_group: development
+  environment:
+    name: development
+  script:
+    # Dev soll nur synchronisieren. Kein Stop/Start und kein Ownership-Wechsel.
+    - sudo test -d "$DEPLOY_PATH"
+    - |
+      # Gleiche Schutzliste wie Sandbox: lokale Serverkonfiguration bleibt erhalten.
+      sudo rsync -av --delete --delete-delay \
+        --exclude='.env' \
+        --exclude='.env-credentials' \
+        --exclude='connector-secrets.txt' \
+        --exclude='Caddyfile' \
+        --exclude='certs/' \
+        --exclude='backups/' \
+        --exclude='.console/application.yaml' \
+        --exclude='.optimize/environment-config.yaml' \
+        --exclude='monitor.log' \
+        --exclude='monitor.log.*' \
+        ./ "$DEPLOY_PATH/"
+    # Die serverlokale Optimize-Config bleibt vom Sync ausgeschlossen, muss aber
+    # fuer den Containerprozess lesbar sein.
+    - sudo test ! -f "$DEPLOY_PATH/.optimize/environment-config.yaml" || sudo chmod 0644 "$DEPLOY_PATH/.optimize/environment-config.yaml"
+    # Die serverlokale Console-Config bleibt ebenfalls vom Sync ausgeschlossen.
+    - sudo test ! -f "$DEPLOY_PATH/.console/application.yaml" || sudo chmod 0644 "$DEPLOY_PATH/.console/application.yaml"
+  only:
+    # Dev-Sync nur vom Branch "development".
+    - development
+
+deploy-prod:
+  stage: deploy
+  tags:
+    # Dieser Job läuft auf dem Prod-Server und startet den Stack kontrolliert neu.
+    - camunda-runner-prod
+  # Schutz gegen parallele Syncs auf Produktion.
+  resource_group: production
+  environment:
+    name: production
+  script:
+    # Abbruch, wenn das Zielverzeichnis oder die serverlokalen Env-Dateien fehlen.
+    # Diese Dateien werden absichtlich nicht aus dem Repository überschrieben.
+    - sudo test -d "$DEPLOY_PATH"
+    - sudo test -f "$DEPLOY_PATH/.env"
+    - sudo test -f "$DEPLOY_PATH/.env-credentials"
+    # Produktion wird aktiv neu gestartet. "|| true" verhindert, dass ein bereits
+    # gestoppter oder noch nicht initialisierter Stack das Deployment blockiert.
+    - sudo bash "$DEPLOY_PATH/scripts/stop.sh" || true
+    # Optional vor einem Prod-Sync aktivieren: Backup des aktuellen Serverstands.
+    # Wenn das Backup fehlschlägt, bricht die Pipeline ab und es wird nicht synchronisiert.
+    # - sudo test -x "$DEPLOY_PATH/scripts/backup.sh"
+    # - sudo bash "$DEPLOY_PATH/scripts/backup.sh"
+    - |
+      # --delete hält /opt/camunda nah am Repo-Paket; die Excludes schützen alles,
+      # was pro Server lokal gepflegt wird.
+      sudo rsync -av --delete --delete-delay \
+        --exclude='.env' \
+        --exclude='.env-credentials' \
+        --exclude='connector-secrets.txt' \
+        --exclude='Caddyfile' \
+        --exclude='certs/' \
+        --exclude='backups/' \
+        --exclude='.console/application.yaml' \
+        --exclude='.optimize/environment-config.yaml' \
+        --exclude='monitor.log' \
+        --exclude='monitor.log.*' \
+        ./ "$DEPLOY_PATH/"
+    # Dateien nach dem Sync dem Betriebsuser übergeben.
+    - sudo chown -R camunda-admin:camunda-admin "$DEPLOY_PATH"
+    # Die serverlokale Optimize-Config bleibt vom Sync ausgeschlossen, muss aber
+    # fuer den Containerprozess lesbar sein.
+    - sudo test ! -f "$DEPLOY_PATH/.optimize/environment-config.yaml" || sudo chmod 0644 "$DEPLOY_PATH/.optimize/environment-config.yaml"
+    # Die serverlokale Console-Config bleibt ebenfalls vom Sync ausgeschlossen.
+    - sudo test ! -f "$DEPLOY_PATH/.console/application.yaml" || sudo chmod 0644 "$DEPLOY_PATH/.console/application.yaml"
+    # Nur Shell-Skripte ausführbar machen. Kein breites chmod auf alle Dateien,
+    # damit Konfigurations- und Secret-Rechte nicht unnötig verändert werden.
+    - sudo find "$DEPLOY_PATH/scripts" -type f -name "*.sh" -exec chmod 750 {} +
+    # Der Stack wird über das repo-eigene Startskript gestartet, damit .env,
+    # .env-credentials und das passende stages/<stage>.yaml korrekt geladen werden.
+    - sudo -u camunda-admin bash "$DEPLOY_PATH/scripts/start.sh"
+    # Startskripte können generierte Dateien schreiben; danach nochmal Ownership
+    # glattziehen.
+    - sudo chown -R camunda-admin:camunda-admin "$DEPLOY_PATH"
+  only:
+    # Prod-Sync nur vom main-Branch.
+    - main
