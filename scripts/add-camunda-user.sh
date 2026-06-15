@@ -29,6 +29,7 @@ REALM="${REALM:-camunda-platform}"
 KC_UTIL="${KC_UTIL:-/tmp/kc_util.py}"
 
 usage() {
+    local exit_code="${1:-0}"
     echo "Usage: $0 --username <user> --password <pass> --email <email> --first-name <fname> --last-name <lname> --role <role>"
     echo ""
     echo "Options:"
@@ -41,32 +42,41 @@ usage() {
     echo ""
     echo "Environment variables:"
     echo "  ADMIN_USER, ADMIN_PASSWORD, REALM, KEYCLOAK_HOST, ORCHESTRATION_HOST, KC_UTIL"
-    exit 0
+    exit "$exit_code"
+}
+
+require_option_value() {
+    local option="$1"
+    local value="${2:-}"
+    if [[ -z "$value" ]]; then
+        echo "ERROR: $option requires a value" >&2
+        usage 1
+    fi
 }
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --username) USERNAME="$2"; shift 2 ;;
-        --password) PASSWORD="$2"; shift 2 ;;
-        --email) EMAIL="$2"; shift 2 ;;
-        --first-name) FIRST_NAME="$2"; shift 2 ;;
-        --last-name) LAST_NAME="$2"; shift 2 ;;
-        --role) ROLE="$2"; shift 2 ;;
+        --username) require_option_value "$1" "${2:-}"; USERNAME="$2"; shift 2 ;;
+        --password) require_option_value "$1" "${2:-}"; PASSWORD="$2"; shift 2 ;;
+        --email) require_option_value "$1" "${2:-}"; EMAIL="$2"; shift 2 ;;
+        --first-name) require_option_value "$1" "${2:-}"; FIRST_NAME="$2"; shift 2 ;;
+        --last-name) require_option_value "$1" "${2:-}"; LAST_NAME="$2"; shift 2 ;;
+        --role) require_option_value "$1" "${2:-}"; ROLE="$2"; shift 2 ;;
         -h|--help) usage ;;
-        *) echo "Unknown option: $1"; usage ;;
+        *) echo "Unknown option: $1"; usage 1 ;;
     esac
 done
 
 for var in USERNAME PASSWORD EMAIL FIRST_NAME LAST_NAME ROLE; do
     if [[ -z "${!var}" ]]; then
         echo "ERROR: --$var is required"
-        usage
+        usage 1
     fi
 done
 
 if [[ "$ROLE" != "NormalUser" && "$ROLE" != "Admin" ]]; then
     echo "ERROR: --role must be NormalUser or Admin"
-    usage
+    usage 1
 fi
 
 # ---------------------------------------------------------------------------

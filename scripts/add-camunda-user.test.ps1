@@ -23,3 +23,20 @@ Assert-Contains -Text $scriptText -Expected 'check_host_resolution "Keycloak" "$
 Assert-Contains -Text $scriptText -Expected 'check_host_resolution "Orchestration" "$ORCHESTRATION_HOST"'
 Assert-Contains -Text $scriptText -Expected "Keycloak token endpoint returned non-JSON"
 Assert-Contains -Text $scriptText -Expected "Response body preview"
+
+$missingRoleOutput = & bash "scripts/add-camunda-user.sh" `
+    --username christian.schaf `
+    --password demo `
+    --email christian.schaf@nvl.de `
+    --first-name Christian `
+    --last-name Schaf `
+    --role 2>&1
+$missingRoleExitCode = $LASTEXITCODE
+
+if ($missingRoleExitCode -eq 0) {
+    throw "Expected add-camunda-user.sh to fail when --role has no value"
+}
+
+if (($missingRoleOutput -join "`n") -notmatch "ERROR: --role requires a value") {
+    throw "Expected missing --role value to print a clear error. Output was: $($missingRoleOutput -join "`n")"
+}
