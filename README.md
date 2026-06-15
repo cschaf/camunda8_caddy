@@ -193,7 +193,7 @@ pwsh -File scripts/start.ps1
 Wait for all services to be healthy:
 
 ```bash
-docker compose ps
+docker compose --env-file .env --env-file .env-credentials -f docker-compose.yaml -f stages/prod.yaml ps
 ```
 
 > **Expect a slow first start (5–10 minutes).** The very first `up` runs a one-time bootstrap regardless of stage: Keycloak imports the realm, Identity provisions all OIDC clients in Keycloak, Postgres and web-modeler-db run schema migrations, and Elasticsearch creates index templates and ILM policies. During this phase `keycloak`, `identity`, and `web-modeler-restapi` are CPU-heavy and the UIs feel unresponsive. Subsequent starts reuse the persisted named volumes (`postgres`, `keycloak-theme`, `elastic`, `postgres-web`, …) and come up in 1–2 minutes. If a *later* start ever feels slow again, a volume was likely wiped (e.g. `docker compose down -v`) and you are paying the bootstrap cost a second time — check `docker volume ls` before assuming a config issue.
@@ -280,6 +280,19 @@ Internally, the start scripts run Docker Compose with the base file and the sele
 
 ```bash
 docker compose --env-file .env --env-file .env-credentials -f docker-compose.yaml -f stages/dev.yaml up -d
+```
+
+Use the same `--env-file` and `-f` arguments for manual Compose commands that read the Compose model. A bare command such as `docker compose logs -f optimize` can fail because `docker-compose.yaml` contains variables from `.env-credentials`.
+
+Examples:
+
+```bash
+# Follow Optimize logs (replace stages/prod.yaml with the stage from .env)
+docker compose --env-file .env --env-file .env-credentials -f docker-compose.yaml -f stages/prod.yaml logs -f optimize
+
+# Check rendered services / config
+docker compose --env-file .env --env-file .env-credentials -f docker-compose.yaml -f stages/prod.yaml ps
+docker compose --env-file .env --env-file .env-credentials -f docker-compose.yaml -f stages/prod.yaml config
 ```
 
 To run the stack guard from cron on Linux every 30 minutes, add an entry similar to:

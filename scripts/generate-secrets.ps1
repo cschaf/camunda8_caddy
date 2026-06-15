@@ -118,6 +118,14 @@ WEBMODELER_PUSHER_APP_ID=$(Get-EnvValOrDefault 'WEBMODELER_PUSHER_APP_ID')
 WEBMODELER_PUSHER_KEY=$webmodelerPusherKey
 WEBMODELER_PUSHER_SECRET=$webmodelerPusherSecret
 
+## Camunda License (Optional for non-production, required for production use) ##
+# Keep the real key only in .env-credentials. For multi-line keys, use
+# single quotes so docker compose and the bash start script keep the value
+# as one variable.
+# CAMUNDA_LICENSE_KEY='--------------- BEGIN CAMUNDA LICENSE KEY ---------------
+# ... complete key from Camunda ...
+# --------------- END CAMUNDA LICENSE KEY ---------------'
+
 ## Demo User ##
 DEMO_USER_PASSWORD=$demoUserPassword
 "@
