@@ -25,8 +25,12 @@ $StageValue = $null
 $EnvHost = $null
 $ElasticPassword = $null
 $DisplayStageValue = $null
+$EnvValues = @{}
 foreach ($line in Get-Content $EnvFile) {
     if ($line -match '^\s*#') { continue }
+    if ($line -match '^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=(.*)$') {
+        $EnvValues[$matches[1]] = $matches[2].Trim()
+    }
     if ($line -match '^\s*STAGE\s*=(.*)$') {
         $StageValue = $matches[1].Trim().ToLowerInvariant()
     }
@@ -71,6 +75,19 @@ $ConsoleConfig   = Join-Path $ProjectDir '.console/application.yaml'
 if ((Test-Path $ConsoleTemplate) -and $EnvHost) {
     $content = Get-Content $ConsoleTemplate -Raw
     $content = $content.Replace('${HOST}', $EnvHost).Replace('${DISPLAY_STAGE}', $DisplayStage)
+    foreach ($key in @(
+        'CAMUNDA_VERSION',
+        'CAMUNDA_CONSOLE_VERSION',
+        'CAMUNDA_OPERATE_VERSION',
+        'CAMUNDA_TASKLIST_VERSION',
+        'CAMUNDA_OPTIMIZE_VERSION',
+        'CAMUNDA_IDENTITY_VERSION',
+        'KEYCLOAK_SERVER_VERSION',
+        'CAMUNDA_WEB_MODELER_VERSION',
+        'CAMUNDA_CONNECTORS_VERSION'
+    )) {
+        $content = $content.Replace("`${$key}", $EnvValues[$key])
+    }
     $content | Set-Content $ConsoleConfig -NoNewline
 }
 
