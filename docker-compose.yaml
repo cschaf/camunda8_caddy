@@ -156,6 +156,16 @@ services:
       CAMUNDA_OPTIMIZE_IDENTITY_CLIENTSECRET: ${OPTIMIZE_CLIENT_SECRET:?OPTIMIZE_CLIENT_SECRET is required}
       CAMUNDA_OPTIMIZE_IDENTITY_AUDIENCE: optimize-api
       CAMUNDA_OPTIMIZE_IDENTITY_BASE_URL: http://identity:8084
+      # Optimize 8.9's Identity SDK also reads the generic CAMUNDA_IDENTITY_*
+      # properties. Override the stack-wide .env-credentials values here so
+      # Optimize does not use the camunda-identity client secret during the
+      # OAuth callback token exchange.
+      CAMUNDA_IDENTITY_ISSUER: https://keycloak.${HOST:?HOST is required}/auth/realms/camunda-platform
+      CAMUNDA_IDENTITY_ISSUER_BACKEND_URL: http://${KEYCLOAK_HOST:?KEYCLOAK_HOST is required}:18080/auth/realms/camunda-platform
+      CAMUNDA_IDENTITY_CLIENT_ID: optimize
+      CAMUNDA_IDENTITY_CLIENT_SECRET: ${OPTIMIZE_CLIENT_SECRET:?OPTIMIZE_CLIENT_SECRET is required}
+      CAMUNDA_IDENTITY_AUDIENCE: optimize-api
+      CAMUNDA_IDENTITY_BASE_URL: http://identity:8084
       # Trust X-Forwarded headers from reverse proxy (required for correct URL construction behind HTTPS proxy)
       SERVER_FORWARD_HEADERS_STRATEGY: framework
       # Management endpoints
