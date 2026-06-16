@@ -67,6 +67,29 @@ function Test-BackupOrRestoreRunning {
     return $null -ne $proc
 }
 
+function Invoke-DockerCompose {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$Arguments,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ErrorMessage
+    )
+
+    $output = @(& docker @Arguments 2>&1 | ForEach-Object { $_.ToString() })
+    if ($LASTEXITCODE -ne 0) {
+        Write-Log $ErrorMessage
+        foreach ($line in $output) {
+            if ($line) {
+                Write-Log "  $line"
+            }
+        }
+        exit 1
+    }
+
+    return $output
+}
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -108,12 +131,17 @@ if ($StageValue -notin @('prod', 'dev', 'test')) {
 
 $ComposeArgs = @(
     'compose',
+    '--env-file', $EnvFile,
+    '--env-file', $CredentialsFile,
     '-f', (Join-Path $ProjectDir 'docker-compose.yaml'),
     '-f', (Join-Path $ProjectDir "stages/$StageValue.yaml")
 )
 
 # Build expected service list (exclude one-shot init container)
-$ExpectedServices = @(docker @ComposeArgs config --services 2>$null | Where-Object { $_ -and $_ -ne 'camunda-data-init' })
+$configServices = Invoke-DockerCompose `
+    -Arguments ($ComposeArgs + @('config', '--services')) `
+    -ErrorMessage 'ERROR: Could not determine expected services from docker compose config'
+$ExpectedServices = @($configServices | Where-Object { $_ -and $_ -ne 'camunda-data-init' })
 
 if ($ExpectedServices.Count -eq 0) {
     Write-Log 'ERROR: Could not determine expected services from docker compose config'
@@ -121,7 +149,9 @@ if ($ExpectedServices.Count -eq 0) {
 }
 
 # Query running containers and parse health/state from JSON
-$containerJson = docker @ComposeArgs ps --format json 2>$null
+$containerJson = Invoke-DockerCompose `
+    -Arguments ($ComposeArgs + @('ps', '--format', 'json')) `
+    -ErrorMessage 'ERROR: Could not query docker compose container status'
 
 $containers = @()
 if ($containerJson) {

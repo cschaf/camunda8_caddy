@@ -114,6 +114,8 @@ main() {
 
   local compose_cmd=(
     docker compose
+    --env-file "$ENV_FILE"
+    --env-file "$CREDENTIALS_FILE"
     -f "$PROJECT_DIR/docker-compose.yaml"
     -f "$PROJECT_DIR/stages/${stage}.yaml"
   )
@@ -122,11 +124,20 @@ main() {
   # Exclude camunda-data-init because it is a one-shot init container
   # that exits after completing its work and is not expected to keep running.
   local expected_services=()
+  local config_services
+  if ! config_services="$("${compose_cmd[@]}" config --services 2>&1)"; then
+    log "ERROR: Could not determine expected services from docker compose config"
+    while IFS= read -r line; do
+      [[ -n "$line" ]] && log "  $line"
+    done <<< "$config_services"
+    exit 1
+  fi
+
   local service
   while IFS= read -r service; do
     [[ -z "$service" || "$service" == "camunda-data-init" ]] && continue
     expected_services+=("$service")
-  done < <("${compose_cmd[@]}" config --services 2>/dev/null || true)
+  done <<< "$config_services"
 
   if [[ ${#expected_services[@]} -eq 0 ]]; then
     log "ERROR: Could not determine expected services from docker compose config"
@@ -135,29 +146,26 @@ main() {
 
   # Check running containers and their health.
   local issues=()
-  local container_json
-  container_json=$("${compose_cmd[@]}" ps --format json 2>/dev/null || true)
+  local container_status
+  if ! container_status="$("${compose_cmd[@]}" ps --format '{{.Service}}	{{.State}}	{{.Health}}	{{.Name}}' 2>&1)"; then
+    log "ERROR: Could not query docker compose container status"
+    while IFS= read -r line; do
+      [[ -n "$line" ]] && log "  $line"
+    done <<< "$container_status"
+    exit 1
+  fi
 
   for service in "${expected_services[@]}"; do
     local state="" health="" name=""
 
-    if command -v python3 >/dev/null 2>&1; then
-      read -r state health name <<< "$(python3 - "$service" "$container_json" <<'PYEOF' 2>/dev/null
-import json, sys
-service = sys.argv[1]
-try:
-    data = json.loads(sys.argv[2])
-except Exception:
-    data = []
-if isinstance(data, dict):
-    data = [data]
-for item in data:
-    if item.get("Service") == service:
-        print(item.get("State", ""), item.get("Health", ""), item.get("Name", ""))
+    while IFS=$'\t' read -r status_service status_state status_health status_name; do
+      if [[ "$status_service" == "$service" ]]; then
+        state="$status_state"
+        health="$status_health"
+        name="$status_name"
         break
-PYEOF
-)"
-    fi
+      fi
+    done <<< "$container_status"
 
     if [[ -z "$state" ]]; then
       issues+=("$service: missing (not running)")
