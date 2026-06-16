@@ -71,10 +71,10 @@ function Parse-Args {
 }
 
 function Set-AppServicesFromCompose {
-    param([string]$Cmd)
+    param([string[]]$ComposeArgs)
 
     $script:AppServices = @()
-    $services = @(Invoke-Expression "$Cmd config --services" 2>> $Global:LogFile | Where-Object { $_ -and $_.Trim() -ne "" })
+    $services = @(docker @ComposeArgs config --services 2>> $Global:LogFile | Where-Object { $_ -and $_.Trim() -ne "" })
     if ($LASTEXITCODE -ne 0) {
         Log "ERROR: Could not derive service list from docker compose config"
         exit 1
@@ -154,7 +154,7 @@ function Main {
 
     Load-Env
     $stage = Get-Stage
-    $cmd = Get-DockerComposeCmd
+    $composeArgs = Get-DockerComposeArgs
     $backupStopTimeout = 180
     if ($env:BACKUP_STOP_TIMEOUT) {
         if (-not [int]::TryParse($env:BACKUP_STOP_TIMEOUT, [ref]$backupStopTimeout) -or $backupStopTimeout -le 0) {
@@ -185,7 +185,7 @@ function Main {
     }
 
     New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
-    Set-AppServicesFromCompose -Cmd $cmd
+    Set-AppServicesFromCompose -ComposeArgs $composeArgs
 
     $appServicesStopped = $false
     $backupDirInProgress = $backupDir
@@ -197,7 +197,7 @@ function Main {
 
     # Check stack status
     Log "Checking stack status..."
-    $runningContainers = @(Invoke-Expression "$cmd ps --filter status=running --format '{{.Name}}'" 2>> $Global:LogFile) | Where-Object { $_ -ne "" }
+    $runningContainers = @(docker @composeArgs ps --filter status=running --format '{{.Name}}' 2>> $Global:LogFile) | Where-Object { $_ -ne "" }
     if ($runningContainers.Count -eq 0) {
         Log "ERROR: Stack is not running (0 containers running). Start it first with scripts/start.ps1"
         exit 1
@@ -265,7 +265,7 @@ function Main {
 
             Log "Stopping application services for consistent cold backup (timeout: ${backupStopTimeout}s)..."
             if ($AppServices.Count -gt 0) {
-                Invoke-Expression "$cmd stop --timeout $backupStopTimeout $($AppServices -join ' ')" | Out-Null
+                docker @composeArgs stop --timeout $backupStopTimeout @AppServices | Out-Null
                 $appServicesStopped = $true
             }
             else {
@@ -488,7 +488,7 @@ function Main {
 
             Log "Starting application services..."
             if ($AppServices.Count -gt 0) {
-                Invoke-Expression "$cmd start $($AppServices -join ' ')" | Out-Null
+                docker @composeArgs start @AppServices | Out-Null
                 $appServicesStopped = $false
             }
             else {
@@ -536,7 +536,7 @@ function Main {
         }
         if ($appServicesStopped -and $AppServices.Count -gt 0) {
             Log "Attempting to restart application services after failure..."
-            try { Invoke-Expression "$cmd start $($AppServices -join ' ')" *>> $Global:LogFile } catch { }
+            try { docker @composeArgs start @AppServices *>> $Global:LogFile } catch { }
         }
         exit 1
     }

@@ -89,12 +89,30 @@ function Get-DockerComposeCmd {
     return "docker compose --env-file `"$EnvFile`" --env-file `"$CredentialsFile`" -f `"$ProjectDir\docker-compose.yaml`" -f `"$ProjectDir\stages\${stage}.yaml`""
 }
 
+function Get-DockerComposeArgs {
+    $composeArgs = @(
+        'compose',
+        '--env-file', $EnvFile,
+        '--env-file', $CredentialsFile
+    )
+
+    if (-not $env:COMPOSE_FILE) {
+        $stage = Get-Stage
+        $composeArgs += @(
+            '-f', (Join-Path $ProjectDir 'docker-compose.yaml'),
+            '-f', (Join-Path $ProjectDir "stages\${stage}.yaml")
+        )
+    }
+
+    return $composeArgs
+}
+
 function Check-ServicesHealth {
-    $cmd = Get-DockerComposeCmd
+    $composeArgs = Get-DockerComposeArgs
     Log "Checking services health..."
 
     try {
-        $services = Invoke-Expression "$cmd ps --format json" | ConvertFrom-Json -ErrorAction SilentlyContinue
+        $services = docker @composeArgs ps --format json | ConvertFrom-Json -ErrorAction SilentlyContinue
         $unhealthy = $services | Where-Object {
             $_.Health -eq "unhealthy" -or ($_.State -ne "running" -and $_.State -ne "")
         }
