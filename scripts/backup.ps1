@@ -176,15 +176,16 @@ function Main {
     New-Item -ItemType Directory -Path $backupBaseDir -Force | Out-Null
     $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
     $backupDir = Join-Path $backupBaseDir $timestamp
-    $Global:LogFile = Join-Path $backupDir "backup.log"
 
     if ($TestMode) {
-        Log "=== TEST MODE: Simulating backup without modifying data ==="
         $backupDir = Join-Path $backupBaseDir "TEST_$timestamp"
-        $Global:LogFile = Join-Path $backupDir "backup.log"
     }
+    $Global:LogFile = Join-Path $backupDir "backup.log"
 
     New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
+    if ($TestMode) {
+        Log "=== TEST MODE: Simulating backup without modifying data ==="
+    }
     Set-AppServicesFromCompose -ComposeArgs $composeArgs
 
     $appServicesStopped = $false
@@ -197,7 +198,7 @@ function Main {
 
     # Check stack status
     Log "Checking stack status..."
-    $runningContainers = @(docker @composeArgs ps --filter status=running --format '{{.Name}}' 2>> $Global:LogFile) | Where-Object { $_ -ne "" }
+    $runningContainers = Get-RunningComposeContainerNames
     if ($runningContainers.Count -eq 0) {
         Log "ERROR: Stack is not running (0 containers running). Start it first with scripts/start.ps1"
         exit 1
@@ -508,6 +509,7 @@ function Main {
 
         if ($TestMode) {
             Log "=== TEST MODE complete. Simulated backup: $backupDir ==="
+            $Global:LogFile = $null
             Remove-Item -Path $backupDir -Recurse -Force
         }
         else {

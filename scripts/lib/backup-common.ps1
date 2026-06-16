@@ -107,19 +107,43 @@ function Get-DockerComposeArgs {
     return $composeArgs
 }
 
+function Get-ComposeContainerStatuses {
+    $projectName = Get-ComposeProjectName
+    return @(
+        docker ps -a --filter "label=com.docker.compose.project=$projectName" --format "{{.Names}}|{{.Status}}" 2>> $Global:LogFile |
+            Where-Object { $_ -and $_.Trim() -ne "" } |
+            ForEach-Object {
+                $parts = $_ -split '\|', 2
+                [pscustomobject]@{
+                    Name = $parts[0]
+                    Status = if ($parts.Count -gt 1) { $parts[1] } else { "" }
+                }
+            }
+    )
+}
+
+function Get-RunningComposeContainerNames {
+    $projectName = Get-ComposeProjectName
+    return @(
+        docker ps --filter "label=com.docker.compose.project=$projectName" --filter "status=running" --format "{{.Names}}" 2>> $Global:LogFile |
+            Where-Object { $_ -and $_.Trim() -ne "" }
+    )
+}
+
 function Check-ServicesHealth {
-    $composeArgs = Get-DockerComposeArgs
     Log "Checking services health..."
 
     try {
-        $services = docker @composeArgs ps --format json | ConvertFrom-Json -ErrorAction SilentlyContinue
-        $unhealthy = $services | Where-Object {
-            $_.Health -eq "unhealthy" -or ($_.State -ne "running" -and $_.State -ne "")
+        $containers = Get-ComposeContainerStatuses
+        $unhealthy = $containers | Where-Object {
+            $_.Status -notlike "Up*" -or $_.Status -like "*(unhealthy)*"
         }
 
         if ($unhealthy) {
             Log "WARNING: The following services are unhealthy or not running:"
-            $unhealthy | ForEach-Object { Log "  - $($_.Service)" }
+            $unhealthy | ForEach-Object {
+                Log "  - $($_.Name) ($($_.Status))"
+            }
             return $false
         }
     }
