@@ -64,11 +64,11 @@ get_stage() {
 
 docker_compose_cmd() {
   if [[ -n "${COMPOSE_FILE:-}" ]]; then
-    echo "docker compose --env-file \"$ENV_FILE\" --env-file \"$CREDENTIALS_FILE\""
+    echo "docker compose --env-file $ENV_FILE --env-file $CREDENTIALS_FILE"
   else
     local stage
     stage="$(get_stage)"
-    echo "docker compose --env-file \"$ENV_FILE\" --env-file \"$CREDENTIALS_FILE\" -f $PROJECT_DIR/docker-compose.yaml -f $PROJECT_DIR/stages/${stage}.yaml"
+    echo "docker compose --env-file $ENV_FILE --env-file $CREDENTIALS_FILE -f $PROJECT_DIR/docker-compose.yaml -f $PROJECT_DIR/stages/${stage}.yaml"
   fi
 }
 
