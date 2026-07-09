@@ -14,6 +14,11 @@
 
 .EXAMPLE
     pwsh -File scripts/add-camunda-user.ps1 -Username admin -Password "adminpass" -Email "admin@example.com" -FirstName "Admin" -LastName "User" -Role Admin
+
+.NOTES
+    By default the initial password is marked temporary, forcing the user to set
+    a new password at first login. Pass -PermanentPassword to skip this
+    (e.g. for service accounts).
 #>
 
 param(
@@ -34,7 +39,10 @@ param(
 
     [Parameter(Mandatory = $true)]
     [ValidateSet("NormalUser", "Admin")]
-    [string]$Role
+    [string]$Role,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$PermanentPassword
 )
 
 $ErrorActionPreference = "Stop"
@@ -103,7 +111,8 @@ function New-CamundaUser {
         [string]$Password,
         [string]$Email,
         [string]$FirstName,
-        [string]$LastName
+        [string]$LastName,
+        [bool]$Temporary
     )
 
     # Check if user already exists
@@ -122,7 +131,7 @@ function New-CamundaUser {
         credentials = @(@{
             type      = "password"
             value     = $Password
-            temporary = $false
+            temporary = $Temporary
         })
     } | ConvertTo-Json -Depth 10
 
@@ -277,7 +286,11 @@ $token = Get-AdminToken -KeycloakHost $KeycloakHost -AdminUser $AdminUser -Admin
 $headers["Authorization"] = "Bearer $token"
 
 # Create user
-New-CamundaUser -BaseUrl $KeycloakHost -Headers $headers -Realm $Realm -Username $Username -Password $Password -Email $Email -FirstName $FirstName -LastName $LastName
+$temporaryPassword = -not $PermanentPassword
+New-CamundaUser -BaseUrl $KeycloakHost -Headers $headers -Realm $Realm -Username $Username -Password $Password -Email $Email -FirstName $FirstName -LastName $LastName -Temporary $temporaryPassword
+if ($temporaryPassword) {
+    Write-Host "Password marked temporary - user must set a new password at first login"
+}
 
 # Find the created user (Keycloak may not return ID directly)
 Start-Sleep -Milliseconds 500

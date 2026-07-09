@@ -15,6 +15,10 @@
 #
 #     bash scripts/add-camunda-user.sh --username admin --password "adminpass" --email "admin@example.com" --first-name Admin --last-name User --role Admin
 #
+#     By default the initial password is marked temporary, forcing the user to
+#     set a new password at first login. Pass --permanent-password to skip this
+#     (e.g. for service accounts).
+#
 
 set -e
 
@@ -27,6 +31,7 @@ ADMIN_USER="${ADMIN_USER:-admin}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:-admin}"
 REALM="${REALM:-camunda-platform}"
 KC_UTIL="${KC_UTIL:-/tmp/kc_util.py}"
+TEMPORARY_PASSWORD="true"
 
 usage() {
     local exit_code="${1:-0}"
@@ -39,6 +44,8 @@ usage() {
     echo "  --first-name <fname>  First name"
     echo "  --last-name <lname>   Last name"
     echo "  --role <role>         Role: NormalUser or Admin"
+    echo "  --permanent-password  Do not force a password change at first login"
+    echo "                        (default: password is temporary)"
     echo ""
     echo "Environment variables:"
     echo "  ADMIN_USER, ADMIN_PASSWORD, REALM, KEYCLOAK_HOST, ORCHESTRATION_HOST, KC_UTIL"
@@ -62,6 +69,7 @@ while [[ $# -gt 0 ]]; do
         --first-name) require_option_value "$1" "${2:-}"; FIRST_NAME="$2"; shift 2 ;;
         --last-name) require_option_value "$1" "${2:-}"; LAST_NAME="$2"; shift 2 ;;
         --role) require_option_value "$1" "${2:-}"; ROLE="$2"; shift 2 ;;
+        --permanent-password) TEMPORARY_PASSWORD="false"; shift ;;
         -h|--help) usage ;;
         *) echo "Unknown option: $1"; usage 1 ;;
     esac
@@ -215,6 +223,7 @@ def main():
     user_id = os.environ.get("KC_USER_ID", "")
     role_name = os.environ.get("KC_ROLE_NAME", "")
     role_json_str = os.environ.get("KC_ROLE_JSON", "")
+    temporary_password = os.environ.get("KC_TEMPORARY", "false").lower() == "true"
 
     ctx = ssl.create_default_context()
     ctx.check_hostname = False
@@ -254,7 +263,7 @@ def main():
         print(post("users", {
             "username": username, "enabled": True, "email": email,
             "firstName": first_name, "lastName": last_name,
-            "credentials": [{"type": "password", "value": password, "temporary": False}]
+            "credentials": [{"type": "password", "value": password, "temporary": temporary_password}]
         }))
 
     elif action == "get_role":
@@ -372,8 +381,12 @@ action="create_user"
 status=$(KC_HOST="$KEYCLOAK_HOST" KC_REALM="$REALM" KC_TOKEN="$KC_TOKEN" \
     KC_USERNAME="$USERNAME" KC_PASSWORD="$PASSWORD" \
     KC_EMAIL="$EMAIL" KC_FIRST="$FIRST_NAME" KC_LAST="$LAST_NAME" \
+    KC_TEMPORARY="$TEMPORARY_PASSWORD" \
     python3 "$KC_UTIL" create_user)
 echo "User created (status: $status)"
+if [[ "$TEMPORARY_PASSWORD" == "true" ]]; then
+    echo "Password marked temporary — user must set a new password at first login"
+fi
 
 sleep 1
 
