@@ -122,7 +122,7 @@ function New-CamundaUser {
     }
 
     $url = "https://${BaseUrl}/auth/admin/realms/${Realm}/users"
-    $body = @{
+    $userRep = @{
         username  = $Username
         enabled   = $true
         email     = $Email
@@ -133,7 +133,15 @@ function New-CamundaUser {
             value     = $Password
             temporary = $Temporary
         })
-    } | ConvertTo-Json -Depth 10
+    }
+    # The credential's "temporary" flag alone does not reliably force a password
+    # change when the user is created inline via POST /users. Setting the
+    # UPDATE_PASSWORD required action is what Keycloak actually evaluates at
+    # login, so add it explicitly when a temporary password is requested.
+    if ($Temporary) {
+        $userRep["requiredActions"] = @("UPDATE_PASSWORD")
+    }
+    $body = $userRep | ConvertTo-Json -Depth 10
 
     try {
         $response = Invoke-RestMethod -Uri $url -Method Post -Headers $Headers -ContentType "application/json" -Body $body -SkipCertificateCheck

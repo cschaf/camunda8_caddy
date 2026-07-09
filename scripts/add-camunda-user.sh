@@ -202,11 +202,12 @@ CAMUNDA_ROLE_MAP["Admin"]="admin"
 IFS=',' read -ra ROLE_NAMES <<< "${ROLE_MAP[$ROLE]}"
 
 # ---------------------------------------------------------------------------
-# Python utility (if not already present)
+# Python utility
+# Always (re)written so updates to this embedded script take effect even when a
+# stale copy from a previous run is already present at $KC_UTIL.
 # ---------------------------------------------------------------------------
 
-if [[ ! -f "$KC_UTIL" ]]; then
-    cat > "$KC_UTIL" <<'PYEOF'
+cat > "$KC_UTIL" <<'PYEOF'
 #!/usr/bin/env python3
 import sys, json, urllib.request, urllib.parse, ssl, os
 
@@ -260,11 +261,19 @@ def main():
         print(users[0]["id"] if users else "")
 
     elif action == "create_user":
-        print(post("users", {
+        user_rep = {
             "username": username, "enabled": True, "email": email,
             "firstName": first_name, "lastName": last_name,
             "credentials": [{"type": "password", "value": password, "temporary": temporary_password}]
-        }))
+        }
+        # The credential's "temporary" flag alone does not reliably force a
+        # password change when the user is created inline via POST /users.
+        # Setting the UPDATE_PASSWORD required action is what Keycloak actually
+        # evaluates at login, so add it explicitly when a temporary password is
+        # requested. (This mirrors the Keycloak UI "Temporary" toggle.)
+        if temporary_password:
+            user_rep["requiredActions"] = ["UPDATE_PASSWORD"]
+        print(post("users", user_rep))
 
     elif action == "get_role":
         url = f"https://{keycloak_host}/auth/admin/realms/{realm}/roles/{urllib.parse.quote(role_name, safe='')}"
@@ -299,8 +308,7 @@ def main():
 if __name__ == "__main__":
     main()
 PYEOF
-    chmod +x "$KC_UTIL"
-fi
+chmod +x "$KC_UTIL"
 
 run_py() {
     KC_HOST="$KEYCLOAK_HOST" \

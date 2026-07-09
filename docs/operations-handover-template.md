@@ -196,6 +196,10 @@ bash scripts/add-camunda-user.sh --username jdoe --password "changeme" \
   --email "jdoe@example.com" --first-name John --last-name Doe --role NormalUser
 ```
 
+Das Startpasswort wird standardmäßig als **temporär** gesetzt — der Benutzer muss
+es beim ersten Login ändern. Für Service-Accounts o. Ä. lässt sich das mit
+`--permanent-password` (bzw. `-PermanentPassword` im PowerShell-Skript) abschalten.
+
 Rollen: **`NormalUser`** = lesend in Operate/Tasklist, kann Aufgaben abschließen.
 **`Admin`** = Vollzugriff auf alle Komponenten.
 

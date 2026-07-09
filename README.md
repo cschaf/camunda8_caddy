@@ -401,6 +401,12 @@ bash scripts/add-camunda-user.sh --username jdoe --password "changeme" --email "
 pwsh -File scripts/add-camunda-user.ps1 -Username jdoe -Password "changeme" -Email "jdoe@example.com" -FirstName John -LastName Doe -Role NormalUser
 ```
 
+By default the initial password is marked **temporary** — the user must set a new password at first login (same as the "Temporary" toggle in the Keycloak UI). To skip this, e.g. for service accounts, pass `--permanent-password` (Bash) or `-PermanentPassword` (PowerShell):
+
+```bash
+bash scripts/add-camunda-user.sh --username svc-bot --password "s3cret" --email "svc-bot@example.com" --first-name Service --last-name Bot --role NormalUser --permanent-password
+```
+
 ### Roles
 
 | Role | Keycloak realm roles | Camunda internal role | Access |
