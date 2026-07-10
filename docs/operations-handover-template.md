@@ -21,6 +21,12 @@ Zielgruppen:
 > **ausschließlich `scripts/start.sh` bzw. `scripts/stop.sh`** verwendet —
 > niemals `docker compose up/down` direkt. Begründung siehe [B2](#b2-standard-abläufe).
 
+> **⚠️ Zwei getrennte Stacks:** Neben der Camunda-Plattform läuft ein **zweiter,
+> eigenständiger Docker-Compose-Stack mit den kundenspezifischen b4C-Connectors**
+> (eigenes Projektverzeichnis, eigene `docker-compose.yaml`, eigene Skripte).
+> Er wird **ausschließlich über `docker-connector-manager.sh`** bedient. Details
+> siehe [A7](#a7-die-b4c-connectors).
+
 ---
 
 ## Inhalt
@@ -36,6 +42,7 @@ Zielgruppen:
   - [A4 Sicherheit und Datenschutz](#a4-sicherheit-und-datenschutz)
   - [A5 Was muss aktiv überwacht werden?](#a5-was-muss-aktiv-überwacht-werden)
   - [A6 Backup — was der Kunde wissen muss](#a6-backup--was-der-kunde-wissen-muss)
+  - [A7 Die b4C-Connectors](#a7-die-b4c-connectors)
 - [Teil B — Für den Betreiber und die Vertretung](#teil-b--für-den-betreiber-und-die-vertretung)
   - [B1 Betriebsroutine](#b1-betriebsroutine)
   - [B2 Standard-Abläufe](#b2-standard-abläufe)
@@ -64,7 +71,9 @@ Zielgruppen:
 | Server (Hostname/IP) | `<SERVER>` |
 | Betriebssystem + Version | `<Linux-Distribution + Version>` |
 | Docker Engine / Compose Version | `<docker --version>` / `<docker compose version>` |
-| Projektpfad auf dem Server | `<z. B. /opt/camunda>` |
+| Projektpfad Plattform auf dem Server | `<z. B. /opt/camunda>` |
+| Projektpfad b4C-Connectors | `<z. B. /opt/b4c>` (`B4C_BASE_DIR`) |
+| Eingesetzte b4C-Connectors | `<Liste, siehe A7>` |
 | Stage (`STAGE` in `.env`) | `prod` / `dev` / `test` |
 | Angezeigtes Label (`DISPLAY_STAGE`) | `<optional, sonst = STAGE>` |
 | TLS | self-signed (Caddy) **oder** Zertifikat `<Aussteller>`, Ablauf `<Datum>` |
@@ -79,8 +88,19 @@ Zielgruppen:
 
 | Job | Zeitplan | Cron |
 |-----|----------|------|
-| `scripts/monitor.sh` | alle 30 Minuten | `*/30 * * * *` |
-| `scripts/backup.sh` | täglich um 02:00 Uhr | `0 2 * * *` |
+| `scripts/monitor.sh` (Plattform) | alle 30 Minuten | `*/30 * * * *` |
+| `scripts/backup.sh` (Plattform) | täglich um 02:00 Uhr | `0 2 * * *` |
+| `monitoring.sh check` (b4C-Connectors) | alle 5 Minuten | `*/5 * * * *` |
+
+Die beiden Monitoring-Jobs sind **verschiedene Skripte für verschiedene Stacks**
+und dürfen nicht verwechselt werden: `scripts/monitor.sh` überwacht die
+Camunda-Plattform, `monitoring.sh` die b4C-Connectors (siehe [A7](#a7-die-b4c-connectors)).
+
+Beispiel-Cron-Zeile für die Connectors:
+
+```cron
+*/5 * * * * /opt/b4c/monitoring.sh check >> /var/log/b4c-monitor.log 2>&1
+```
 
 ## 0.2 Serverumgebungen (PROD / DEV / SANDBOX)
 
@@ -152,7 +172,7 @@ Vereinfacht erfüllen die Komponenten folgende Aufgaben:
 | **Identity** | Verwaltet Rollen/Berechtigungen und richtet die Keycloak-Clients ein. |
 | **Optimize** | Auswertungen, Reports und Dashboards über die Prozesse (Analytics). |
 | **Web Modeler** | Web-Oberfläche zum Erstellen und Bearbeiten von Prozessmodellen (BPMN/DMN). |
-| **Connectors** | Anbindung an externe Systeme (REST, Mail, KI/Agentic-AI usw.). |
+| **Connectors** | Camundas mitgelieferte Connectors (REST, Mail, KI/Agentic-AI usw.). **Nicht** zu verwechseln mit den b4C-Connectors, siehe [A7](#a7-die-b4c-connectors). |
 | **Console** | Übersichts-Oberfläche über die Plattform. |
 | **Elasticsearch** | Speichert exportierte Prozessdaten und versorgt Optimize. |
 | **PostgreSQL (3×)** | Datenbanken für Keycloak/Identity, Camunda-Kerndaten und Web Modeler. |
@@ -259,11 +279,26 @@ Die wichtigsten fünf Signale:
 | 3 | **Elasticsearch-Cluster-Status** | `yellow` > 30 min / `red` sofort | `red` = Datenverlust-Risiko, Optimize/Operate betroffen. |
 | 4 | **OOM-Kill / Exit-Code 137** | sofort kritisch | Container hat sein Speicherlimit überschritten und verliert In-Flight-State. |
 | 5 | **TLS-Zertifikat-Ablauf** (nur bei eigenem Cert) | < 30 Tage / < 7 Tage | Abgelaufenes Zertifikat = alle Oberflächen nicht mehr vertrauenswürdig erreichbar. |
+| 6 | **`GIVE UP` im Connector-Monitoring-Log** | sofort kritisch | Ein Connector ist dreimal in einer Stunde ausgefallen; das Monitoring hat aufgegeben. Der zugehörige Prozessschritt bleibt liegen. |
+| 7 | **Maintenance-Mode dauerhaft aktiv** | > 24 h | Solange er aktiv ist, findet **keine** automatische Wiederherstellung der Connectors statt. |
 
-**Eingerichtet:** `scripts/monitor.sh` läuft per Cronjob **alle 30 Minuten** und
-prüft, ob alle Container laufen und gesund sind; bei Problemen wird der Stack
+**Eingerichtet (Plattform):** `scripts/monitor.sh` läuft per Cronjob **alle 30 Minuten**
+und prüft, ob alle Container laufen und gesund sind; bei Problemen wird der Stack
 automatisch über das Start-Skript wieder hochgefahren und der Vorfall in
 `monitor.log` protokolliert.
+
+**Eingerichtet (b4C-Connectors):** `monitoring.sh check` läuft per Cronjob **alle
+5 Minuten** und startet fehlende Connector-Container neu (Restart-Budget und
+Maintenance-Mode siehe [A7](#a7-die-b4c-connectors)). Protokoll: `monitoring.log`
+im Connector-Projektverzeichnis bzw. der in der Cron-Zeile angegebene Pfad.
+
+Der Exit-Code des Jobs eignet sich direkt zur Anbindung an ein Monitoring-System:
+
+| Exit-Code | Bedeutung |
+|-----------|-----------|
+| `0` | Alles läuft, Maintenance-Mode aktiv, oder ein Neustart wurde ausgelöst |
+| `1` | Mindestens ein Service steht auf `GIVE UP` — **Alarm** |
+| `2` | Konfigurationsfehler (Compose-Datei, Docker, fehlende Werkzeuge) — **Alarm** |
 
 ## A6 Backup — was der Kunde wissen muss
 
@@ -284,6 +319,90 @@ automatisch über das Start-Skript wieder hochgefahren und der Vorfall in
 Manueller Backup-Befehl: `bash scripts/backup.sh`. Integrität eines Backups prüfen
 ohne Wiederherstellung: `bash scripts/restore.sh --verify backups/<TIMESTAMP>`.
 
+> **Die b4C-Connectors sind vom Backup nicht erfasst.** Sie sind zustandslos
+> (keine Volumes, keine Datenbank). Zu sichern sind dort nur die
+> Konfigurationsdateien: `.env`, `.env-credentials`, `docker-compose.yaml` und
+> das `config/`-Verzeichnis. Die Container werden aus den `.tar`-Images
+> wiederhergestellt.
+
+## A7 Die b4C-Connectors
+
+Zusätzlich zur Camunda-Plattform läuft ein **eigener Docker-Compose-Stack** mit
+den kundenspezifischen Connectors. Sie sind Zeebe-Job-Worker: sie melden sich bei
+der Orchestration an und arbeiten Aufgaben aus BPMN-Prozessen ab, indem sie ein
+externes System ansprechen.
+
+**Wichtig für das Verständnis der Betriebsabläufe:**
+
+- Der Stack hat ein **eigenes Projektverzeichnis** (`B4C_BASE_DIR`, z. B. `/opt/b4c`)
+  mit eigener `docker-compose.yaml`, eigener `.env` und eigener `.env-credentials`.
+- Bedient wird er **ausschließlich über `docker-connector-manager.sh`**, nie über
+  `docker compose` direkt (Begründung siehe [B2](#b2-standard-abläufe)).
+- Die Connectors **exponieren nach außen nichts**, mit zwei Ausnahmen:
+  `webex-connector` und `uipath-connector` nehmen Webhooks entgegen und liegen
+  hinter je einem nginx-Sidecar, der den Host-Port bindet.
+- Die Container **haben keine Healthchecks**. Überwacht wird deshalb nur, ob ein
+  Container **läuft**, nicht ob er fachlich gesund ist. Ein Connector, der zwar
+  läuft, aber keine Jobs mehr abarbeitet, fällt dem Monitoring **nicht** auf —
+  das sieht man nur in Operate an wachsenden Job-Backlogs.
+
+**Konfigurierte Services:**
+
+| Service | Externes System | Host-Port |
+|---------|-----------------|-----------|
+| `jira-connector` | Atlassian Jira | — |
+| `confluence-connector` | Atlassian Confluence | — |
+| `ews-connector` | Exchange Web Services | — |
+| `outlook-connector` | Microsoft 365 (Graph) | — |
+| `smtp-connector` | SMTP-Mailversand | — |
+| `camunda-utils-connector` | Camunda-Plattform-Utilities | — |
+| `network-file-connector` | Netzlaufwerk (SMB) | — |
+| `ps-connector` | Internes Ticketsystem (PS) | — |
+| `tribeloo-connector` | Tribeloo Raumbuchung (Dateisystem) | — |
+| `telecom-mb2b-connector` | Telekom MB2B (SIM-Karten) | — |
+| `parser-connector` | Führerschein-Parsing (NVL) | — |
+| `uipath-connector` | UiPath RPA | `UIPATH_PORT` (Std. 1338, via `nginx-uipath`) |
+| `webex-connector` | Cisco Webex | `WEBEX_PORT` (Std. 1337, via `nginx-webex`) |
+
+> Bei der Übergabe ausfüllen: Welche dieser Connectors sind bei diesem Kunden
+> tatsächlich aktiv? Nicht benötigte Services stehen auf `<NAME>_REPLICAS=0` in
+> der `.env` und werden vom Monitoring bewusst übersprungen.
+
+**Selbstheilung, mehrstufig.** Drei Mechanismen greifen nacheinander:
+
+1. **`restart: unless-stopped`** (Docker): fängt normale Abstürze sofort ab.
+2. **`monitoring.sh check`** (Cron, alle 5 min): startet Container neu, die ganz
+   fehlen oder deren Replica-Zahl unter den Sollwert gefallen ist. Der Neustart
+   läuft über `docker-connector-manager.sh up`, damit die nginx-Sidecars
+   mitkommen.
+3. **Restart-Budget:** Maximal **3 Neustarts pro Service in 60 Minuten**. Danach
+   protokolliert das Monitoring **`GIVE UP`** und startet nicht weiter neu — eine
+   Crashloop soll sichtbar werden, statt sich stundenlang selbst zu verschleiern.
+   Der Zähler wird zurückgesetzt, sobald der Service wieder läuft, oder wenn die
+   60 Minuten verstrichen sind. Beide Werte sind über `B4C_MONITOR_MAX_RESTARTS`
+   und `B4C_MONITOR_WINDOW` in der `.env` einstellbar.
+
+**Maintenance-Mode.** Punkt 2 hat eine unerwünschte Nebenwirkung: Er startet auch
+Container wieder, die jemand **absichtlich** gestoppt hat, und hebelt damit die
+Docker-Semantik „manuell gestoppt bleibt gestoppt" aus. Genau dafür gibt es den
+Maintenance-Mode. Er setzt eine Flag-Datei, die **alle** automatischen Neustarts
+unterdrückt, solange sie existiert:
+
+```bash
+./docker-connector-manager.sh maintenance on "Deployment Ticket B4C-7"
+# ... Wartungsarbeiten ...
+./docker-connector-manager.sh maintenance off
+```
+
+Der Modus merkt sich **wer** ihn wann und **warum** aktiviert hat; `maintenance
+status` zeigt das an. Er ist **global** (nicht pro Service) und **überlebt einen
+Reboot**, weil die Flag-Datei auf der Platte liegt.
+
+> **⚠️ Häufigste Betriebsfalle:** Maintenance-Mode nach der Wartung **nicht
+> abgeschaltet**. Der Stack ist dann dauerhaft ohne Selbstheilung, ohne dass es
+> jemandem auffällt — das Monitoring meldet still `SKIP`. Der `maintenance
+> status`-Check gehört deshalb in die tägliche Routine ([B1](#b1-betriebsroutine)).
+
 ---
 
 # Teil B — Für den Betreiber und die Vertretung
@@ -291,8 +410,9 @@ ohne Wiederherstellung: `bash scripts/restore.sh --verify backups/<TIMESTAMP>`.
 ## B1 Betriebsroutine
 
 Ein Großteil läuft automatisch (siehe [Eingerichtete Automatisierung](#01-diese-installation)):
-`monitor.sh` alle 30 min (Health + Auto-Recovery), `backup.sh` täglich um 02:00.
-Die folgenden Punkte ergänzen die manuelle Sichtkontrolle.
+`monitor.sh` alle 30 min (Health + Auto-Recovery), `backup.sh` täglich um 02:00,
+`monitoring.sh check` alle 5 min für die Connectors. Die folgenden Punkte ergänzen
+die manuelle Sichtkontrolle.
 
 **Täglich**
 
@@ -303,12 +423,19 @@ Die folgenden Punkte ergänzen die manuelle Sichtkontrolle.
 - [ ] Freier Plattenplatz im grünen Bereich? (`docker system df -v`)
 - [ ] `monitor.log` auf wiederholte Auto-Recoveries durchsehen.
 - [ ] Auffälligkeiten in den Logs? (`... logs --since=24h | grep -E 'ERROR|Exception|OOMKilled'`)
+- [ ] **Connectors:** `./docker-connector-manager.sh maintenance status` — steht
+      der Maintenance-Mode versehentlich noch an?
+- [ ] **Connectors:** `./monitoring.sh status` — Soll-/Ist-Replicas und
+      Restart-Zähler unauffällig? Kein `GIVE UP` in `monitoring.log`?
 
 **Wöchentlich**
 
 - [ ] Backup-Integrität prüfen (`bash scripts/restore.sh --verify backups/<ts>`).
 - [ ] Image-Updates verfügbar? (`bash scripts/registry-info.sh`)
 - [ ] Zertifikatsablauf prüfen (falls eigenes Cert).
+- [ ] **Connectors:** `monitoring.log` auf wiederholte `RESTART`-Zeilen
+      durchsehen — ein Service, der mehrfach pro Woche neu gestartet wird, ist
+      ein Problem, auch wenn er nie `GIVE UP` erreicht.
 
 ## B2 Standard-Abläufe
 
@@ -347,6 +474,46 @@ nachstarten (startet nur die fehlenden Dienste).
 
 **Benutzer anlegen:** siehe [A2](#a2-wie-greife-ich-zu).
 
+### b4C-Connectors bedienen
+
+> **⚠️ Nur über `docker-connector-manager.sh`.** Das Skript übergibt **beide**
+> Env-Dateien (`--env-file .env --env-file .env-credentials`) und startet nach
+> einem `up` die abhängigen nginx-Sidecars mit. Ein direktes `docker compose up`
+> lässt die Secrets fehlen und kann beim Hochfahren eines einzelnen Connectors
+> eine vorhandene Skalierung auf `replicas: 1` zurücksetzen.
+
+> **⚠️ Nicht verwechseln:** Die Datei `start.sh` im Connector-Projekt ist der
+> **Entrypoint innerhalb des Containers** (importiert Zertifikate in den
+> JVM-Truststore). Sie ist **kein** Skript zum Starten des Stacks und wird auf
+> dem Host **nie** aufgerufen.
+
+Alle Befehle werden im Connector-Projektverzeichnis ausgeführt. Ohne Service-Namen
+wirken sie auf **alle** Connectors.
+
+```bash
+./docker-connector-manager.sh up [service]        # starten
+./docker-connector-manager.sh stop [service]      # stoppen
+./docker-connector-manager.sh restart [service]   # neu starten
+./docker-connector-manager.sh status              # Container-Status
+./docker-connector-manager.sh logs [service]      # Logs (interaktiv)
+./docker-connector-manager.sh scale <service> <n> # Replicas setzen
+```
+
+**Einen Connector geplant stoppen** (z. B. weil das Zielsystem gewartet wird).
+Ohne Maintenance-Mode startet der Cronjob ihn innerhalb von 5 Minuten wieder:
+
+```bash
+./docker-connector-manager.sh maintenance on "Jira-Wartung, Ticket <NR>"
+./docker-connector-manager.sh stop jira-connector
+# ... nach der Wartung ...
+./docker-connector-manager.sh up jira-connector
+./docker-connector-manager.sh maintenance off
+```
+
+**Einen Connector dauerhaft abschalten:** `<NAME>_REPLICAS=0` in der `.env`
+setzen und `scale <service> 0` ausführen. Das Monitoring überspringt Services mit
+Soll-Replicas `0` bewusst und meldet sie als `SKIP` — kein Maintenance-Mode nötig.
+
 **Hostname ändern:**
 
 1. `HOST` in `.env` setzen (zwingend **klein** geschrieben).
@@ -367,6 +534,27 @@ nachstarten (startet nur die fehlenden Dienste).
 | Major-Upgrade | Datei-für-Datei-Migration und Config-Diffs gemäß Camunda-Migrationsleitfaden; vorher Backup, danach Verifikation. |
 | Optimize-Schema-Upgrade | Nach Optimize-Versionsbump nötig; läuft im Start-Skript automatisch, sonst manuell `bash scripts/optimize-upgrade.sh`. |
 | Verfügbare Image-Versionen prüfen | `bash scripts/registry-info.sh` (fragt die Camunda-Registry ab). |
+| **b4C-Connector deployen** | Neue `*_latest.tar` nach `B4C_TAR_DIR` übertragen, dann `maintenance on`, `refresh <service>`, `up <service>`, `maintenance off`. Siehe unten. |
+
+**b4C-Connector-Deployment.** Die Connector-Images kommen **nicht** aus einer
+Registry, sondern werden auf dem Entwicklungsrechner gebaut und als `.tar`-Datei
+auf den Server übertragen (Ablage: `B4C_TAR_DIR`, Standard
+`<Projektpfad>/docker-images`). Ablauf auf dem Server:
+
+```bash
+./docker-connector-manager.sh maintenance on "Deployment <Ticket>"
+./docker-connector-manager.sh refresh jira-connector   # altes Image löschen + .tar laden
+./docker-connector-manager.sh up jira-connector        # Container mit neuem Image
+./docker-connector-manager.sh status                   # verifizieren
+./docker-connector-manager.sh maintenance off
+```
+
+`refresh` fasst nur die Images an — der alte Container läuft dabei weiter
+(`docker rmi -f` entfernt lediglich das Tag). Ausgetauscht wird er erst durch
+`up`. Genau dort ist der Maintenance-Mode **nicht optional**: Während das
+Neuerstellen des Containers läuft, sieht ein parallel anlaufender Cronjob den
+Service als „nicht laufend", startet seinerseits ein `up` und verbraucht dabei
+Restart-Budget. Beide Läufe konkurrieren um denselben Container.
 
 ## B4 Incident-Playbook
 
@@ -446,6 +634,50 @@ Aufbau je Szenario: **Symptom → schnelle Diagnose → Maßnahme → wann eskal
 - **Eskalation:** Bei Unsicherheit über Datenkonsistenz **vor** dem destruktiven
   Restore Betreiber hinzuziehen.
 
+### I8 — b4C-Connector läuft nicht / `GIVE UP` im `monitoring.log`
+
+- **Symptom:** Ein Prozessschritt bleibt in Operate hängen; im `monitoring.log`
+  steht `GIVE UP: <service> - 3 restarts in 1h0m, not restarting again.`
+- **Diagnose:**
+  ```bash
+  ./monitoring.sh status                       # Soll/Ist-Replicas, Restart-Zähler
+  ./docker-connector-manager.sh logs <service> # Ursache des Absturzes
+  ```
+  Der Restart-Zähler hat sein Budget erschöpft (3 Neustarts in 60 min). Das
+  Monitoring startet **bewusst nicht weiter neu** — die Ursache liegt fast immer
+  im Connector selbst (falsche Zugangsdaten, Zielsystem nicht erreichbar,
+  Fehlkonfiguration), nicht im Container.
+- **Maßnahme:** Ursache in den Logs beheben. Danach den Zähler zurücksetzen und
+  den Service starten:
+  ```bash
+  ./monitoring.sh reset <service>
+  ./docker-connector-manager.sh up <service>
+  ```
+  Ohne `reset` bleibt der Service bis zum Ablauf des 60-Minuten-Fensters im
+  `GIVE UP`-Zustand.
+- **Eskalation:** Zugangsdaten/Zielsystem → Kunde-Fachverantwortlich. Wiederholte
+  Abstürze ohne erkennbare Ursache → Betreiber.
+
+### I9 — Connectors werden nicht automatisch wiederhergestellt
+
+- **Symptom:** Ein Connector-Container ist gestoppt und bleibt es, obwohl der
+  Cronjob läuft. Im `monitoring.log` steht `SKIP` statt `RESTART`.
+- **Diagnose:** In dieser Reihenfolge prüfen — die drei Ursachen sehen im Log
+  unterschiedlich aus:
+
+  | Log-Zeile | Ursache | Maßnahme |
+  |-----------|---------|----------|
+  | `SKIP: maintenance mode active ...` | Maintenance-Mode wurde nach der Wartung nicht abgeschaltet | `./docker-connector-manager.sh maintenance off` |
+  | `SKIP: <service> has replicas=0` | Service ist bewusst deaktiviert (`<NAME>_REPLICAS=0`) | Nur beheben, falls er laufen soll: `.env` anpassen |
+  | `SKIP: another check is already running` | Ein vorheriger Lauf hängt (Lock-Datei) | Prozess suchen und beenden, Lock löst sich mit dem Prozess |
+
+  Steht **gar nichts** im Log, läuft der Cronjob nicht: `crontab -l` prüfen und
+  `./monitoring.sh check` einmal von Hand ausführen. Exit-Code `2` bedeutet
+  Konfigurationsfehler (Compose-Datei nicht lesbar, `docker`/`jq`/`flock` fehlen,
+  `docker-connector-manager.sh` nicht ausführbar).
+- **Eskalation:** Betreiber, falls `check` mit Exit `2` abbricht und die Meldung
+  nicht eindeutig ist.
+
 ## B5 Notfall-Kontakte und Eskalation
 
 **Vor der Eskalation immer sammeln:**
@@ -489,6 +721,12 @@ Kontakte: siehe [Rollen und Kontakte](#03-rollen-und-kontakte).
 | **Stage** | Ressourcenprofil (`prod`/`dev`/`test`) aus `.env` → `stages/<stage>.yaml`. |
 | **autoheal** | Sidecar, der ungesunde Container automatisch neu startet. |
 | **Cold Backup** | Backup mit kurzem Stopp der Anwendungsdienste für konsistente Daten. |
+| **b4C-Connector** | Kundenspezifischer Zeebe-Job-Worker in einem eigenen Compose-Stack; bindet ein externes System an (Jira, Confluence, SMTP …). |
+| **Job-Worker** | Prozess, der sich bei Zeebe meldet und Aufgaben eines BPMN-Prozessschritts abarbeitet. |
+| **Maintenance-Mode** | Flag-Datei, die **alle** automatischen Connector-Neustarts unterdrückt. Global, überlebt Reboots. Vor geplanten Stopps setzen, danach abschalten. |
+| **Restart-Budget** | Obergrenze automatischer Neustarts pro Connector und Zeitfenster (Standard 3 pro 60 min). |
+| **GIVE UP** | Log-Eintrag des Connector-Monitorings: Budget erschöpft, es wird nicht weiter neu gestartet. Erfordert manuelles Eingreifen (`reset`). |
+| **Sidecar (nginx)** | Vorgeschalteter Webserver für `webex-`/`uipath-connector`, der den Host-Port bindet und auf mehrere Replicas verteilt. |
 
 ## Befehls-Spickzettel
 
@@ -512,3 +750,22 @@ Kontakte: siehe [Rollen und Kontakte](#03-rollen-und-kontakte).
 | Image-Versionen | `bash scripts/registry-info.sh` |
 | ES-Cluster-Status | `curl -u "elastic:$ELASTIC_PASSWORD" http://127.0.0.1:9200/_cluster/health` |
 | OIDC-Discovery | `curl -fsk "https://keycloak.{HOST}/auth/realms/camunda-platform/.well-known/openid-configuration"` |
+
+### b4C-Connectors
+
+Auszuführen im Connector-Projektverzeichnis (`B4C_BASE_DIR`, z. B. `/opt/b4c`).
+
+| Zweck | Befehl |
+|-------|--------|
+| **Wartung an / aus** | `./docker-connector-manager.sh maintenance on "<Grund>"` / `... maintenance off` |
+| Wartungsstatus (wer, wann, warum) | `./docker-connector-manager.sh maintenance status` |
+| Connector starten / stoppen | `./docker-connector-manager.sh up <service>` / `... stop <service>` |
+| Alle Connectors starten | `./docker-connector-manager.sh up` |
+| Container-Status | `./docker-connector-manager.sh status` |
+| Logs | `./docker-connector-manager.sh logs <service>` |
+| Replicas setzen | `./docker-connector-manager.sh scale <service> <n>` |
+| Image aus `.tar` austauschen | `./docker-connector-manager.sh refresh <service>` |
+| Soll/Ist + Restart-Zähler | `./monitoring.sh status` |
+| Monitoring einmal von Hand | `./monitoring.sh check` |
+| Restart-Zähler zurücksetzen | `./monitoring.sh reset <service>` (ohne Service: alle) |
+| Monitoring-Protokoll | `tail -f monitoring.log` |
