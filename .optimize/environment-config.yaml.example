@@ -3,6 +3,7 @@ es:
     index:
       number_of_shards: 1
       number_of_replicas: 0
+      nested_documents_limit: 50000
   security:
     username: elastic
     password: "ELASTIC_PASSWORD_PLACEHOLDER"
@@ -18,6 +19,8 @@ security:
         enabled: false
 ui:
   logoutHidden: true
+import:
+  skipDataAfterNestedDocLimitReached: true
 historyCleanup:
   cronTrigger: 0 1 * * *
   ttl: P365D
