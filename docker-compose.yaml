@@ -10,12 +10,16 @@
 # See docker-compose.yaml for a lightweight configuration that does not include Optimize, Identity, and Keycloak.
 
 services:
-
   camunda-data-init:
     image: camunda/camunda:${CAMUNDA_VERSION:?CAMUNDA_VERSION is required}
     container_name: camunda-data-init
     user: "0:0"
-    entrypoint: ["/bin/sh", "-c", "chown -R 1001:1001 /usr/local/camunda/camunda-data && chmod 775 /usr/local/camunda/camunda-data"]
+    entrypoint:
+      [
+        "/bin/sh",
+        "-c",
+        "chown -R 1001:1001 /usr/local/camunda/camunda-data && chmod 775 /usr/local/camunda/camunda-data",
+      ]
     volumes:
       - camunda-data:/usr/local/camunda/camunda-data
     networks:
@@ -72,7 +76,11 @@ services:
           cpus: "1.0"
           memory: 4G
     healthcheck:
-      test: ["CMD-SHELL", "timeout 10s bash -c ':> /dev/tcp/127.0.0.1/9600' || exit 1"]
+      test:
+        [
+          "CMD-SHELL",
+          "timeout 10s bash -c ':> /dev/tcp/127.0.0.1/9600' || exit 1",
+        ]
       interval: 30s
       timeout: 5s
       retries: 5
@@ -123,7 +131,11 @@ services:
           cpus: "0.25"
           memory: 512m
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:8080/actuator/health/readiness"]
+      test:
+        [
+          "CMD-SHELL",
+          "wget -q --spider http://localhost:8080/actuator/health/readiness",
+        ]
       interval: 30s
       timeout: 5s
       retries: 5
@@ -177,7 +189,15 @@ services:
       - path: .env-credentials
         required: true
     healthcheck:
-      test: ["CMD", "wget", "-q", "--tries=1", "--spider", "http://localhost:8090/api/readyz"]
+      test:
+        [
+          "CMD",
+          "wget",
+          "-q",
+          "--tries=1",
+          "--spider",
+          "http://localhost:8090/api/readyz",
+        ]
       interval: 30s
       timeout: 5s
       retries: 5
@@ -236,7 +256,15 @@ services:
       - path: .env-credentials
         required: true
     healthcheck:
-      test: ["CMD", "wget", "-q", "--tries=1", "--spider", "http://localhost:8082/actuator/health"]
+      test:
+        [
+          "CMD",
+          "wget",
+          "-q",
+          "--tries=1",
+          "--spider",
+          "http://localhost:8082/actuator/health",
+        ]
       interval: 5s
       timeout: 15s
       retries: 30
@@ -397,7 +425,7 @@ services:
       - cluster.routing.allocation.disk.watermark.flood_stage=95%
       - indices.breaker.total.limit=75%
       - path.repo=/usr/share/elasticsearch/backup
-      - "ES_JAVA_OPTS=-Xms2g -Xmx2g"
+      - "ES_JAVA_OPTS=-Xms4g -Xmx4g"
     env_file:
       - path: .env-credentials
         required: true
@@ -417,7 +445,11 @@ services:
           cpus: "0.5"
           memory: 3G
     healthcheck:
-      test: ["CMD-SHELL", "curl -f -u elastic:$${ELASTIC_PASSWORD} http://localhost:9200/_cat/health | grep -q green"]
+      test:
+        [
+          "CMD-SHELL",
+          "curl -f -u elastic:$${ELASTIC_PASSWORD} http://localhost:9200/_cat/health | grep -q green",
+        ]
       interval: 30s
       timeout: 5s
       retries: 5
@@ -445,7 +477,15 @@ services:
           cpus: "0.1"
           memory: 256m
     healthcheck:
-      test: ["CMD", "pg_isready", "-d", "${WEBMODELER_DB_NAME:?WEBMODELER_DB_NAME is required}", "-U", "${WEBMODELER_DB_USER:?WEBMODELER_DB_USER is required}"]
+      test:
+        [
+          "CMD",
+          "pg_isready",
+          "-d",
+          "${WEBMODELER_DB_NAME:?WEBMODELER_DB_NAME is required}",
+          "-U",
+          "${WEBMODELER_DB_USER:?WEBMODELER_DB_USER is required}",
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -519,7 +559,15 @@ services:
       identity:
         condition: service_healthy
     healthcheck:
-      test: [ "CMD", "wget", "-O-", "--no-verbose", "--tries=1", "http://localhost:8091/health/readiness" ]
+      test:
+        [
+          "CMD",
+          "wget",
+          "-O-",
+          "--no-verbose",
+          "--tries=1",
+          "http://localhost:8091/health/readiness",
+        ]
       interval: 30s
       timeout: 5s
       retries: 5
@@ -593,7 +641,15 @@ services:
           cpus: "0.1"
           memory: 64m
     healthcheck:
-      test: ["CMD", "wget", "-q", "--tries=1", "--spider", "http://127.0.0.1:8060/up"]
+      test:
+        [
+          "CMD",
+          "wget",
+          "-q",
+          "--tries=1",
+          "--spider",
+          "http://127.0.0.1:8060/up",
+        ]
       interval: 30s
       timeout: 5s
       retries: 5
@@ -633,7 +689,15 @@ services:
     labels:
       - autoheal=true
     healthcheck:
-      test: ["CMD", "wget", "-q", "--tries=1", "--spider", "http://localhost:9100/health/readiness"]
+      test:
+        [
+          "CMD",
+          "wget",
+          "-q",
+          "--tries=1",
+          "--spider",
+          "http://localhost:9100/health/readiness",
+        ]
       interval: 30s
       timeout: 5s
       retries: 5
@@ -694,7 +758,11 @@ services:
       keycloak:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:2019/config/ || exit 1"]
+      test:
+        [
+          "CMD-SHELL",
+          "wget -q --spider http://127.0.0.1:2019/config/ || exit 1",
+        ]
       interval: 30s
       timeout: 5s
       retries: 5

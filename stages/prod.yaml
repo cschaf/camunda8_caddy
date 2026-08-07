@@ -32,8 +32,6 @@ services:
         reservations:
           cpus: "0.5"
           memory: 4096M
-    environment:
-      - "ES_JAVA_OPTS=-Xms4g -Xmx4g"
 
   optimize:
     deploy:
