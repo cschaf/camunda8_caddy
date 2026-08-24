@@ -30,7 +30,7 @@ function Show-Usage {
     Write-Host ""
     Write-Host "Options:"
     Write-Host "  --simulate          Simulate backup without modifying data (alias: --test)"
-    Write-Host "  --retention-days N  Delete backups older than N days (default: 7)"
+    Write-Host "  --retention-days N  Keep at most N backups; remove oldest ones past N days only above that limit (default: 7)"
     Write-Host "  --backup-dir DIR    Base directory for backups (default: backups\)"
     Write-Host "  --encrypt-to ID     Also write encrypted backup archive for a gpg or age recipient"
     Write-Host "  --env-file FILE     Use a custom env file instead of .env"

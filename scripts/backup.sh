@@ -62,7 +62,7 @@ usage() {
   echo ""
   echo "Options:"
   echo "  --simulate          Simulate backup without modifying data (alias: --test)"
-  echo "  --retention-days N  Delete backups older than N days (default: 7)"
+  echo "  --retention-days N  Keep at most N backups; remove oldest ones past N days only above that limit (default: 7)"
   echo "  --backup-dir DIR    Base directory for backups (default: backups/)"
   echo "  --encrypt-to ID     Also write encrypted backup archive for a gpg or age recipient"
   echo "  --env-file FILE     Use a custom env file instead of .env"

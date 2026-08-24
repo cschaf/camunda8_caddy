@@ -691,7 +691,7 @@ A passing drill means your backup format, restore logic, and stack health checks
 | Option | Description |
 |--------|-------------|
 | `--simulate` | Simulates the backup flow without modifying data (alias: `--test`) |
-| `--retention-days N` | Deletes backups older than N days (default: `7`) |
+| `--retention-days N` | Keeps at most N backups; removes the oldest ones past N days of age, and only while more than N backups exist (default: `7`) |
 | `--backup-dir DIR` | Base directory for backups (default: `backups/`) |
 | `--encrypt-to ID` | Also writes an encrypted full-backup archive under `backups-encrypted/` using `gpg` or `age` |
 | `--env-file FILE` | Uses a custom env file instead of `.env` and `.env-credentials` |
@@ -904,7 +904,15 @@ Register-ScheduledTask -Action $action -Trigger $trigger -TaskName "CamundaBacku
 
 ### Backup Retention
 
-By default, backups older than 7 days are automatically deleted. This can be adjusted in the script `scripts/lib/backup-common.sh` (or `.ps1`) via the `Cleanup-OldBackups` / `cleanup_old_backups` parameter.
+By default, the newest 7 backups are kept. Cleanup only removes backups once **more** than N exist (N = retention days, default `7`), and even then it deletes only as many of the oldest ones — all of them older than N days — as needed to get back to the limit. With one backup per day this removes exactly the single backup that crossed the threshold on each run; if a schedule was paused and only one or two stale backups remain, they are kept as a last safety net. The default can be adjusted via `--retention-days` and in the script `scripts/lib/backup-common.sh` (or `.ps1`) via the `Cleanup-OldBackups` / `cleanup_old_backups` parameter.
+
+Examples (`--retention-days 7`, daily runs):
+
+| Situation | Result |
+|-----------|--------|
+| 7 backups, oldest 9 days old | Nothing removed (count not above the limit) |
+| 8th backup created | The one from 8 days ago is removed → 7 remain |
+| Only 2 backups, both 3 weeks old | Nothing removed (last safety net) |
 
 ### Exit Codes
 
