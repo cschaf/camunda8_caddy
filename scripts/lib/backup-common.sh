@@ -234,14 +234,31 @@ cleanup_old_backups() {
     return 0
   fi
 
+  local total
+  total="$(find "$target_dir" -mindepth 1 -maxdepth 1 -type d -name "[0-9]*" 2>>"$LOG_FILE" | wc -l || true)"
+  total="${total//[[:space:]]/}"
+
+  # Retention policy: never prune while the number of backups is at or below
+  # the limit (a lone stale backup from a paused schedule stays as the last
+  # safety net), and once over the limit remove only as many OLDEST backups —
+  # all of them past the retention window — as needed to get back to it.
+  local excess=$(( total > retention_days ? total - retention_days : 0 ))
+  if [[ "$excess" -le 0 ]]; then
+    log "Found $total backup(s), at or below the ${retention_days}-backup limit. Nothing removed."
+    return 0
+  fi
+
   local count=0
+  local dir
   while IFS= read -r dir; do
+    [[ -z "$dir" ]] && continue
+    [[ "$count" -ge "$excess" ]] && break
     log "Removing old backup: $dir"
     rm -rf "$dir"
     count=$((count + 1))
-  done < <(find "$target_dir" -maxdepth 1 -type d -name "[0-9]*" -mtime +$retention_days 2>>"$LOG_FILE" || true)
+  done < <(find "$target_dir" -mindepth 1 -maxdepth 1 -type d -name "[0-9]*" -mtime +"$retention_days" 2>>"$LOG_FILE" | sort || true)
 
-  log "Removed $count old backup(s)."
+  log "Removed $count backup(s); $((total - count)) remain."
 }
 
 acquire_lock() {

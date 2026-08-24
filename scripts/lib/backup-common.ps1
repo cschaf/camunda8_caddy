@@ -246,19 +246,29 @@ function Cleanup-OldBackups {
         return
     }
 
+    $allBackups = @(Get-ChildItem -Path $BackupDir -Directory | Where-Object { $_.Name -match '^\d{8}_\d{6}$' })
     $cutoff = (Get-Date).AddDays(-$RetentionDays)
-    $oldBackups = Get-ChildItem -Path $BackupDir -Directory | Where-Object {
-        $_.Name -match '^\d{8}_\d{6}$' -and $_.LastWriteTime -lt $cutoff
+    # Retention policy: never prune while the number of backups is at or below
+    # the limit (a lone stale backup from a paused schedule stays as the last
+    # safety net), and once over the limit remove only as many OLDEST backups —
+    # all of them past the retention window — as needed to get back to it.
+    $oldBackups = @($allBackups | Where-Object { $_.LastWriteTime -lt $cutoff } | Sort-Object Name)
+    $excess = [Math]::Max(0, $allBackups.Count - $RetentionDays)
+
+    if ($excess -le 0) {
+        Log "Found $($allBackups.Count) backup(s), at or below the ${RetentionDays}-backup limit. Nothing removed."
+        return
     }
 
     $count = 0
     foreach ($dir in $oldBackups) {
+        if ($count -ge $excess) { break }
         Log "Removing old backup: $($dir.FullName)"
         Remove-Item -Path $dir.FullName -Recurse -Force
         $count++
     }
 
-    Log "Removed $count old backup(s)."
+    Log "Removed $count backup(s); $($allBackups.Count - $count) remain."
 }
 
 function Acquire-Lock {
