@@ -284,12 +284,19 @@ function Main {
 
             $zeebeRetry = 0
             $zeebeMaxRetries = 3
+            $orchestrationArchive = Join-Path $backupDir "orchestration.tar.gz"
             while ($zeebeRetry -lt $zeebeMaxRetries) {
                 try {
+                    # Stream the tar to stdout and let PowerShell write the file:
+                    # writing /backup/orchestration.tar.gz inside the (root)
+                    # container would leave the artifact owned by root:root on
+                    # the bind mount.
                     docker run --rm `
                         -v "${zeebeVol}:/data" `
-                        -v "${backupDir}:/backup" `
-                        alpine tar czf /backup/orchestration.tar.gz -C /data . | Out-Null
+                        alpine tar czf - -C /data . > $orchestrationArchive
+                    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $orchestrationArchive) -or (Get-Item $orchestrationArchive).Length -eq 0) {
+                        throw "Zeebe state backup failed (docker exit code: $LASTEXITCODE)"
+                    }
                     Log "Zeebe state backed up."
                     break
                 }

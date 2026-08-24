@@ -323,10 +323,13 @@ main() {
     local zeebe_retry=0
     local zeebe_max_retries=3
     while true; do
+      # Stream the tar to stdout and let the HOST shell write the file: writing
+      # /backup/orchestration.tar.gz inside the (root) container would leave the
+      # artifact owned by root:root on the bind mount, so the invoking user
+      # (e.g. camunda-admin) could not manage/delete it.
       if MSYS_NO_PATHCONV=1 docker run --rm \
         -v "${zeebe_vol}:/data" \
-        -v "$backup_dir:/backup" \
-        alpine tar czf /backup/orchestration.tar.gz -C /data . 2>>"$LOG_FILE"; then
+        alpine tar czf - -C /data . 2>>"$LOG_FILE" > "$backup_dir/orchestration.tar.gz"; then
         log "Zeebe state backed up."
         break
       fi
@@ -434,7 +437,11 @@ PYEOF
     log "Copying snapshot data from Docker volume to backup directory..."
     local es_backup_dir="$backup_dir/elasticsearch"
     mkdir -p "$es_backup_dir"
+    # Run the copy as the invoking user so the copied snapshot files are not
+    # owned by root:root on the bind mount (the source volume was chmod'ed 777
+    # above, so a non-root reader is sufficient).
     MSYS_NO_PATHCONV=1 docker run --rm \
+      --user "$(id -u):$(id -g)" \
       -v "elastic-backup:/source:ro" \
       -v "$es_backup_dir:/dest" \
       alpine sh -c 'cp -r /source/. /dest/' > /dev/null 2>&1 || {
