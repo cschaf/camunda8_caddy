@@ -1,0 +1,60 @@
+flowchart LR
+    subgraph clients[" "]
+        direction TB
+        browser["🖥️ Browser<br/><b>Web UIs</b><br/>Operate · Tasklist · Optimize<br/>Console · Identity · Web Modeler"]
+        userapp["⚙️ Eigene Anwendungen<br/>Camunda Clients"]
+    end
+
+    subgraph vm1["🐳 VM 1 — Camunda 8 Plattform"]
+        direction TB
+
+        proxy["🔀 Reverse Proxy<br/><b>Caddy</b><br/>zentrale HTTPS-Adresse<br/>für alle Web UIs"]
+
+        subgraph apps["Camunda Anwendungen"]
+            direction TB
+            orchestration["<b>Orchestration Cluster</b><br/>Workflow Engine (Zeebe)<br/>+ Operate & Tasklist"]
+            optimize["Optimize<br/>Reports & Analytics"]
+            webmodeler["Web Modeler<br/>BPMN modellieren"]
+            console["Console<br/>Verwaltung"]
+            identity["Identity<br/>Benutzer & Rechte"]
+        end
+
+        subgraph infra["Infrastruktur"]
+            direction TB
+            keycloak["🔐 Keycloak<br/>Login (Single Sign-On)"]
+            elastic["🔍 Elasticsearch<br/>Suche & Datenablage"]
+            postgres["🗄️ PostgreSQL<br/>Datenbank"]
+            mailpit["✉️ Mailpit<br/>E-Mail (Test)"]
+        end
+
+        proxy --> orchestration
+        proxy --> optimize
+        proxy --> webmodeler
+        proxy --> console
+        proxy --> identity
+    end
+
+    subgraph vm2["🐳 VM 2 — Eigene Konnektoren"]
+        customconn["Custom Connectors<br/>Anbindung Fremdsysteme"]
+    end
+
+    browser --> proxy
+    userapp --> proxy
+
+    apps -.->|"Login"| keycloak
+    orchestration -.-> elastic
+    optimize -.-> elastic
+    identity -.-> postgres
+    webmodeler -.-> postgres
+    webmodeler -.-> mailpit
+
+    customconn ==>|"ruft Workflows ab<br/>& liefert Ergebnisse"| orchestration
+
+    classDef vm fill:#f4f4f4,stroke:#888,stroke-width:2px
+    classDef svc fill:#dbeafe,stroke:#3b82f6
+    classDef infraBox fill:#e5e7eb,stroke:#374151
+    classDef proxyBox fill:#fef3c7,stroke:#d97706
+    class vm1,vm2 vm
+    class orchestration,optimize,webmodeler,console,identity,customconn svc
+    class keycloak,postgres,elastic,mailpit infraBox
+    class proxy proxyBox
