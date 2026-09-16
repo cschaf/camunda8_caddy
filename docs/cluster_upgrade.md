@@ -82,7 +82,7 @@ Update `.env.example`, the local `.env`, and `.env-credentials.example` (when ne
 | Web Modeler | `8.8.12` | `8.9.4` | `CAMUNDA_WEB_MODELER_VERSION` |
 | Console | `8.8.133` | `8.9.44` | `CAMUNDA_CONSOLE_VERSION` |
 | Elasticsearch | `8.17.10` | `8.19.11` | `ELASTIC_VERSION` |
-| Keycloak | `26.3.2` | `26.3.2` | `KEYCLOAK_SERVER_VERSION` |
+| Keycloak | `26.3.2` | `quay-26.6.4` | `KEYCLOAK_SERVER_VERSION` |
 | Mailpit | `v1.21.8` | `v1.21.8` | `MAILPIT_VERSION` |
 | PostgreSQL | `15-alpine3.22` | `15-alpine3.22` | `POSTGRES_VERSION` |
 

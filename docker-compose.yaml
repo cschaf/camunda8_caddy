@@ -281,7 +281,6 @@ services:
           cpus: "0.25"
           memory: 256m
     volumes:
-      - keycloak-theme:/app/keycloak-theme
       - "./.identity/application.yaml:/app/application.yaml"
     networks:
       - camunda-platform
@@ -360,23 +359,24 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
-  keycloak: # https://hub.docker.com/r/bitnamilegacy/keycloak
+  keycloak: # https://hub.docker.com/r/camunda/keycloak
     container_name: keycloak
-    image: bitnamilegacy/keycloak:${KEYCLOAK_SERVER_VERSION}
-    volumes:
-      - keycloak-theme:/opt/bitnami/keycloak/themes/identity
+    image: camunda/keycloak:${KEYCLOAK_SERVER_VERSION}
+    command: [start]
     environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USER:?KEYCLOAK_ADMIN_USER is required}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?KEYCLOAK_ADMIN_PASSWORD is required}
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:?POSTGRES_DB is required}
+      KC_DB_USERNAME: ${POSTGRES_USER:?POSTGRES_USER is required}
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      KC_HTTP_ENABLED: "true"
       KC_HTTP_PORT: 18080
       KC_HTTP_RELATIVE_PATH: /auth
-      KC_HOSTNAME: https://keycloak.${HOST:?HOST is required}/auth
+      KC_HEALTH_ENABLED: "true"
+      KC_HOSTNAME_STRICT: "false"
       KC_PROXY_HEADERS: xforwarded
-      KEYCLOAK_HTTP_PORT: 18080
-      KEYCLOAK_HTTP_RELATIVE_PATH: /auth
-      KEYCLOAK_DATABASE_HOST: postgres
-      KEYCLOAK_DATABASE_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
-      KEYCLOAK_ADMIN_USER: ${KEYCLOAK_ADMIN_USER:?KEYCLOAK_ADMIN_USER is required}
-      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?KEYCLOAK_ADMIN_PASSWORD is required}
-      KEYCLOAK_PROXY_HEADERS: xforwarded
+      KC_TRANSACTION_XA_ENABLED: "false"
     env_file:
       - path: .env-credentials
         required: true
@@ -392,11 +392,15 @@ services:
           cpus: "0.5"
           memory: 512m
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:18080/auth"]
-      interval: 30s
-      timeout: 15s
-      retries: 5
-      start_period: 30s
+      test:
+        [
+          "CMD-SHELL",
+          "bash -c 'exec 3<>/dev/tcp/127.0.0.1/9000 && echo -e \"GET /auth/health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n\" >&3 && timeout 5 cat <&3 | grep -q \"200 OK\"'",
+        ]
+      interval: 15s
+      timeout: 10s
+      retries: 15
+      start_period: 60s
     networks:
       - camunda-platform
       - identity-network
@@ -784,7 +788,6 @@ volumes:
   elastic-backup:
     name: elastic-backup
   postgres:
-  keycloak-theme:
   postgres-web:
   camunda-db:
 

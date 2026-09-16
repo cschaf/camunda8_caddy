@@ -91,7 +91,7 @@ The backup system secures the following data:
 | Web Modeler DB | `pg_dump -Fc` | GZIP-compressed (`webmodeler.sql.gz`) |
 | Configurations | `tar.gz` | `.env`, `.env-credentials`, `connector-secrets.txt`, `Caddyfile`, `application.yaml` files |
 
-**Not backed up:** `keycloak-theme` volume (initialized automatically by Identity).
+**Not backed up:** UI theme assets are baked into the `camunda/keycloak` and `camunda/identity` images; no separate theme volume exists anymore.
 
 **Volume naming:** Docker Compose prefixes managed volume names with the compose project name (for example `camundacomposenvl_orchestration`). The scripts derive the correct prefixed volume names automatically. The Elasticsearch snapshot repository volume is exempt because it is explicitly named `elastic-backup`.
 

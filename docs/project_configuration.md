@@ -36,12 +36,12 @@ This stack deploys a full Camunda 8.9 self-managed platform with:
 | **Orchestration** | `camunda/camunda:8.9.6` | Zeebe broker + Operate + Tasklist in one container |
 | **Elasticsearch** | `docker.elastic.co/elasticsearch/elasticsearch:8.19.11` | Optimize analytics storage (Optimize requires ES/OpenSearch) |
 | **camunda-db** | `postgres:${POSTGRES_VERSION}` | Camunda core operational data (Zeebe, Operate, Tasklist) |
-| **Identity** | `camunda/identity:8.9.4` | Centralized identity, OIDC provider integration, role management |
-| **Keycloak** | `bitnamilegacy/keycloak:26.3.2` | OIDC identity provider, realm/client setup, user authentication |
-| **Optimize** | `camunda/optimize:8.9.6` | Process analytics and optimization |
-| **Connectors** | `camunda/connectors-bundle:8.9.5` | Outbound integrations and webhooks |
-| **Web Modeler** | `camunda/web-modeler-restapi:8.9.4` | BPMN process modeling (REST API serves UI + WebSockets) |
-| **Console** | `camunda/console:8.9.44` | Cluster overview and management UI |
+| **Identity** | `camunda/identity:8.9.9` | Centralized identity, OIDC provider integration, role management |
+| **Keycloak** | `camunda/keycloak:quay-26.6.4` | OIDC identity provider, realm/client setup, user authentication |
+| **Optimize** | `camunda/optimize:8.9.19` | Process analytics and optimization |
+| **Connectors** | `camunda/connectors-bundle:8.9.10` | Outbound integrations and webhooks |
+| **Web Modeler** | `camunda/web-modeler-restapi:8.9.8` | BPMN process modeling (REST API serves UI + WebSockets) |
+| **Console** | `camunda/console:8.9.104` | Cluster overview and management UI |
 | **PostgreSQL** (×2) | `postgres:15-alpine3.22` | Identity/Keycloak DB + Web Modeler DB |
 | **Caddy** | `caddy:2.11.2@sha256:25cdc846626b62d05f6b633b9b40c2c9f6ef89b515dc76133cefd920f7dbe562` | Reverse proxy with automatic HTTPS and subdomain routing |
 | **Autoheal** | `willfarrell/autoheal@sha256:75c28b0020543e8eb49fe6514d012e7d2691f095dd622309d045da8647c8bb83` | Restarts labeled containers when Docker health checks mark them as unhealthy |
@@ -464,14 +464,14 @@ The demo user is assigned these roles:
 
 | Variable | Value | Why |
 |----------|-------|-----|
-| `KC_HTTP_PORT=18080` | Native Keycloak HTTP port | Current Keycloak/Bitnami 26+ setting for the HTTP listener; mirrors the legacy `KEYCLOAK_HTTP_PORT` value |
-| `KC_HTTP_RELATIVE_PATH=/auth` | Native Keycloak relative path | Current Keycloak/Bitnami 26+ setting for serving Keycloak under `/auth`; mirrors the legacy `KEYCLOAK_HTTP_RELATIVE_PATH` value |
-| `KC_HOSTNAME=https://keycloak.${HOST}/auth` | Canonical public issuer URL | Forces Keycloak's OIDC discovery and issued tokens to use the browser-facing HTTPS issuer, avoiding refresh-token failures such as `invalid_grant: Invalid token issuer` |
-| `KC_PROXY_HEADERS=xforwarded` | Native proxy header setting | Current Keycloak/Bitnami 26+ setting that trusts Caddy's `X-Forwarded-*` headers |
-| `KEYCLOAK_HTTP_PORT=18080` | Non-standard port | Avoids conflict with other services on 8080; matches `KEYCLOAK_HOST=keycloak` in the Docker network |
-| `KEYCLOAK_HTTP_RELATIVE_PATH=/auth` | Required path | Keycloak requires this path prefix; the `KEYCLOAK_HOST=keycloak` means containers call `http://keycloak:18080/auth` |
-| `KEYCLOAK_DATABASE_HOST=postgres` | Docker DNS name | Keycloak connects to the PostgreSQL container by name, not localhost |
-| `KEYCLOAK_PROXY_HEADERS=xforwarded` | Legacy proxy header setting | Kept for compatibility with older Bitnami images; the active setting for Keycloak 26+ is `KC_PROXY_HEADERS` |
+| `KC_HTTP_PORT=18080` | Native Keycloak HTTP port | Avoids conflict with other services on 8080; matches `KEYCLOAK_HOST=keycloak` in the Docker network |
+| `KC_HTTP_RELATIVE_PATH=/auth` | Native Keycloak relative path | Keycloak serves under `/auth` so containers call `http://keycloak:18080/auth` |
+| `KC_DB=postgres`, `KC_DB_URL`, `KC_DB_USERNAME`, `KC_DB_PASSWORD` | PostgreSQL connection | Keycloak connects to the `postgres` container by name using the shared `.env-credentials` values; the existing database schema auto-migrates on first start |
+| `KC_BOOTSTRAP_ADMIN_USERNAME/PASSWORD` | Admin bootstrap | Replaces the legacy Bitnami `KEYCLOAK_ADMIN_USER/PASSWORD` variables |
+| `KC_HEALTH_ENABLED=true` | Management port health endpoints | Enables `/auth/health/ready` on management port 9000 used by the Compose healthcheck |
+| `KC_HOSTNAME_STRICT=false` | Frontend URL derivation | Keycloak derives the browser-facing issuer from Caddy's forwarded headers instead of a pinned hostname |
+| `KC_PROXY_HEADERS=xforwarded` | Native proxy header setting | Trusts Caddy's `X-Forwarded-*` headers so OIDC discovery and token issuers use the HTTPS proxy URL |
+| `KC_TRANSACTION_XA_ENABLED=false` | Non-XA connection | Required for stable startup against the shared PostgreSQL instance |
 
 ---
 
@@ -617,7 +617,7 @@ The pre-flight and the manual `optimize-upgrade` scripts are **generic across 8.
 
 ### Keycloak
 
-**Image:** `bitnamilegacy/keycloak:${KEYCLOAK_SERVER_VERSION}`
+**Image:** `camunda/keycloak:${KEYCLOAK_SERVER_VERSION}`
 
 **Port:** 18080
 

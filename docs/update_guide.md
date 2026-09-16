@@ -17,7 +17,7 @@ The main version pins are in `.env.example`. The running stack uses `.env` (comm
 | Web Modeler REST API and UI | `CAMUNDA_WEB_MODELER_VERSION` | `camunda/web-modeler-restapi:${CAMUNDA_WEB_MODELER_VERSION}` and `camunda/web-modeler-websockets:${CAMUNDA_WEB_MODELER_VERSION}` |
 | Console | `CAMUNDA_CONSOLE_VERSION` | `camunda/console:${CAMUNDA_CONSOLE_VERSION}` |
 | Elasticsearch | `ELASTIC_VERSION` | `docker.elastic.co/elasticsearch/elasticsearch:${ELASTIC_VERSION}` |
-| Keycloak | `KEYCLOAK_SERVER_VERSION` | `bitnamilegacy/keycloak:${KEYCLOAK_SERVER_VERSION}` |
+| Keycloak | `KEYCLOAK_SERVER_VERSION` | `camunda/keycloak:${KEYCLOAK_SERVER_VERSION}` |
 | PostgreSQL | `POSTGRES_VERSION` | `postgres:${POSTGRES_VERSION}` |
 | Mailpit | `MAILPIT_VERSION` | `axllent/mailpit:${MAILPIT_VERSION}` |
 | Caddy | hardcoded in `docker-compose.yaml` | `caddy:2.11.2@sha256:...` |
@@ -42,7 +42,7 @@ Start with Camunda's official release information, then confirm the Docker tags 
 - Elasticsearch compatibility and tags:
   - `https://docs.camunda.io/docs/self-managed/reference/supported-environments/`
   - `https://www.docker.elastic.co/r/elasticsearch/elasticsearch`
-- Keycloak image tags: `https://hub.docker.com/r/bitnamilegacy/keycloak/tags`
+- Keycloak image tags: `https://hub.docker.com/r/camunda/keycloak/tags`
 - PostgreSQL tags: `https://hub.docker.com/_/postgres/tags`
 - Mailpit tags: `https://hub.docker.com/r/axllent/mailpit/tags`
 - Caddy tags and digest: `https://hub.docker.com/_/caddy/tags`
