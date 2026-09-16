@@ -3,11 +3,11 @@
 # Usage:
 #   bash scripts/logs.sh <component> [component2 ...] [options]
 #
-# Components (aliases allowed):
-#   caddy|proxy|reverse-proxy, orchestration|zeebe, connectors, optimize,
-#   identity, keycloak, postgres, camunda-db, web-modeler-db, mailpit,
-#   restapi|web-modeler|modeler, websockets, console, elasticsearch|es,
-#   autoheal, camunda-data-init, all
+# Components (container names from docker-compose.yaml):
+#   reverse-proxy, orchestration, connectors, optimize, identity, keycloak,
+#   postgres, camunda-db, web-modeler-db, mailpit, web-modeler-restapi,
+#   web-modeler-websockets, console, elasticsearch, autoheal, camunda-data-init
+#   all
 #
 # Options:
 #   -f            follow output
@@ -17,9 +17,9 @@
 #   -h, --help    show this help
 #
 # Examples:
-#   bash scripts/logs.sh caddy
+#   bash scripts/logs.sh reverse-proxy
 #   bash scripts/logs.sh orchestration keycloak -f
-#   bash scripts/logs.sh restapi --since 30m -g "error"
+#   bash scripts/logs.sh web-modeler-restapi --since 30m -g "error"
 #   bash scripts/logs.sh all --tail 50
 
 set -uo pipefail
@@ -49,38 +49,32 @@ if [[ ${#COMPONENTS[@]} -eq 0 ]]; then
   usage
 fi
 
-resolve() {
-  case "$1" in
-    caddy|proxy)                   echo "reverse-proxy" ;;
-    reverse-proxy|orchestration|connectors|optimize|identity|keycloak|mailpit|console|autoheal|camunda-data-init)
-                                   echo "$1" ;;
-    orchestra|zeebe)               echo "orchestration" ;;
-    elasticsearch|es)              echo "elasticsearch" ;;
-    postgres|camunda-db|web-modeler-websockets)
-                                   echo "$1" ;;
-    restapi|modeler|web-modeler)   echo "web-modeler-restapi" ;;
-    websockets)                    echo "web-modeler-websockets" ;;
-    all)                           echo "ALL" ;;
-    *) echo "ERROR: unknown component: $1" >&2; exit 2 ;;
-  esac
-}
-
 ALL_NAMES='^(reverse-proxy|orchestration|connectors|optimize|identity|keycloak|postgres|camunda-db|web-modeler-db|mailpit|web-modeler-restapi|web-modeler-websockets|console|elasticsearch|autoheal|camunda-data-init)$'
 
 declare -A SEEN=()
-for comp in "${COMPONENTS[@]}"; do
-  resolved="$(resolve "$comp")"
-  if [[ "$resolved" == "ALL" ]]; then
+for c in "${COMPONENTS[@]}"; do
+  if [[ -n "${SEEN[$c]:-}" ]]; then
+    continue
+  fi
+  SEEN[$c]=1
+
+  if [[ "$c" == "all" ]]; then
     targets=$(docker ps -a --format '{{.Names}}' | grep -E "$ALL_NAMES" || true)
+    if [[ -z "$targets" ]]; then
+      echo "WARN: no component containers found (is the stack running?)" >&2
+    fi
   else
-    targets="$resolved"
+    if ! echo "$c" | grep -qE "$ALL_NAMES"; then
+      echo "ERROR: unknown component: $c" >&2
+      echo "Known components: see 'bash scripts/logs.sh --help'" >&2
+      exit 2
+    fi
+    targets="$c"
   fi
 
-  for c in $targets; do
-    [[ -n "${SEEN[$c]:-}" ]] && continue
-    SEEN[$c]=1
-    if ! docker inspect "$c" >/dev/null 2>&1; then
-      echo "WARN: container '$c' not found — does it exist? (stack running?)" >&2
+  for container in $targets; do
+    if ! docker inspect "$container" >/dev/null 2>&1; then
+      echo "WARN: container '$container' not found — was it created? (stack running?)" >&2
       continue
     fi
 
@@ -90,11 +84,11 @@ for comp in "${COMPONENTS[@]}"; do
     [[ -n "$SINCE" ]] && args+=(--since "$SINCE")
 
     if [[ -n "$GREP_PATTERN" ]]; then
-      echo "===== $c (grep: $GREP_PATTERN) ====="
-      docker logs "${args[@]}" "$c" 2>&1 | grep -E --ignore-case "$GREP_PATTERN" || true
+      echo "===== $container (grep: $GREP_PATTERN) ====="
+      docker logs "${args[@]}" "$container" 2>&1 | grep -E --ignore-case "$GREP_PATTERN" || true
     else
-      echo "===== $c ====="
-      docker logs "${args[@]}" "$c" 2>&1 || true
+      echo "===== $container ====="
+      docker logs "${args[@]}" "$container" 2>&1 || true
     fi
     $FOLLOW && break
   done
