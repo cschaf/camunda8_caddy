@@ -146,6 +146,8 @@ Während der Hub-Migration darf kein Web-Modeler-8.9-Container mehr laufen.
 
 - Per CI (`gitlab-ci.txt`) oder `git pull` auf den gemergten Stand.
 - **Achtung:** Das CI-rsync **überschreibt `.env`, `.env-credentials`, `Caddyfile`, `connector-secrets.txt` und `secrets/*` nicht**. Diese Dateien pflegt man auf dem Server per Hand (4.5–4.7).
+- **Dateirechte (bei manuellem `git pull`):** Sicherstellen, dass `.hub/application.yaml` für den Hub-Containerprozess (UID 1001) lesbar ist: `chmod 0644 .hub/application.yaml` (im CI-Script `gitlab-ci.txt` bereits automatisiert).
+- **Alte Console-Dateien bereinigen:** Das frühere Template `.console/application.yaml.template` wurde aus Git gelöscht. Auf dem Server verbliebene, gerenderte 8.9-Dateien im Verzeichnis `.console/` können gefahrlos entfernt werden: `rm -rf .console/`.
 
 ### 4.5 Server-`.env` anpassen (manuell!)
 
@@ -220,6 +222,7 @@ Danach optional aufräumen, wenn alle Benutzer umgestellt sind: die Rollen `Cons
 
 - Die Checkliste in [Kapitel 7](#7-verifikation-nach-dem-upgrade) abarbeiten.
 - Danach ein neues Backup (`bash scripts/backup.sh`) als erster 8.10-Stand.
+- Server-Bereinigung: Falls noch vorhanden, das alte Console-Konfigurationsverzeichnis vom Server löschen (`rm -rf .console/`).
 - Anwender informieren: Web Modeler und Console heißen jetzt **Camunda Hub** unter `https://webmodeler.{HOST}`; Projekte sind neu strukturiert („`<Projekt> - General`“); „Play“ heißt jetzt „Test mode“.
 
 ---
@@ -377,11 +380,13 @@ Umgebung: Windows, Docker Desktop (Hyper-V, 8,3 GB VM-RAM), `stages/dev.yaml`, I
 4. **Zwei Fehler gefunden und behoben:**
    - Die Cluster-Version `8.10-rc1` (Hub-Image-Tag) wird nicht als SemVer akzeptiert → `APPLICATION FAILED TO START … authorizations must not be set if 'version' is lower than 8.8`. Fix: `${CAMUNDA_VERSION}`.
    - Hub leitete auf `http://webmodeler.{HOST}/login` um. Fix: `SERVER_FORWARD_HEADERS_STRATEGY: framework`.
-5. Das `prod`-Profil passt nicht in eine 8-GB-Docker-VM. Lokal deshalb ohne Änderung der `.env` starten:
-   ```bash
-   DISPLAY_STAGE=<Label> docker compose --env-file .env --env-file .env-credentials \
-     -f docker-compose.yaml -f stages/dev.yaml up -d
-   ```
+5. Das `prod`-Profil passt nicht in eine 8-GB-Docker-VM (JVM-Heaps über 11 GB).
+   - Manueller Direktstart ohne Änderung der `.env`:
+     ```bash
+     DISPLAY_STAGE=<Label> docker compose --env-file .env --env-file .env-credentials \
+       -f docker-compose.yaml -f stages/dev.yaml up -d
+     ```
+   - **Achtung bei Skripten (`start.sh` / `start.ps1`, `ensure-stack.*`, `optimize-upgrade.*`):** Die Skripte lesen `STAGE` direkt aus `.env` (Default `STAGE=PROD`) und binden `stages/prod.yaml` ein. Auf einer 8-GB-Docker-VM führt das sofort zum OOM-Kill (Exit Code 137) von Elasticsearch. Für lokale Entwicklungs- und Testläufe per Skript daher in der lokalen `.env` temporär **`STAGE=dev`** hinterlegen (mit optionalem `DISPLAY_STAGE=TEST`).
 6. Frischer Aufbau from scratch: alle 14 Container sind healthy, Zeebe `UP`. Alle Proxy-URLs antworten; Orchestration nutzt den Callback `/sso-callback`, Optimize (CSL) weiterhin `/api/authentication/callback`. Es sind keine Keycloak-Änderungen nötig.
 7. **Identity auf einem 8.9-Realm** (gesicherte 8.9-Keycloak-DB + Identity 8.9.9 mit neuer Konfiguration): Neue Rollen und Permissions werden angelegt, Bestandsbenutzer behalten nur ihre alten Rollen, `Console` erhält kein `admin:clusters`, und die Clients `console`/`console-api` bleiben stehen. Daraus ergibt sich Schritt 4.9.
 8. Docker Desktop wurde unter Speicherdruck instabil (`error during connect … EOF` beim Anlegen von Containern). Ein `docker desktop restart` hat das behoben.
