@@ -39,9 +39,12 @@ camunda:
     cpu-thread-count: 4
     io-thread-count: 4
   data:
+    # Zeebe snapshot interval. 8.10 renamed the legacy
+    # zeebe.broker.data.snapshotPeriod to camunda.data.snapshot-period; it does
+    # NOT live under primary-storage. Keep 5m explicit (also the default).
+    snapshot-period: 5m
     primary-storage:
       directory: /usr/local/camunda/data
-      snapshot-period: 5m
       rocks-db:
         # 8.10 changed the default from PARTITION to FRACTION. Pin the 8.9
         # behavior so the upgrade does not change RocksDB memory sizing.

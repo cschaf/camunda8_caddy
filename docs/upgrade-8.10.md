@@ -285,7 +285,7 @@ Regeln:
 | Datei | Änderung |
 |---|---|
 | `.identity/application.yaml` | Console-Preset, Console-Client und Init-Secret entfernt. `webmodeler`-Preset in „Hub“ umbenannt; Client-ID `web-modeler` und Audiences bleiben. Neue Permissions `admin:clusters`, `admin:catalog` und `admin:bi`; neue Rollen `Hub`, `Hub Admin`, `Analyst` (auch im Optimize-Preset) und `DevOps`. Demo-User: `ManagementIdentity, Optimize, Analyst, Hub, Hub Admin, DevOps, Orchestration`. |
-| `.orchestration/application.yaml` | `camunda.data.primary-storage.rocks-db.memory-allocation-strategy: PARTITION`; Kommentar zu `number-of-replicas: 0`; MCP-Kommentar |
+| `.orchestration/application.yaml` | `camunda.data.primary-storage.rocks-db.memory-allocation-strategy: PARTITION`; `camunda.data.snapshot-period: 5m` (8.10-Key, **nicht** unter `primary-storage`); Kommentar zu `number-of-replicas: 0`; MCP-Kommentar |
 | `.connectors/application.yaml` | `camunda.connector.secret-resolver.secret-filter.mode: STRICT` |
 | `.optimize/environment-config.yaml.example` | `security.auth.cookie.same-site` entfernt; `zeebe.includeObjectVariableValue: true` |
 | `.console/application.yaml.template` | gelöscht (inklusive `.gitignore`-Eintrag für die gerenderte Datei) |
@@ -391,6 +391,7 @@ Umgebung: Windows, Docker Desktop (Hyper-V, 8,3 GB VM-RAM), `stages/dev.yaml`, I
 7. **Identity auf einem 8.9-Realm** (gesicherte 8.9-Keycloak-DB + Identity 8.9.9 mit neuer Konfiguration): Neue Rollen und Permissions werden angelegt, Bestandsbenutzer behalten nur ihre alten Rollen, `Console` erhält kein `admin:clusters`, und die Clients `console`/`console-api` bleiben stehen. Daraus ergibt sich Schritt 4.9.
 8. Docker Desktop wurde unter Speicherdruck instabil (`error during connect … EOF` beim Anlegen von Containern). Ein `docker desktop restart` hat das behoben.
 9. Die Skript-Prüfung (6.7) hat mehrere Fehler in Betriebs-Skripten gefunden und behoben, darunter `optimize-upgrade` (Stage-Overlay) und den wirkungslosen Health-Check in `backup.sh`/`restore.sh`.
+10. **Review-Nachtrag (25.09.2026, unabhängige Prüfung gegen denselben laufenden Stack):** Hub-Cluster in der DB bestätigt (Tags `BBC-TEST`/`local`, Typ `ADMIN`, Version `8.10.0-rc2`); Hub-DB-Daten nach der Migration erhalten (`hub_projects=1`, `files=1`); alle Hub-Readiness-URLs aus dem Hub-Container erreichbar; `console.*`→302 auf `webmodeler.*`, `webmodeler/health`→200; `bash -n`, PowerShell-Parser und alle `*.test.ps1` grün. Dabei behoben: `camunda.data.snapshot-period` lag falsch unter `primary-storage` (jetzt korrigiert), CI-Kommentar zu `.hub/application.yaml` präzisiert, `add-camunda-user.test.ps1` setzt den Exit-Code zurück. **Offen:** Der `connectors`-Container lief beim finalen Lauf bereits vor dem Rest und wurde von `up -d` nicht neu erzeugt, d. h. die gemountete `.connectors/application.yaml` (`STRICT`) wurde nicht frisch geladen (der 8.10-Default ist ohnehin `STRICT`).
 
 ---
 
@@ -408,7 +409,9 @@ Umgebung: Windows, Docker Desktop (Hyper-V, 8,3 GB VM-RAM), `stages/dev.yaml`, I
 | Hub-Cluster-Übersicht und Deploy aus Hub im Browser prüfen | Offen |
 | Worker/Clients auf v2-API und Camunda Java Client | Offen, außerhalb des Repos |
 | Connector-Templates mit Secret-Filter `STRICT` testen | Offen |
-| `camunda.data.primary-storage.snapshot-period` in `.orchestration/application.yaml` | Das 8.10-Konfigurationsmodell kennt nur `camunda.data.snapshot-period`. Der Key wird vermutlich ignoriert; der Default ist ebenfalls `5m`, also funktional egal. Beim nächsten Aufräumen korrigieren. |
+| Cluster-Admin-OIDC (`camunda.security.cluster-admin.oidc.*`) | Bewusst **nicht** gesetzt (Parität zu Upstream 8.10). Orchestration loggt `No cluster-admin OIDC matchers configured … every bearer token will be denied on /cluster/v2/**`. Nur nötig, falls Hub-Cluster-Management oder die Management-API `/cluster/v2/**` nutzt: dann `clients`/`groups`/`claims` setzen und mit einem `DevOps`-Benutzer prüfen. |
+| Hub-Cluster-Keys `camunda.hub.clusters` / `type: admin` | In `hub:8.10-rc1` verifiziert (Cluster + Tags in der Hub-DB, **keine** Deprecation-Warnung). Upstream `camunda-distributions` nutzt in 8.10 noch die Legacy-Aliase `camunda.modeler.clusters` / `orchestrationIdentity`. Beim GA-Abgleich erneut gegen `application-full.yaml` prüfen. |
+| `camunda.data.primary-storage.snapshot-period` | ✅ erledigt: auf `camunda.data.snapshot-period` verschoben (siehe 6.4). |
 | `CLAUDE.md` aktualisieren | Offen (siehe 6.8) |
 
 ### 9.2 Vor 8.11 (Deprecations aus 8.10)

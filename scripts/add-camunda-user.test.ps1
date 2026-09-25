@@ -40,3 +40,8 @@ if ($missingRoleExitCode -eq 0) {
 if (($missingRoleOutput -join "`n") -notmatch "ERROR: --role requires a value") {
     throw "Expected missing --role value to print a clear error. Output was: $($missingRoleOutput -join "`n")"
 }
+
+# The intentional add-camunda-user.sh failure above leaves a non-zero
+# $LASTEXITCODE. Reset it so a test runner that inspects the process exit code
+# does not report this passing test as failed.
+exit 0

@@ -51,9 +51,9 @@ deploy-sandbox:
     # Sie muss daher fuer andere Benutzer lesbar sein, sonst startet Optimize
     # mit einem NullPointerException beim Laden der Konfiguration nicht.
     - sudo test ! -f "$DEPLOY_PATH/.optimize/environment-config.yaml" || sudo chmod 0644 "$DEPLOY_PATH/.optimize/environment-config.yaml"
-    # Hub (8.10+) liest die gemountete Cluster-Config als Container-User.
-    # Serverlokale Dateien in secrets/ (zentrale Camunda-Secrets) bleiben vom
-    # Sync ausgeschlossen und muessen fuer UID 1001 lesbar sein.
+    # Hub (8.10+) liest die gemountete Cluster-Config im Container als
+    # Non-Root-User (UID 1001). Nach dem Sync sicherstellen, dass die Datei
+    # lesbar ist. (Serverlokale Dateien in secrets/ sind vom Sync ausgenommen.)
     - sudo test ! -f "$DEPLOY_PATH/.hub/application.yaml" || sudo chmod 0644 "$DEPLOY_PATH/.hub/application.yaml"
     # Nur Shell-Skripte ausführbar machen. Kein breites chmod auf alle Dateien,
     # damit Konfigurations- und Secret-Rechte nicht unnötig verändert werden.
@@ -99,9 +99,9 @@ deploy-dev:
     # Die serverlokale Optimize-Config bleibt vom Sync ausgeschlossen, muss aber
     # fuer den Containerprozess lesbar sein.
     - sudo test ! -f "$DEPLOY_PATH/.optimize/environment-config.yaml" || sudo chmod 0644 "$DEPLOY_PATH/.optimize/environment-config.yaml"
-    # Hub (8.10+) liest die gemountete Cluster-Config als Container-User.
-    # Serverlokale Dateien in secrets/ (zentrale Camunda-Secrets) bleiben vom
-    # Sync ausgeschlossen und muessen fuer UID 1001 lesbar sein.
+    # Hub (8.10+) liest die gemountete Cluster-Config im Container als
+    # Non-Root-User (UID 1001). Nach dem Sync sicherstellen, dass die Datei
+    # lesbar ist. (Serverlokale Dateien in secrets/ sind vom Sync ausgenommen.)
     - sudo test ! -f "$DEPLOY_PATH/.hub/application.yaml" || sudo chmod 0644 "$DEPLOY_PATH/.hub/application.yaml"
   only:
     # Dev-Sync nur vom Branch "development".
@@ -150,9 +150,9 @@ deploy-prod:
     # Die serverlokale Optimize-Config bleibt vom Sync ausgeschlossen, muss aber
     # fuer den Containerprozess lesbar sein.
     - sudo test ! -f "$DEPLOY_PATH/.optimize/environment-config.yaml" || sudo chmod 0644 "$DEPLOY_PATH/.optimize/environment-config.yaml"
-    # Hub (8.10+) liest die gemountete Cluster-Config als Container-User.
-    # Serverlokale Dateien in secrets/ (zentrale Camunda-Secrets) bleiben vom
-    # Sync ausgeschlossen und muessen fuer UID 1001 lesbar sein.
+    # Hub (8.10+) liest die gemountete Cluster-Config im Container als
+    # Non-Root-User (UID 1001). Nach dem Sync sicherstellen, dass die Datei
+    # lesbar ist. (Serverlokale Dateien in secrets/ sind vom Sync ausgenommen.)
     - sudo test ! -f "$DEPLOY_PATH/.hub/application.yaml" || sudo chmod 0644 "$DEPLOY_PATH/.hub/application.yaml"
     # Nur Shell-Skripte ausführbar machen. Kein breites chmod auf alle Dateien,
     # damit Konfigurations- und Secret-Rechte nicht unnötig verändert werden.
