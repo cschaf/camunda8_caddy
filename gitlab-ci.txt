@@ -39,7 +39,8 @@ deploy-sandbox:
         --exclude='Caddyfile' \
         --exclude='certs/' \
         --exclude='backups/' \
-        --exclude='.console/application.yaml' \
+        --include='secrets/.gitignore' \
+        --exclude='secrets/*' \
         --exclude='.optimize/environment-config.yaml' \
         --exclude='monitor.log' \
         --exclude='monitor.log.*' \
@@ -50,8 +51,10 @@ deploy-sandbox:
     # Sie muss daher fuer andere Benutzer lesbar sein, sonst startet Optimize
     # mit einem NullPointerException beim Laden der Konfiguration nicht.
     - sudo test ! -f "$DEPLOY_PATH/.optimize/environment-config.yaml" || sudo chmod 0644 "$DEPLOY_PATH/.optimize/environment-config.yaml"
-    # Console nutzt ebenfalls eine serverlokale gemountete Config-Datei.
-    - sudo test ! -f "$DEPLOY_PATH/.console/application.yaml" || sudo chmod 0644 "$DEPLOY_PATH/.console/application.yaml"
+    # Hub (8.10+) liest die gemountete Cluster-Config als Container-User.
+    # Serverlokale Dateien in secrets/ (zentrale Camunda-Secrets) bleiben vom
+    # Sync ausgeschlossen und muessen fuer UID 1001 lesbar sein.
+    - sudo test ! -f "$DEPLOY_PATH/.hub/application.yaml" || sudo chmod 0644 "$DEPLOY_PATH/.hub/application.yaml"
     # Nur Shell-Skripte ausführbar machen. Kein breites chmod auf alle Dateien,
     # damit Konfigurations- und Secret-Rechte nicht unnötig verändert werden.
     - sudo find "$DEPLOY_PATH/scripts" -type f -name "*.sh" -exec chmod 750 {} +
@@ -87,7 +90,8 @@ deploy-dev:
         --exclude='Caddyfile' \
         --exclude='certs/' \
         --exclude='backups/' \
-        --exclude='.console/application.yaml' \
+        --include='secrets/.gitignore' \
+        --exclude='secrets/*' \
         --exclude='.optimize/environment-config.yaml' \
         --exclude='monitor.log' \
         --exclude='monitor.log.*' \
@@ -95,8 +99,10 @@ deploy-dev:
     # Die serverlokale Optimize-Config bleibt vom Sync ausgeschlossen, muss aber
     # fuer den Containerprozess lesbar sein.
     - sudo test ! -f "$DEPLOY_PATH/.optimize/environment-config.yaml" || sudo chmod 0644 "$DEPLOY_PATH/.optimize/environment-config.yaml"
-    # Die serverlokale Console-Config bleibt ebenfalls vom Sync ausgeschlossen.
-    - sudo test ! -f "$DEPLOY_PATH/.console/application.yaml" || sudo chmod 0644 "$DEPLOY_PATH/.console/application.yaml"
+    # Hub (8.10+) liest die gemountete Cluster-Config als Container-User.
+    # Serverlokale Dateien in secrets/ (zentrale Camunda-Secrets) bleiben vom
+    # Sync ausgeschlossen und muessen fuer UID 1001 lesbar sein.
+    - sudo test ! -f "$DEPLOY_PATH/.hub/application.yaml" || sudo chmod 0644 "$DEPLOY_PATH/.hub/application.yaml"
   only:
     # Dev-Sync nur vom Branch "development".
     - development
@@ -133,7 +139,8 @@ deploy-prod:
         --exclude='Caddyfile' \
         --exclude='certs/' \
         --exclude='backups/' \
-        --exclude='.console/application.yaml' \
+        --include='secrets/.gitignore' \
+        --exclude='secrets/*' \
         --exclude='.optimize/environment-config.yaml' \
         --exclude='monitor.log' \
         --exclude='monitor.log.*' \
@@ -143,8 +150,10 @@ deploy-prod:
     # Die serverlokale Optimize-Config bleibt vom Sync ausgeschlossen, muss aber
     # fuer den Containerprozess lesbar sein.
     - sudo test ! -f "$DEPLOY_PATH/.optimize/environment-config.yaml" || sudo chmod 0644 "$DEPLOY_PATH/.optimize/environment-config.yaml"
-    # Die serverlokale Console-Config bleibt ebenfalls vom Sync ausgeschlossen.
-    - sudo test ! -f "$DEPLOY_PATH/.console/application.yaml" || sudo chmod 0644 "$DEPLOY_PATH/.console/application.yaml"
+    # Hub (8.10+) liest die gemountete Cluster-Config als Container-User.
+    # Serverlokale Dateien in secrets/ (zentrale Camunda-Secrets) bleiben vom
+    # Sync ausgeschlossen und muessen fuer UID 1001 lesbar sein.
+    - sudo test ! -f "$DEPLOY_PATH/.hub/application.yaml" || sudo chmod 0644 "$DEPLOY_PATH/.hub/application.yaml"
     # Nur Shell-Skripte ausführbar machen. Kein breites chmod auf alle Dateien,
     # damit Konfigurations- und Secret-Rechte nicht unnötig verändert werden.
     - sudo find "$DEPLOY_PATH/scripts" -type f -name "*.sh" -exec chmod 750 {} +

@@ -11,10 +11,18 @@ camunda:
   connector:
     secret-provider:
       environment:
-        # Camunda 8.9 defaults to SECRET_. This stack uses a dedicated prefix
+        # Camunda defaults to SECRET_. This stack uses a dedicated prefix
         # so connector secrets in connector-secrets.txt are explicit and do not
         # expose unrelated container environment variables.
         prefix: "CONNECTORS_SECRET"
+    secret-resolver:
+      secret-filter:
+        # 8.10 changed the default from DISABLED to STRICT: a connector only
+        # resolves {{secrets.X}} references declared in its deployed
+        # zeebe:property fields (outbound and inbound). Kept explicit so the
+        # behavior is visible. Set to DISABLED temporarily only if legacy
+        # element templates break, then fix the templates.
+        mode: STRICT
     agenticai:
       http:
         proxy-support:

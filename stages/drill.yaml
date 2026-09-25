@@ -17,14 +17,10 @@ services:
     container_name: ${COMPOSE_PROJECT_NAME:-camunda-restoredrill}-web-modeler-db
   mailpit:
     container_name: ${COMPOSE_PROJECT_NAME:-camunda-restoredrill}-mailpit
-  web-modeler-restapi:
-    container_name: ${COMPOSE_PROJECT_NAME:-camunda-restoredrill}-web-modeler-restapi
-  web-modeler-webapp:
-    container_name: ${COMPOSE_PROJECT_NAME:-camunda-restoredrill}-web-modeler-webapp
-  web-modeler-websockets:
-    container_name: ${COMPOSE_PROJECT_NAME:-camunda-restoredrill}-web-modeler-websockets
-  console:
-    container_name: ${COMPOSE_PROJECT_NAME:-camunda-restoredrill}-console
+  hub:
+    container_name: ${COMPOSE_PROJECT_NAME:-camunda-restoredrill}-hub
+  hub-websockets:
+    container_name: ${COMPOSE_PROJECT_NAME:-camunda-restoredrill}-hub-websockets
   autoheal:
     container_name: ${COMPOSE_PROJECT_NAME:-camunda-restoredrill}-autoheal
   reverse-proxy:

@@ -6,7 +6,7 @@
 # For local development, we recommend using KIND instead of `docker-compose`:
 # https://docs.camunda.io/docs/self-managed/setup/deploy/local/local-kubernetes-cluster/
 
-# This is a full configuration with Orchestration, Operate, Tasklist, Optimize, Identity, Keycloak, Elasticsearch and Web Modeler.
+# This is a full configuration with Orchestration, Operate, Tasklist, Optimize, Identity, Keycloak, Elasticsearch and Camunda Hub.
 # See docker-compose.yaml for a lightweight configuration that does not include Optimize, Identity, and Keycloak.
 
 services:
@@ -58,6 +58,10 @@ services:
       # Resource limits
       ELASTIC_PASSWORD: ${ELASTIC_PASSWORD}
       CAMUNDA_LICENSE_KEY: ${CAMUNDA_LICENSE_KEY:-}
+      # Centralized secrets (8.10, alpha): each file in ./secrets is a secret,
+      # referenced in BPMN as =camunda.secrets.NAME. Independent of the legacy
+      # {{secrets.NAME}} lookup via connector-secrets.txt.
+      CAMUNDA_SECRETS_STORES_FILE_DEFAULT_PATH: /etc/camunda/secrets
       JAVA_TOOL_OPTIONS: "-Xms4500m -Xmx4500m"
     env_file:
       - path: .env
@@ -89,6 +93,7 @@ services:
       - orchestration:/usr/local/camunda/data
       - camunda-data:/usr/local/camunda/camunda-data
       - "./.orchestration/application.yaml:/usr/local/camunda/config/application.yaml"
+      - "./secrets:/etc/camunda/secrets:ro"
     networks:
       - camunda-platform
     extra_hosts:
@@ -153,6 +158,10 @@ services:
   optimize: # https://docs.camunda.io/docs/self-managed/setup/deploy/other/docker/#optimize
     image: camunda/optimize:${CAMUNDA_OPTIMIZE_VERSION}
     container_name: optimize
+    # PID 1 in the image is a bash wrapper (optimize.sh) that does not forward
+    # SIGTERM, so every stop/backup waited for the full timeout and ended in
+    # SIGKILL. tini as init forwards the signal and the container stops in ~1s.
+    init: true
     ports:
       - "127.0.0.1:8083:8090"
     environment: # https://docs.camunda.io/docs/self-managed/optimize-deployment/install-and-start/
@@ -237,7 +246,6 @@ services:
       IDENTITY_DATABASE_USERNAME: ${POSTGRES_USER:?POSTGRES_USER is required}
       IDENTITY_DATABASE_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       VALUES_KEYCLOAK_INIT_ORCHESTRATION_SECRET: ${ORCHESTRATION_CLIENT_SECRET:?ORCHESTRATION_CLIENT_SECRET is required}
-      VALUES_KEYCLOAK_INIT_CONSOLE_SECRET: ${CONSOLE_CLIENT_SECRET:?CONSOLE_CLIENT_SECRET is required}
       VALUES_KEYCLOAK_INIT_OPTIMIZE_SECRET: ${OPTIMIZE_CLIENT_SECRET:?OPTIMIZE_CLIENT_SECRET is required}
       VALUES_KEYCLOAK_INIT_CONNECTORS_SECRET: ${CONNECTORS_CLIENT_SECRET:?CONNECTORS_CLIENT_SECRET is required}
       KEYCLOAK_ADMIN_USER: ${KEYCLOAK_ADMIN_USER:?KEYCLOAK_ADMIN_USER is required}
@@ -511,7 +519,7 @@ services:
   mailpit:
     # If you want to use your own SMTP server, you can remove this container
     # and configure RESTAPI_MAIL_HOST, RESTAPI_MAIL_PORT, REST_API_MAIL_USER,
-    # REST_API_MAIL_PASSWORD and RESTAPI_MAIL_ENABLE_TLS in web-modeler-restapi
+    # REST_API_MAIL_PASSWORD and RESTAPI_MAIL_ENABLE_TLS in hub
     container_name: mailpit
     image: axllent/mailpit:${MAILPIT_VERSION}
     ports:
@@ -539,9 +547,13 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
-  web-modeler-restapi:
-    container_name: web-modeler-restapi
-    image: ${WEBMODELER_RESTAPI_IMAGE:-camunda/web-modeler-restapi:${CAMUNDA_WEB_MODELER_VERSION}}
+  hub:
+    # Camunda Hub (8.10+) replaces Web Modeler and Console. It reuses the
+    # existing Web Modeler database (web-modeler-db / postgres-web) and
+    # migrates its schema in place with Flyway on first start. The migration
+    # is NOT backwards compatible: take a backup before the first 8.10 start.
+    container_name: hub
+    image: ${HUB_IMAGE:-camunda/hub:${CAMUNDA_HUB_VERSION:?CAMUNDA_HUB_VERSION is required}}
     ports:
       - "127.0.0.1:8070:8081"
     labels:
@@ -550,11 +562,11 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "1.0"
-          memory: 1G
+          cpus: "1.5"
+          memory: 2G
         reservations:
-          cpus: "0.25"
-          memory: 512m
+          cpus: "0.5"
+          memory: 1G
     depends_on:
       web-modeler-db:
         condition: service_healthy
@@ -575,9 +587,13 @@ services:
       interval: 30s
       timeout: 5s
       retries: 5
-      start_period: 60s
+      # Generous start period so autoheal does not restart Hub while the
+      # one-time 8.9 -> 8.10 database migration is still running. Failed
+      # checks inside the start period do not count; a normal start becomes
+      # healthy as soon as the first check passes.
+      start_period: 600s
     environment:
-      JAVA_OPTIONS: -Xmx768m
+      JAVA_OPTIONS: -Xmx1280m
       LOGGING_LEVEL_IO_CAMUNDA_MODELER: INFO
       LOGGING_LEVEL_ORG_HIBERNATE_ORM_CONNECTIONS_POOLING: WARN
       CAMUNDA_IDENTITY_BASEURL: http://identity:8084/
@@ -585,52 +601,67 @@ services:
       SPRING_DATASOURCE_USERNAME: ${WEBMODELER_DB_USER:?WEBMODELER_DB_USER is required}
       SPRING_DATASOURCE_PASSWORD: ${WEBMODELER_DB_PASSWORD:?WEBMODELER_DB_PASSWORD is required}
       SPRING_PROFILES_INCLUDE: default-logging
-      RESTAPI_PUSHER_HOST: web-modeler-websockets
+      RESTAPI_PUSHER_HOST: hub-websockets
       RESTAPI_PUSHER_PORT: "8060"
       RESTAPI_PUSHER_APP_ID: ${WEBMODELER_PUSHER_APP_ID:?WEBMODELER_PUSHER_APP_ID is required}
       RESTAPI_PUSHER_KEY: ${WEBMODELER_PUSHER_KEY:?WEBMODELER_PUSHER_KEY is required}
       RESTAPI_PUSHER_SECRET: ${WEBMODELER_PUSHER_SECRET:?WEBMODELER_PUSHER_SECRET is required}
+      # OIDC: Hub 8.10 authenticates via the Camunda Security Library and
+      # translates these legacy keys to camunda.security.authentication.oidc.*
+      # at startup (same keys as the upstream 8.10 Compose setup). Migrate them
+      # to CAMUNDA_SECURITY_AUTHENTICATION_OIDC_* before 8.11 removes them.
       RESTAPI_OAUTH2_TOKEN_ISSUER: https://keycloak.${HOST:?HOST is required}/auth/realms/camunda-platform
       RESTAPI_OAUTH2_TOKEN_ISSUER_BACKEND_URL: http://${KEYCLOAK_HOST:?KEYCLOAK_HOST is required}:18080/auth/realms/camunda-platform
       SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: https://keycloak.${HOST:?HOST is required}/auth/realms/camunda-platform
       SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI: http://${KEYCLOAK_HOST:?KEYCLOAK_HOST is required}:18080/auth/realms/camunda-platform/protocol/openid-connect/certs
+      OAUTH2_CLIENT_ID: web-modeler
+      OAUTH2_TOKEN_ISSUER: https://keycloak.${HOST:?HOST is required}/auth/realms/camunda-platform
+      IDENTITY_BASE_URL: http://identity:8084/
+      # Hub keeps the webmodeler.{HOST} proxy hostname so existing Keycloak
+      # redirect URIs stay valid; console.{HOST} redirects here via Caddy.
       RESTAPI_SERVER_URL: https://webmodeler.${HOST:?HOST is required}
       RESTAPI_MAIL_HOST: mailpit
       RESTAPI_MAIL_PORT: 1025
       RESTAPI_MAIL_ENABLE_TLS: "false"
       RESTAPI_MAIL_FROM_ADDRESS: ${WEBMODELER_MAIL_FROM_ADDRESS:?WEBMODELER_MAIL_FROM_ADDRESS is required}
-      CAMUNDA_MODELER_CLUSTERS_0_ID: "local-orchestration"
-      CAMUNDA_MODELER_CLUSTERS_0_NAME: "Local Orchestration instance"
-      CAMUNDA_MODELER_CLUSTERS_0_VERSION: ${CAMUNDA_VERSION:?CAMUNDA_VERSION is required}
-      CAMUNDA_MODELER_CLUSTERS_0_URL_GRPC: grpc://orchestration:26500
-      CAMUNDA_MODELER_CLUSTERS_0_URL_REST: http://orchestration:8080
-      CAMUNDA_MODELER_CLUSTERS_0_URL_WEBAPP: https://orchestration.${HOST:?HOST is required}
-      CAMUNDA_MODELER_CLUSTERS_0_AUTHENTICATION: BEARER_TOKEN
-      CAMUNDA_MODELER_CLUSTERS_0_AUTHORIZATIONS_ENABLED: ${RESOURCE_AUTHORIZATIONS_ENABLED:?RESOURCE_AUTHORIZATIONS_ENABLED is required}
       management.endpoints.web.exposure.include: health,info
       management.endpoint.health.probes.enabled: true
       SERVER_HTTPS_ONLY: "false"
-      PLAY_ENABLED: "true"
+      # Hub 8.10 builds absolute redirects (e.g. /login) itself; trust Caddy's
+      # X-Forwarded-* headers so they use https://webmodeler.{HOST}.
+      SERVER_FORWARD_HEADERS_STRATEGY: framework
+      # 8.10 renamed PLAY_ENABLED to TEST_MODE_ENABLED.
+      TEST_MODE_ENABLED: "true"
       CLIENT_PUSHER_HOST: webmodeler.${HOST:?HOST is required}
       CLIENT_PUSHER_PORT: "443"
       CLIENT_PUSHER_FORCE_TLS: "true"
       CLIENT_PUSHER_KEY: ${WEBMODELER_PUSHER_KEY:?WEBMODELER_PUSHER_KEY is required}
-      OAUTH2_CLIENT_ID: web-modeler
-      OAUTH2_TOKEN_ISSUER: https://keycloak.${HOST:?HOST is required}/auth/realms/camunda-platform
-      IDENTITY_BASE_URL: http://identity:8084/
       CAMUNDA_LICENSE_KEY: ${CAMUNDA_LICENSE_KEY:-}
+      # Values consumed by the cluster registration in .hub/application.yaml.
+      HOST: ${HOST:?HOST is required}
+      HUB_CLUSTER_TAG: ${DISPLAY_STAGE:-${STAGE:?STAGE is required}}
+      RESOURCE_AUTHORIZATIONS_ENABLED: ${RESOURCE_AUTHORIZATIONS_ENABLED:?RESOURCE_AUTHORIZATIONS_ENABLED is required}
+      CAMUNDA_VERSION: ${CAMUNDA_VERSION:?CAMUNDA_VERSION is required}
+      CAMUNDA_OPTIMIZE_VERSION: ${CAMUNDA_OPTIMIZE_VERSION:?CAMUNDA_OPTIMIZE_VERSION is required}
+      CAMUNDA_CONNECTORS_VERSION: ${CAMUNDA_CONNECTORS_VERSION:?CAMUNDA_CONNECTORS_VERSION is required}
+      CAMUNDA_IDENTITY_VERSION: ${CAMUNDA_IDENTITY_VERSION:?CAMUNDA_IDENTITY_VERSION is required}
     env_file:
       - path: .env-credentials
         required: true
+    volumes:
+      - "./.hub/application.yaml:/home/runner/config/application.yaml:ro"
     networks:
       - web-modeler
       - camunda-platform
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
-  web-modeler-websockets:
-    container_name: web-modeler-websockets
-    image: ${WEBMODELER_WEBSOCKETS_IMAGE:-camunda/web-modeler-websockets:${CAMUNDA_WEB_MODELER_VERSION}}
+  hub-websockets:
+    container_name: hub-websockets
+    # PID 1 in the image is /bin/sh docker-entrypoint.sh, which does not forward
+    # SIGTERM (stop always hit the timeout and ended in SIGKILL). tini fixes it.
+    init: true
+    image: ${HUB_WEBSOCKETS_IMAGE:-camunda/hub-websockets:${CAMUNDA_HUB_VERSION:?CAMUNDA_HUB_VERSION is required}}
     ports:
       - "127.0.0.1:8060:8060"
     labels:
@@ -659,7 +690,7 @@ services:
       retries: 5
       start_period: 30s
     environment:
-      APP_NAME: "Web Modeler Self-Managed WebSockets"
+      APP_NAME: "Hub Self-Managed WebSockets"
       APP_DEBUG: "false"
       PUSHER_APP_ID: ${WEBMODELER_PUSHER_APP_ID:?WEBMODELER_PUSHER_APP_ID is required}
       PUSHER_APP_KEY: ${WEBMODELER_PUSHER_KEY:?WEBMODELER_PUSHER_KEY is required}
@@ -671,61 +702,6 @@ services:
       - web-modeler
     extra_hosts:
       - "host.docker.internal:host-gateway"
-
-  console:
-    container_name: console
-    image: camunda/console:${CAMUNDA_CONSOLE_VERSION}
-    ports:
-      - "127.0.0.1:8087:8080"
-      - "127.0.0.1:9100:9100"
-    environment:
-      NODE_ENV: production
-      KEYCLOAK_BASE_URL: https://keycloak.${HOST:?HOST is required}/auth
-      KEYCLOAK_INTERNAL_BASE_URL: http://${KEYCLOAK_HOST:?KEYCLOAK_HOST is required}:18080/auth
-      KEYCLOAK_REALM: camunda-platform
-      CAMUNDA_IDENTITY_CLIENT_ID: console
-      CAMUNDA_IDENTITY_AUDIENCE: console
-      CAMUNDA_LICENSE_KEY: ${CAMUNDA_LICENSE_KEY:-}
-      JAVA_TOOL_OPTIONS: -Xms256m -Xmx768m
-    env_file:
-      - path: .env-credentials
-        required: true
-    labels:
-      - autoheal=true
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "wget",
-          "-q",
-          "--tries=1",
-          "--spider",
-          "http://localhost:9100/health/readiness",
-        ]
-      interval: 30s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          cpus: "0.5"
-          memory: 1G
-        reservations:
-          cpus: "0.25"
-          memory: 512m
-    volumes:
-      - "./.console:/var/run/config"
-    networks:
-      - camunda-platform
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    depends_on:
-      identity:
-        condition: service_healthy
-      keycloak:
-        condition: service_healthy
 
   autoheal:
     image: willfarrell/autoheal@sha256:75c28b0020543e8eb49fe6514d012e7d2691f095dd622309d045da8647c8bb83
@@ -788,15 +764,18 @@ volumes:
   elastic-backup:
     name: elastic-backup
   postgres:
+  # Hub database volume (formerly Web Modeler). Do NOT rename: Hub 8.10
+  # migrates the existing data in place.
   postgres-web:
   camunda-db:
 
 networks:
-  # Note there are three bridge networks: One for Camunda Platform, one for Identity and one for Web Modeler.
+  # Note there are three bridge networks: One for Camunda Platform, one for Identity and one for Camunda Hub.
   # Identity and Keycloak are part of the first two as they need to be accessible by platform components.
-  # Web Modeler has its own network because it consists of three components that communicate with each other.
-  # It is also part of the camunda-platform network to communicate with the platform components like Orchestration to run
-  # processes or Identity to log in.
+  # Hub has its own network (still named `web-modeler` so existing deployments keep their network and volume
+  # names) because it consists of three components that communicate with each other (hub, hub-websockets,
+  # web-modeler-db). It is also part of the camunda-platform network to communicate with the platform components
+  # like Orchestration to run processes or Identity to log in.
   camunda-platform:
   identity-network:
   web-modeler:

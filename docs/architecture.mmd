@@ -1,19 +1,18 @@
 flowchart LR
     subgraph clients[" "]
         direction TB
-        browser["🖥️ Web UI / API<br/>Browser<br/><i>Identity, Console, Web Modeler,<br/>Operate, Tasklist, Optimize</i>"]
+        browser["🖥️ Web UI / API<br/>Browser<br/><i>Identity, Camunda Hub,<br/>Operate, Tasklist, Optimize</i>"]
         userapp["⚙️ User Application<br/>Camunda Client<br/>API / gRPC"]
     end
 
-    subgraph vm1["🐳 VM 1 — Docker Host: Camunda 8.9 Cluster"]
+    subgraph vm1["🐳 VM 1 — Docker Host: Camunda 8.10 Cluster"]
         direction TB
 
-        caddy["🔀 Reverse Proxy<br/><b>Caddy</b> · HTTPS :443<br/><i>Subdomains (jeweils .{HOST}):<br/>keycloak · identity · console<br/>orchestration · optimize<br/>webmodeler · zeebe</i>"]
+        caddy["🔀 Reverse Proxy<br/><b>Caddy</b> · HTTPS :443<br/><i>Subdomains (jeweils .{HOST}):<br/>keycloak · identity<br/>orchestration · optimize<br/>webmodeler (Hub) · zeebe</i>"]
 
         subgraph apps["Camunda Services (Docker Network: camunda-platform)"]
             direction TB
-            console["Console"]
-            webmodeler["Web Modeler<br/><i>REST API + WebSockets</i>"]
+            webmodeler["Camunda Hub<br/><i>Modeling + Cluster Management<br/>REST API + WebSockets</i>"]
             identity["Management Identity"]
             optimize["Optimize"]
             orchestration["Orchestration Cluster<br/><b>Zeebe + Operate + Tasklist</b><br/>gRPC :26500 · REST/UI :8080"]
@@ -23,12 +22,11 @@ flowchart LR
         subgraph infra["Infrastruktur (Container)"]
             direction TB
             keycloak["Authentication<br/><b>Keycloak (OIDC)</b>"]
-            postgres["SQL Database<br/><b>PostgreSQL</b><br/><i>Identity + Web Modeler DB</i>"]
+            postgres["SQL Database<br/><b>PostgreSQL</b><br/><i>Identity + Hub DB</i>"]
             elastic["NoSQL Database<br/><b>Elasticsearch</b>"]
-            mailpit["Mailpit<br/><i>SMTP (Web Modeler)</i>"]
+            mailpit["Mailpit<br/><i>SMTP (Hub)</i>"]
         end
 
-        caddy --> console
         caddy --> webmodeler
         caddy --> identity
         caddy --> optimize
@@ -44,7 +42,6 @@ flowchart LR
 
     identity -.->|"OIDC"| keycloak
     webmodeler -.->|"OIDC"| keycloak
-    console -.->|"OIDC"| keycloak
     optimize -.->|"OIDC"| keycloak
     orchestration -.->|"OIDC / Token"| keycloak
 
@@ -64,6 +61,6 @@ flowchart LR
     classDef infraBox fill:#e5e7eb,stroke:#374151
     classDef proxy fill:#fef3c7,stroke:#d97706
     class vm1,vm2 vm
-    class console,webmodeler,identity,optimize,orchestration,connectors,customconn svc
+    class webmodeler,identity,optimize,orchestration,connectors,customconn svc
     class keycloak,postgres,elastic,mailpit infraBox
     class caddy proxy

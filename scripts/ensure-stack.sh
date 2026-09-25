@@ -43,13 +43,28 @@ if ! docker info >/dev/null 2>&1; then
   exit 1
 fi
 
-compose_cmd=(
-  docker compose
+# Same DISPLAY_STAGE fallback as scripts/start.sh, so a restarted service
+# (e.g. hub's HUB_CLUSTER_TAG) gets the same configuration as on a normal start.
+export DISPLAY_STAGE="${DISPLAY_STAGE:-$stage}"
+
+compose_cmd=(docker compose)
+for env_file in "$ENV_FILE" "$CREDENTIALS_FILE"; do
+  [[ -f "$env_file" ]] && compose_cmd+=(--env-file "$env_file")
+done
+compose_cmd+=(
   -f "$PROJECT_DIR/docker-compose.yaml"
   -f "$PROJECT_DIR/stages/${stage}.yaml"
 )
 
-mapfile -t expected_services < <("${compose_cmd[@]}" config --services)
+if ! config_services="$("${compose_cmd[@]}" config --services 2>&1)"; then
+  log "ERROR: Could not determine expected services from docker compose config"
+  printf '%s\n' "$config_services" >&2
+  exit 1
+fi
+
+# camunda-data-init is a one-shot init container that exits after its work;
+# it is started as a dependency of orchestration and must not be restarted here.
+mapfile -t expected_services < <(printf '%s\n' "$config_services" | grep -vx -e '' -e 'camunda-data-init')
 mapfile -t running_services < <("${compose_cmd[@]}" ps --services --status running)
 
 missing_services=()

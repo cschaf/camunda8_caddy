@@ -7,9 +7,9 @@ The stack supports three environment stages, selected via the `STAGE` variable i
 | Tier | Services |
 |------|----------|
 | Heavy | orchestration, elasticsearch |
-| Medium | optimize, keycloak, connectors, identity, web-modeler-restapi |
+| Medium | optimize, keycloak, connectors, identity, hub |
 | Database | camunda-db |
-| Light | postgres, web-modeler-db, console, web-modeler-websockets, mailpit, reverse-proxy |
+| Light | postgres, web-modeler-db, hub-websockets, mailpit, reverse-proxy |
 
 ### Why is `camunda-db` its own tier?
 
@@ -56,9 +56,11 @@ Elasticsearch is sized smaller than before (roughly 50% of previous resources) b
 | identity | prod | 1.0 | 1024M | 0.25 | 256M | 768m |
 | identity | dev | 0.5 | 512M | 0.125 | 256M | 384m |
 | identity | test | 0.5 | 384M | 0.125 | 192M | 256m |
-| web-modeler-restapi | prod | 1.0 | 1024M | 0.25 | 512M | 768m |
-| web-modeler-restapi | dev | 0.5 | 512M | 0.125 | 256M | 384m |
-| web-modeler-restapi | test | 0.5 | 384M | 0.125 | 192M | 256m |
+| hub | prod | 1.5 | 2048M | 0.5 | 1024M | 1280m |
+| hub | dev | 1.0 | 1024M | 0.25 | 512M | 640m |
+| hub | test | 1.0 | 768M | 0.125 | 384M | 512m |
+
+Camunda Hub (8.10+) replaces `web-modeler-restapi` and `console`; its limits are roughly the sum of both former services. Tune them after observing `docker stats` on real workloads.
 
 ### Database Tier
 
@@ -78,12 +80,9 @@ Elasticsearch is sized smaller than before (roughly 50% of previous resources) b
 | web-modeler-db | prod | 0.5 | 512M | 0.1 | 256M |
 | web-modeler-db | dev | 0.25 | 256M | 0.05 | 128M |
 | web-modeler-db | test | 0.25 | 256M | 0.05 | 128M |
-| console | prod | 0.5 | 1024M | 0.25 | 512M |
-| console | dev | 0.5 | 512M | 0.125 | 256M |
-| console | test | 0.5 | 512M | 0.125 | 256M |
-| web-modeler-websockets | prod | 0.5 | 256M | 0.1 | 64M |
-| web-modeler-websockets | dev | 0.25 | 128M | 0.05 | 32M |
-| web-modeler-websockets | test | 0.25 | 128M | 0.05 | 32M |
+| hub-websockets | prod | 0.5 | 256M | 0.1 | 64M |
+| hub-websockets | dev | 0.25 | 128M | 0.05 | 32M |
+| hub-websockets | test | 0.25 | 128M | 0.05 | 32M |
 | mailpit | prod | 0.25 | 128M | 0.05 | 32M |
 | mailpit | dev | 0.25 | 128M | 0.05 | 32M |
 | mailpit | test | 0.25 | 128M | 0.05 | 32M |
@@ -98,7 +97,7 @@ JVM heap sizes are scaled proportionally with memory limits to prevent OOM kills
 - **Elasticsearch:** 50% of memory limit (Lucene needs off-heap memory-mapped files)
 - **All other JVM services:** 75% of memory limit
 
-Services without a JVM heap column (keycloak, postgres, camunda-db, web-modeler-db, web-modeler-websockets, mailpit, reverse-proxy) do not run a Java VM.
+Services without a JVM heap column (keycloak, postgres, camunda-db, web-modeler-db, hub-websockets, mailpit, reverse-proxy) do not run a Java VM.
 
 ## Total Footprint Estimates
 

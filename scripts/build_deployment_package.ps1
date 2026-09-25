@@ -19,7 +19,7 @@
     Files that are intentionally NOT included:
       - Local secrets and rendered configs:
           .env-credentials, Caddyfile, connector-secrets.txt, certs/,
-          .optimize/environment-config.yaml, .console/application.yaml
+          .optimize/environment-config.yaml, secrets/* (except .gitignore)
       - AI assistant artifacts:
           CLAUDE.md, AGENT.md, AGENTS.md, GEMINI.md, .claude/,
           .playwright-mcp/
@@ -107,13 +107,15 @@ $Files.AddRange([string[]]@(
     '.identity/application.yaml'
     '.connectors/application.yaml'
     '.optimize/environment-config.yaml.example'
-    '.console/application.yaml.template'
+    '.hub/application.yaml'
+    'secrets/.gitignore'
 ))
 
 # Operator docs
 $Files.AddRange([string[]]@(
     'docs/project_configuration.md'
     'docs/cluster_upgrade.md'
+    'docs/upgrade-8.10.md'
     'docs/update_guide.md'
     'docs/backup-restore.md'
     'docs/stage_comparison.md'

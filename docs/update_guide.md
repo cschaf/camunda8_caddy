@@ -1,5 +1,7 @@
 # Minor Update Guide
 
+> **8.9 → 8.10:** The concrete, tested migration guide for this stack is [upgrade-8.10.md](upgrade-8.10.md).
+
 This project is a Camunda 8 Self-Managed Docker Compose stack. A minor update means moving the stack from one Camunda minor line to another, for example `8.9.x` to `8.10.x`. Treat a minor update as a controlled stack upgrade, not as a simple image tag bump.
 
 For patch-only updates inside the same minor line, for example `8.9.1` to `8.9.2`, the same files are relevant, but the risk is lower and most configuration changes are usually not required.
@@ -14,8 +16,7 @@ The main version pins are in `.env.example`. The running stack uses `.env` (comm
 | Connectors | `CAMUNDA_CONNECTORS_VERSION` | `camunda/connectors-bundle:${CAMUNDA_CONNECTORS_VERSION}` |
 | Identity | `CAMUNDA_IDENTITY_VERSION` | `camunda/identity:${CAMUNDA_IDENTITY_VERSION}` |
 | Optimize | `CAMUNDA_OPTIMIZE_VERSION` | `camunda/optimize:${CAMUNDA_OPTIMIZE_VERSION}` |
-| Web Modeler REST API and UI | `CAMUNDA_WEB_MODELER_VERSION` | `camunda/web-modeler-restapi:${CAMUNDA_WEB_MODELER_VERSION}` and `camunda/web-modeler-websockets:${CAMUNDA_WEB_MODELER_VERSION}` |
-| Console | `CAMUNDA_CONSOLE_VERSION` | `camunda/console:${CAMUNDA_CONSOLE_VERSION}` |
+| Camunda Hub (replaces Web Modeler and Console since 8.10) | `CAMUNDA_HUB_VERSION` | `camunda/hub:${CAMUNDA_HUB_VERSION}` and `camunda/hub-websockets:${CAMUNDA_HUB_VERSION}` |
 | Elasticsearch | `ELASTIC_VERSION` | `docker.elastic.co/elasticsearch/elasticsearch:${ELASTIC_VERSION}` |
 | Keycloak | `KEYCLOAK_SERVER_VERSION` | `camunda/keycloak:${KEYCLOAK_SERVER_VERSION}` |
 | PostgreSQL | `POSTGRES_VERSION` | `postgres:${POSTGRES_VERSION}` |
@@ -23,7 +24,7 @@ The main version pins are in `.env.example`. The running stack uses `.env` (comm
 | Caddy | hardcoded in `docker-compose.yaml` | `caddy:2.11.2@sha256:...` |
 | Autoheal | hardcoded in `docker-compose.yaml` | `willfarrell/autoheal@sha256:...` |
 
-`CAMUNDA_OPERATE_VERSION` and `CAMUNDA_TASKLIST_VERSION` still exist in `.env.example` for documentation/Console display alignment, but Operate and Tasklist run inside the unified `camunda/camunda` orchestration image in this stack.
+Operate, Tasklist and Admin run inside the unified `camunda/camunda` orchestration image and use `CAMUNDA_VERSION`. The former `CAMUNDA_OPERATE_VERSION` / `CAMUNDA_TASKLIST_VERSION` pins were only used by the Console template and were removed with the 8.10 upgrade.
 
 ## Where To Look Up New Minor Versions
 
@@ -36,9 +37,8 @@ Start with Camunda's official release information, then confirm the Docker tags 
   - `https://hub.docker.com/r/camunda/connectors-bundle/tags`
   - `https://hub.docker.com/r/camunda/identity/tags`
   - `https://hub.docker.com/r/camunda/optimize/tags`
-  - `https://hub.docker.com/r/camunda/web-modeler-restapi/tags`
-  - `https://hub.docker.com/r/camunda/web-modeler-websockets/tags`
-  - `https://hub.docker.com/r/camunda/console/tags`
+  - `https://hub.docker.com/r/camunda/hub/tags`
+  - `https://hub.docker.com/r/camunda/hub-websockets/tags`
 - Elasticsearch compatibility and tags:
   - `https://docs.camunda.io/docs/self-managed/reference/supported-environments/`
   - `https://www.docker.elastic.co/r/elasticsearch/elasticsearch`
@@ -58,7 +58,7 @@ Update both `.env.example` and the local `.env`. If a migration guide introduces
 Required checks:
 
 - Keep all Camunda core components on the same minor line unless Camunda explicitly documents otherwise.
-- Use the exact Console patch version that exists for the target minor. Console often has a different patch number from the platform images.
+- Use the exact Hub patch version that exists for the target minor. Hub tags can differ from the platform images (for example `8.10-rc1` vs `8.10.0-rc2`).
 - Confirm the target Elasticsearch version is supported by the target Camunda minor before changing `ELASTIC_VERSION`.
 - Do not overwrite production secrets in `.env-credentials`; edit only the version values in `.env` and add new credential variables through `scripts/generate-secrets.sh` / `.ps1` instead of by hand-editing the live file.
 
@@ -72,8 +72,7 @@ Areas that commonly change during minor upgrades:
 - `connectors` authentication variables and readiness endpoint
 - `optimize` environment variables, config path, health check, and Elasticsearch compatibility
 - `identity` environment variables, Keycloak provisioning values, health check, and mounted config
-- `web-modeler-restapi` and `web-modeler-websockets` image layout, ports, readiness endpoints, and feature flags
-- `console` image, readiness/metrics endpoints, and mounted `.console` config
+- `hub` and `hub-websockets` image layout, ports, readiness endpoints, feature flags, and the mounted `.hub/application.yaml` cluster registration
 - `elasticsearch` version, security settings, snapshot repository path, and index allowlist
 - hard-pinned `reverse-proxy` and `autoheal` images if you intentionally update them
 - named volumes under `volumes:` if the new minor introduces or removes persistent paths
@@ -89,13 +88,13 @@ Review these files against the target minor's docs and migration notes:
 - `.identity/application.yaml`
 - `.connectors/application.yaml`
 - `.optimize/environment-config.yaml.example`
-- `.console/application.yaml.template`
+- `.hub/application.yaml`
 
 Important project-specific notes:
 
 - `.orchestration/application.yaml` currently uses the `admin,operate,tasklist,broker,consolidated-auth` profiles and RDBMS secondary storage through `camunda.data.secondary-storage.type: rdbms`.
 - Elasticsearch is still used for Optimize and `zeebe-record-*` exporter records.
-- `.console/application.yaml` is generated from `.console/application.yaml.template` by the start scripts. Update the template, not only the generated file.
+- `.hub/application.yaml` is static (no render step); Spring resolves its `${...}` placeholders from the `hub` container environment.
 - `.optimize/environment-config.yaml` is generated from `.optimize/environment-config.yaml.example` by the start scripts. Update the example/template, not only the generated file.
 
 ### 4. Stage overlays
@@ -118,7 +117,7 @@ Review:
 - `dashboard/index.html`
 - `dashboard/style.css`
 
-Update Caddy routes if service names, ports, paths, WebSocket paths, health endpoints, or browser-facing URLs change. Also review version-specific comments/workarounds, for example comments mentioning `Console 8.9` or `Camunda 8.9`.
+Update Caddy routes if service names, ports, paths, WebSocket paths, health endpoints, or browser-facing URLs change. Also review version-specific comments/workarounds, for example comments mentioning a specific Camunda minor such as `Camunda 8.10`.
 
 ### 6. Scripts
 
@@ -181,7 +180,7 @@ The backup captures:
 - Zeebe state from the `orchestration` Docker volume
 - Camunda core PostgreSQL data from `camunda-db`
 - Keycloak/Identity data from `postgres`
-- Web Modeler data from `web-modeler-db`
+- Camunda Hub (formerly Web Modeler) data from `web-modeler-db`
 - Elasticsearch snapshot data for Optimize and exported records
 - configuration files such as `.env`, `.env-credentials`, `connector-secrets.txt`, `Caddyfile`, and application YAML files
 
@@ -196,7 +195,7 @@ Also copy critical local files to a separate safe location before replacing the 
 - `.identity/application.yaml`
 - `.connectors/application.yaml`
 - `.optimize/environment-config.yaml`
-- `.console/application.yaml`
+- `.hub/application.yaml`
 - any custom dashboard assets under `dashboard/`
 - the latest backup folder under `backups/`, or the encrypted backup artifact under `backups-encrypted/`
 
@@ -283,8 +282,8 @@ docker compose --env-file .env --env-file .env-credentials -f docker-compose.yam
 docker logs orchestration --tail 120
 docker logs identity --tail 120
 docker logs optimize --tail 120
-docker logs console --tail 120
-docker logs web-modeler-restapi --tail 120
+docker logs hub --tail 120
+docker logs hub-websockets --tail 120
 ```
 
 10. **If `optimize` is restart-looping with a `schema version [...] doesn't match` error**, Optimize's stored ES metadata is still on the old version. Run the bundled schema upgrade one-shot, then re-check the logs:
@@ -307,8 +306,7 @@ docker logs web-modeler-restapi --tail 120
 - `https://orchestration.${HOST}/tasklist`
 - `https://identity.${HOST}`
 - `https://optimize.${HOST}`
-- `https://console.${HOST}`
-- `https://webmodeler.${HOST}`
+- `https://webmodeler.${HOST}` (Camunda Hub; `https://console.${HOST}` redirects here)
 - deploy and start a small BPMN process, then verify it appears in Operate
 
 12. Run a fresh backup after the update.
@@ -325,6 +323,6 @@ docker logs web-modeler-restapi --tail 120
 6. Update stage files, Caddy routes, scripts, and docs if the service layout changed.
 7. Pull images and start the stack.
 8. Check `docker compose ps`, service logs, and all web UIs.
-9. Deploy/start a test process and verify Operate/Tasklist/Optimize/Web Modeler.
+9. Deploy/start a test process and verify Operate/Tasklist/Optimize/Camunda Hub.
 10. Create a new backup and run a restore drill.
 11. Commit the update once the drill passes.

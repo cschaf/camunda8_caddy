@@ -10,7 +10,6 @@ CREATE TEMP TABLE restore_client_urls (
 ) ON COMMIT DROP;
 
 INSERT INTO restore_client_urls (client_id, root_url, base_url, admin_url) VALUES
-  ('console', 'https://console.' || :'host', '/', 'https://console.' || :'host'),
   ('orchestration', 'https://orchestration.' || :'host', '/', 'https://orchestration.' || :'host'),
   ('optimize', 'https://optimize.' || :'host', '/', 'https://optimize.' || :'host'),
   ('web-modeler', 'https://webmodeler.' || :'host', '/', 'https://webmodeler.' || :'host'),
@@ -24,8 +23,6 @@ CREATE TEMP TABLE restore_redirect_uris (
 ) ON COMMIT DROP;
 
 INSERT INTO restore_redirect_uris (client_id, value) VALUES
-  ('console', '/'),
-  ('console', 'http://' || :'host' || ':8087/'),
   ('orchestration', '/sso-callback'),
   ('orchestration', 'http://' || :'host' || ':8088/sso-callback'),
   ('optimize', '/api/authentication/callback'),
@@ -42,7 +39,6 @@ CREATE TEMP TABLE restore_web_origins (
 ) ON COMMIT DROP;
 
 INSERT INTO restore_web_origins (client_id, value) VALUES
-  ('console', 'https://console.' || :'host'),
   ('orchestration', 'https://orchestration.' || :'host'),
   ('optimize', 'https://optimize.' || :'host'),
   ('web-modeler', 'https://webmodeler.' || :'host'),
@@ -55,12 +51,13 @@ CREATE TEMP TABLE restore_client_secrets (
 
 INSERT INTO restore_client_secrets (client_id, secret) VALUES
   ('connectors', :'connectors_secret'),
-  ('console', :'console_secret'),
   ('orchestration', :'orchestration_secret'),
   ('optimize', :'optimize_secret'),
   ('camunda-identity', :'identity_secret');
 
--- web-modeler is a public browser client in this stack and has no client secret.
+-- web-modeler (used by Camunda Hub since 8.10) is a public browser client in
+-- this stack and has no client secret. The former Console client is no longer
+-- provisioned in 8.10 and is intentionally not rehosted.
 
 DO $$
 DECLARE

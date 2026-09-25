@@ -85,17 +85,13 @@ services:
     ports: !override
       - "$((1025 + $offset)):1025"
       - "$((8075 + $offset)):8025"
-  web-modeler-webapp:
+  hub:
     ports: !override
-      - "$((8070 + $offset)):8070"
-      - "$((8071 + $offset)):8071"
-  web-modeler-websockets:
+      - "$((8070 + $offset)):8081"
+      - "$((8071 + $offset)):8091"
+  hub-websockets:
     ports: !override
       - "$((8060 + $offset)):8060"
-  console:
-    ports: !override
-      - "$((8087 + $offset)):8080"
-      - "$((9100 + $offset)):9100"
   reverse-proxy:
     ports: !override
       - "$((443 + $offset)):443"
@@ -122,7 +118,9 @@ function Run-SmokeTests {
     $offset = $DrillPortOffset
     $keycloakPort = 18080 + $offset
     $orchestrationPort = 9600 + $offset
-    $webmodelerPort = 8071 + $offset
+    # Hub: 8070+offset -> API (8081), 8071+offset -> management/readiness (8091)
+    $hubApiPort = 8070 + $offset
+    $hubMgmtPort = 8071 + $offset
 
     $timeout = 120
     $interval = 5
@@ -170,14 +168,14 @@ function Run-SmokeTests {
         return $false
     }
 
-    $wmUrl = "http://localhost:${webmodelerPort}/health/readiness"
+    $wmUrl = "http://localhost:${hubMgmtPort}/health/readiness"
     $elapsed = 0
     $wmOk = $false
     while ($elapsed -lt $timeout) {
         try {
             $response = Invoke-WebRequest -Uri $wmUrl -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop
             if ($response.StatusCode -eq 200) {
-                Log-Drill "  Web Modeler readiness: OK"
+                Log-Drill "  Hub readiness: OK"
                 $wmOk = $true
                 break
             }
@@ -186,12 +184,12 @@ function Run-SmokeTests {
         $elapsed += $interval
     }
     if (-not $wmOk) {
-        Log-Drill "  Web Modeler readiness: FAILED"
+        Log-Drill "  Hub readiness: FAILED"
         return $false
     }
 
     if ($env:DRILL_KNOWN_PROJECT_ID) {
-        $projUrl = "http://localhost:${webmodelerPort}/internal-api/projects/$($env:DRILL_KNOWN_PROJECT_ID)"
+        $projUrl = "http://localhost:${hubApiPort}/internal-api/projects/$($env:DRILL_KNOWN_PROJECT_ID)"
         $elapsed = 0
         $projOk = $false
         while ($elapsed -lt $timeout) {

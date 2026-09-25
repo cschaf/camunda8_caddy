@@ -5,8 +5,8 @@
 #
 # Components (container names from docker-compose.yaml):
 #   reverse-proxy, orchestration, connectors, optimize, identity, keycloak,
-#   postgres, camunda-db, web-modeler-db, mailpit, web-modeler-restapi,
-#   web-modeler-websockets, console, elasticsearch, autoheal, camunda-data-init
+#   postgres, camunda-db, web-modeler-db, mailpit, hub,
+#   hub-websockets, elasticsearch, autoheal, camunda-data-init
 #   all
 #
 # Options:
@@ -19,7 +19,7 @@
 # Examples:
 #   bash scripts/logs.sh reverse-proxy
 #   bash scripts/logs.sh orchestration keycloak -f
-#   bash scripts/logs.sh web-modeler-restapi --since 30m -g "error"
+#   bash scripts/logs.sh hub --since 30m -g "error"
 #   bash scripts/logs.sh all --tail 50
 
 set -uo pipefail
@@ -49,7 +49,7 @@ if [[ ${#COMPONENTS[@]} -eq 0 ]]; then
   usage
 fi
 
-ALL_NAMES='^(reverse-proxy|orchestration|connectors|optimize|identity|keycloak|postgres|camunda-db|web-modeler-db|mailpit|web-modeler-restapi|web-modeler-websockets|console|elasticsearch|autoheal|camunda-data-init)$'
+ALL_NAMES='^(reverse-proxy|orchestration|connectors|optimize|identity|keycloak|postgres|camunda-db|web-modeler-db|mailpit|hub|hub-websockets|elasticsearch|autoheal|camunda-data-init)$'
 
 declare -A SEEN=()
 for c in "${COMPONENTS[@]}"; do

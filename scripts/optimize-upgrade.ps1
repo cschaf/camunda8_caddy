@@ -48,10 +48,30 @@ if (-not (Test-Path $CredentialsFile)) {
     exit 1
 }
 
+# Use the same stage overlay as scripts/start.ps1. Without it, "up -d optimize"
+# would recreate optimize and its dependencies (elasticsearch, identity,
+# keycloak, postgres) with the base resource profile instead of the stage one.
+$StageValue = $null
+$DisplayStageValue = $null
+foreach ($line in Get-Content $EnvFile) {
+    if ($line -match '^\s*#') { continue }
+    if ($line -match '^\s*STAGE\s*=(.*)$') { $StageValue = $matches[1].Trim().ToLowerInvariant() }
+    if ($line -match '^\s*DISPLAY_STAGE\s*=(.*)$') { $DisplayStageValue = $matches[1].Trim() }
+}
+if ($StageValue -notin @('prod', 'dev', 'test')) {
+    Write-Error "Unsupported or missing STAGE '$StageValue' in .env. Expected one of: prod, dev, test"
+    exit 1
+}
+if ([string]::IsNullOrEmpty($env:DISPLAY_STAGE)) {
+    $env:DISPLAY_STAGE = if ([string]::IsNullOrEmpty($DisplayStageValue)) { $StageValue } else { $DisplayStageValue }
+}
+
 $ComposeArgs = @(
     'compose',
     '--env-file', $EnvFile,
-    '--env-file', $CredentialsFile
+    '--env-file', $CredentialsFile,
+    '-f', (Join-Path $ProjectDir 'docker-compose.yaml'),
+    '-f', (Join-Path $ProjectDir "stages/$StageValue.yaml")
 )
 
 # The Optimize upgrade script lives at /optimize/upgrade/upgrade.sh inside
@@ -77,7 +97,8 @@ docker @ComposeArgs run --rm --no-deps -T `
 
 Write-Host ''
 Write-Host '>> Upgrade finished. Starting the regular optimize service...'
-docker @ComposeArgs up -d optimize
+# --no-deps: only (re)start optimize; its dependencies are already running.
+docker @ComposeArgs up -d --no-deps optimize
 
 Write-Host ''
 Write-Host '>> Waiting for optimize to become healthy (timeout 120s)...'

@@ -41,31 +41,11 @@ case "$stage" in
     ;;
 esac
 
+# DISPLAY_STAGE overrides the label on the dashboard and the Camunda Hub
+# cluster tag (docker-compose.yaml passes it to the hub container as
+# HUB_CLUSTER_TAG). Exported so Compose interpolation sees the fallback.
 display_stage="${DISPLAY_STAGE:-$stage}"
 export DISPLAY_STAGE="$display_stage"
-
-# Render console config from template
-CONSOLE_TEMPLATE="$PROJECT_DIR/.console/application.yaml.template"
-CONSOLE_CONFIG="$PROJECT_DIR/.console/application.yaml"
-if [[ -f "$CONSOLE_TEMPLATE" ]]; then
-  if command -v envsubst >/dev/null 2>&1; then
-    envsubst '$HOST $DISPLAY_STAGE $CAMUNDA_VERSION $CAMUNDA_CONSOLE_VERSION $CAMUNDA_OPERATE_VERSION $CAMUNDA_TASKLIST_VERSION $CAMUNDA_OPTIMIZE_VERSION $CAMUNDA_IDENTITY_VERSION $KEYCLOAK_SERVER_VERSION $CAMUNDA_WEB_MODELER_VERSION $CAMUNDA_CONNECTORS_VERSION' < "$CONSOLE_TEMPLATE" > "$CONSOLE_CONFIG"
-  else
-    sed \
-      -e "s/\\\${HOST}/$HOST/g" \
-      -e "s/\\\${DISPLAY_STAGE}/$display_stage/g" \
-      -e "s/\\\${CAMUNDA_VERSION}/$CAMUNDA_VERSION/g" \
-      -e "s/\\\${CAMUNDA_CONSOLE_VERSION}/$CAMUNDA_CONSOLE_VERSION/g" \
-      -e "s/\\\${CAMUNDA_OPERATE_VERSION}/$CAMUNDA_OPERATE_VERSION/g" \
-      -e "s/\\\${CAMUNDA_TASKLIST_VERSION}/$CAMUNDA_TASKLIST_VERSION/g" \
-      -e "s/\\\${CAMUNDA_OPTIMIZE_VERSION}/$CAMUNDA_OPTIMIZE_VERSION/g" \
-      -e "s/\\\${CAMUNDA_IDENTITY_VERSION}/$CAMUNDA_IDENTITY_VERSION/g" \
-      -e "s/\\\${KEYCLOAK_SERVER_VERSION}/$KEYCLOAK_SERVER_VERSION/g" \
-      -e "s/\\\${CAMUNDA_WEB_MODELER_VERSION}/$CAMUNDA_WEB_MODELER_VERSION/g" \
-      -e "s/\\\${CAMUNDA_CONNECTORS_VERSION}/$CAMUNDA_CONNECTORS_VERSION/g" \
-      "$CONSOLE_TEMPLATE" > "$CONSOLE_CONFIG"
-  fi
-fi
 
 # Render optimize config from template
 OPTIMIZE_TEMPLATE="$PROJECT_DIR/.optimize/environment-config.yaml.example"

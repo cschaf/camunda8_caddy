@@ -171,13 +171,12 @@ Vereinfacht erfüllen die Komponenten folgende Aufgaben:
 | **Keycloak** | Zentrales Login (Single Sign-On). Alle Benutzer melden sich hier an. |
 | **Identity** | Verwaltet Rollen/Berechtigungen und richtet die Keycloak-Clients ein. |
 | **Optimize** | Auswertungen, Reports und Dashboards über die Prozesse (Analytics). |
-| **Web Modeler** | Web-Oberfläche zum Erstellen und Bearbeiten von Prozessmodellen (BPMN/DMN). |
+| **Camunda Hub** | Web-Oberfläche zum Erstellen und Bearbeiten von Prozessmodellen (BPMN/DMN) und Übersicht/Verwaltung der Cluster. Ersetzt seit 8.10 Web Modeler und Console. |
 | **Connectors** | Camundas mitgelieferte Connectors (REST, Mail, KI/Agentic-AI usw.). **Nicht** zu verwechseln mit den b4C-Connectors, siehe [A7](#a7-die-b4c-connectors). |
-| **Console** | Übersichts-Oberfläche über die Plattform. |
 | **Elasticsearch** | Speichert exportierte Prozessdaten und versorgt Optimize. |
-| **PostgreSQL (3×)** | Datenbanken für Keycloak/Identity, Camunda-Kerndaten und Web Modeler. |
+| **PostgreSQL (3×)** | Datenbanken für Keycloak/Identity, Camunda-Kerndaten und Camunda Hub. |
 | **Reverse Proxy (Caddy)** | Stellt alle Oberflächen verschlüsselt (HTTPS) unter `https://*.<HOST>` bereit. |
-| **Mailpit** | Lokaler E-Mail-Auffang für Web-Modeler-Mails (nur Test/Diagnose). |
+| **Mailpit** | Lokaler E-Mail-Auffang für Hub-Mails (nur Test/Diagnose). |
 
 Die Versionen aller Komponenten sind in `.env` festgelegt (z. B. `CAMUNDA_VERSION`,
 `ELASTIC_VERSION`, `CAMUNDA_OPTIMIZE_VERSION`).
@@ -196,9 +195,8 @@ steht für den Wert von `HOST` in `.env`.
 | Dashboard (Startseite mit Links) | `https://{HOST}` |
 | Operate / Tasklist | `https://orchestration.{HOST}` |
 | Identity | `https://identity.{HOST}` |
-| Console | `https://console.{HOST}` |
 | Optimize | `https://optimize.{HOST}` |
-| Web Modeler | `https://webmodeler.{HOST}` |
+| Camunda Hub | `https://webmodeler.{HOST}` (`https://console.{HOST}` leitet dorthin um) |
 | Keycloak Admin | `https://keycloak.{HOST}/auth/` |
 | Admin-UI | `https://orchestration.{HOST}/admin` |
 
@@ -709,9 +707,8 @@ Kontakte: siehe [Rollen und Kontakte](#03-rollen-und-kontakte).
 | **Operate** | Oberfläche zur Überwachung laufender Prozessinstanzen und Fehler (Incidents). |
 | **Tasklist** | Oberfläche, in der Benutzer ihre Aufgaben (User Tasks) bearbeiten. |
 | **Optimize** | Analytics/Reporting über Prozessdaten. |
-| **Web Modeler** | Web-Editor für BPMN-/DMN-Modelle. |
+| **Camunda Hub** | Web-Editor für BPMN-/DMN-Modelle plus Cluster-Übersicht (Nachfolger von Web Modeler und Console). |
 | **Connectors** | Bausteine zur Anbindung externer Systeme (REST, Mail, KI …). |
-| **Console** | Übersichts-Oberfläche der Plattform. |
 | **Keycloak** | Zentrales Login-/Identity-System (Single Sign-On). |
 | **Identity** | Camunda-Komponente, die Rollen und Keycloak-Clients verwaltet. |
 | **OIDC** | OpenID Connect — das Login-Protokoll zwischen Diensten und Keycloak. |

@@ -191,8 +191,8 @@ check_host_resolution "Orchestration" "$ORCHESTRATION_HOST"
 # ---------------------------------------------------------------------------
 
 declare -A ROLE_MAP
-ROLE_MAP["NormalUser"]="Default user role,Orchestration,Optimize,Web Modeler"
-ROLE_MAP["Admin"]="Web Modeler,ManagementIdentity,Default user role,Orchestration,Optimize,Web Modeler Admin,Console"
+ROLE_MAP["NormalUser"]="Default user role,Orchestration,Optimize,Hub"
+ROLE_MAP["Admin"]="Hub,ManagementIdentity,Default user role,Orchestration,Optimize,Hub Admin,DevOps"
 
 # Camunda internal role (camunda.security.authorizations.enabled=true requires explicit role assignment)
 declare -A CAMUNDA_ROLE_MAP

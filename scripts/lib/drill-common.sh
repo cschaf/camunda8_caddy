@@ -94,17 +94,13 @@ services:
     ports: !override
       - "$((1025 + DRILL_PORT_OFFSET)):1025"
       - "$((8075 + DRILL_PORT_OFFSET)):8025"
-  web-modeler-webapp:
+  hub:
     ports: !override
-      - "$((8070 + DRILL_PORT_OFFSET)):8070"
-      - "$((8071 + DRILL_PORT_OFFSET)):8071"
-  web-modeler-websockets:
+      - "$((8070 + DRILL_PORT_OFFSET)):8081"
+      - "$((8071 + DRILL_PORT_OFFSET)):8091"
+  hub-websockets:
     ports: !override
       - "$((8060 + DRILL_PORT_OFFSET)):8060"
-  console:
-    ports: !override
-      - "$((8087 + DRILL_PORT_OFFSET)):8080"
-      - "$((9100 + DRILL_PORT_OFFSET)):9100"
   reverse-proxy:
     ports: !override
       - "$((443 + DRILL_PORT_OFFSET)):443"
@@ -130,7 +126,9 @@ run_smoke_tests() {
   local offset="${DRILL_PORT_OFFSET}"
   local keycloak_port=$((18080 + offset))
   local orchestration_port=$((9600 + offset))
-  local webmodeler_port=$((8071 + offset))
+  # Hub: 8070+offset -> API (8081), 8071+offset -> management/readiness (8091)
+  local hub_api_port=$((8070 + offset))
+  local hub_mgmt_port=$((8071 + offset))
 
   local timeout=120
   local elapsed=0
@@ -170,23 +168,23 @@ run_smoke_tests() {
     return 1
   fi
 
-  local wm_url="http://localhost:${webmodeler_port}/health/readiness"
+  local wm_url="http://localhost:${hub_mgmt_port}/health/readiness"
   elapsed=0
   while [[ $elapsed -lt $timeout ]]; do
     if curl -sS -o /dev/null -w '%{http_code}' "$wm_url" 2>>"$DRILL_DIR/restore-drill.log" | grep -q '^200$'; then
-      log_drill "  Web Modeler readiness: OK"
+      log_drill "  Hub readiness: OK"
       break
     fi
     sleep "$interval"
     elapsed=$((elapsed + interval))
   done
   if [[ $elapsed -ge $timeout ]]; then
-    log_drill "  Web Modeler readiness: FAILED"
+    log_drill "  Hub readiness: FAILED"
     return 1
   fi
 
   if [[ -n "${DRILL_KNOWN_PROJECT_ID:-}" ]]; then
-    local proj_url="http://localhost:${webmodeler_port}/internal-api/projects/${DRILL_KNOWN_PROJECT_ID}"
+    local proj_url="http://localhost:${hub_api_port}/internal-api/projects/${DRILL_KNOWN_PROJECT_ID}"
     elapsed=0
     while [[ $elapsed -lt $timeout ]]; do
       if curl -sS -o /dev/null -w '%{http_code}' "$proj_url" 2>>"$DRILL_DIR/restore-drill.log" | grep -q '^200$'; then

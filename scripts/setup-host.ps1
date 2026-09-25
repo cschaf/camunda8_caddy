@@ -86,15 +86,18 @@ Write-Host "Updated Caddyfile (replaced *.localhost -> *.$EnvHost)$(if($useCusto
 
 # Update hosts file
 $subdomains = @("keycloak", "identity", "console", "optimize", "orchestration", "webmodeler", "zeebe")
-$hostsEntries = @("127.0.0.1 $EnvHost") + ($subdomains | ForEach-Object { "127.0.0.1 $_.$EnvHost" })
-$hostsBlock = "# Camunda Compose NVL - $EnvHost`n" + ($hostsEntries -join "`n")
+# Every managed line carries $hostsTag so a re-run (or a HOST change) removes
+# exactly the lines this script wrote instead of accumulating duplicates.
+$hostsTag = '# camunda-compose-nvl'
+$hostsEntries = @("127.0.0.1 $EnvHost $hostsTag") + ($subdomains | ForEach-Object { "127.0.0.1 $_.$EnvHost $hostsTag" })
 
 # Remove old Camunda entries and add new ones
 $hostsLines = @()
 if (Test-Path $HostsFile) {
-    $hostsLines = Get-Content $HostsFile | Where-Object { $_ -notmatch '# Camunda Compose NVL' }
+    $hostsLines = @(Get-Content $HostsFile | Where-Object { $_ -notmatch '# Camunda Compose NVL' -and -not $_.Contains($hostsTag) })
 }
-$hostsLines += $hostsBlock
+$hostsLines += "# Camunda Compose NVL - $EnvHost"
+$hostsLines += $hostsEntries
 Set-Content -Path $HostsFile -Value $hostsLines
 Write-Host "Updated hosts file (replaced *.localhost -> *.$EnvHost)"
 

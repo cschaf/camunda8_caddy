@@ -11,12 +11,12 @@ zeebe:
   enabled: true
   name: zeebe-record
   partitionCount: 1
+  # 8.10 stopped flattening object variables by default in Self-Managed.
+  # Keep the 8.9 behavior so existing reports/filters on object variable
+  # properties (e.g. customer.name) keep working. Set to false once no report
+  # depends on flattened object variables.
+  includeObjectVariableValue: true
 enterprise: false
-security:
-  auth:
-    cookie:
-      same-site:
-        enabled: false
 ui:
   logoutHidden: true
 import:

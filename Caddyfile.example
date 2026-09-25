@@ -34,7 +34,9 @@ keycloak.camunda.dev.local {
     # Health check endpoint for dashboard status LEDs
     handle /health {
         header Access-Control-Allow-Origin "*"
-        reverse_proxy keycloak:18080 {
+        # Keycloak readiness on the management port (same probe as the compose healthcheck)
+        rewrite * /auth/health/ready
+        reverse_proxy keycloak:9000 {
             header_down -Cross-Origin-Resource-Policy
             header_down -Cross-Origin-Embedder-Policy
         }
@@ -90,26 +92,24 @@ identity.camunda.dev.local {
     reverse_proxy identity:8084
 }
 
-# Console
+# Console (merged into Camunda Hub)
 console.camunda.dev.local {
-    # Health check endpoint for dashboard status LEDs
+    # Console was merged into Camunda Hub in 8.10. Keep this hostname so old
+    # bookmarks keep working and send users to Hub (served on webmodeler.*).
+    # The health endpoint proxies Hub so the dashboard LED stays meaningful.
     handle /health {
         header Access-Control-Allow-Origin "*"
-        reverse_proxy console:8080 {
+        rewrite * /health/readiness
+        reverse_proxy hub:8091 {
             header_down -Cross-Origin-Resource-Policy
             header_down -Cross-Origin-Embedder-Policy
         }
     }
-    # Console 8.9 ships CSS with unresolved IBM Plex font URLs. Without this,
-    # the Express SPA fallback returns index.html for those .woff2 requests,
-    # which browsers then try to parse as fonts.
-    @console-fonts {
-        path_regexp ^/assets/~@ibm/plex/.+\.woff2$
+    # Wrapped in handle: the redir directive is ordered before handle and
+    # would otherwise also redirect /health.
+    handle {
+        redir https://webmodeler.camunda.dev.local{uri} 302
     }
-    handle @console-fonts {
-        respond "Console font asset not bundled" 404
-    }
-    reverse_proxy console:8080
 }
 
 # Optimize
@@ -117,6 +117,7 @@ optimize.camunda.dev.local {
     # Health check endpoint for dashboard status LEDs
     handle /health {
         header Access-Control-Allow-Origin "*"
+        rewrite * /api/readyz
         reverse_proxy optimize:8090 {
             header_down -Cross-Origin-Resource-Policy
             header_down -Cross-Origin-Embedder-Policy
@@ -135,7 +136,8 @@ orchestration.camunda.dev.local {
     # Health check endpoint for dashboard status LEDs
     handle /health {
         header Access-Control-Allow-Origin "*"
-        reverse_proxy orchestration:8080 {
+        rewrite * /actuator/health/readiness
+        reverse_proxy orchestration:9600 {
             header_down -Cross-Origin-Resource-Policy
             header_down -Cross-Origin-Embedder-Policy
         }
@@ -174,19 +176,20 @@ zeebe.localhost {
     }
 }
 
-# Web Modeler
+# Camunda Hub (formerly Web Modeler + Console)
 webmodeler.camunda.dev.local {
     # Health check endpoint for dashboard status LEDs
     handle /health {
         header Access-Control-Allow-Origin "*"
-        reverse_proxy web-modeler-restapi:8081 {
+        rewrite * /health/readiness
+        reverse_proxy hub:8091 {
             header_down -Cross-Origin-Resource-Policy
             header_down -Cross-Origin-Embedder-Policy
         }
     }
     # Pusher WebSocket connections (real-time collaboration)
     handle /app/* {
-        reverse_proxy web-modeler-websockets:8060
+        reverse_proxy hub-websockets:8060
     }
-    reverse_proxy web-modeler-restapi:8081
+    reverse_proxy hub:8081
 }

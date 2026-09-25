@@ -1,5 +1,7 @@
 # Camunda 8.8 to Current 8.9 Cluster Upgrade Guide
 
+> **Next upgrade:** For the migration from 8.9.x to 8.10.x (Camunda Hub replaces Web Modeler and Console) see [upgrade-8.10.md](upgrade-8.10.md).
+
 This guide documents what changed when this Docker Compose project moved from Camunda 8.8 to the current Camunda 8.9 stack. It is written for this repository's current state, not as a generic upstream upgrade guide.
 
 Current target in this project:

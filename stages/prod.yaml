@@ -73,18 +73,20 @@ services:
           cpus: "0.25"
           memory: 256M
 
-  web-modeler-restapi:
+  hub:
+    # Camunda Hub replaces web-modeler-restapi and console (8.10). Sized as the
+    # sum of both former services; tune after observing `docker stats`.
     deploy:
       resources:
         limits:
-          cpus: "1.0"
-          memory: 1024M
+          cpus: "1.5"
+          memory: 2048M
         reservations:
-          cpus: "0.25"
-          memory: 512M
+          cpus: "0.5"
+          memory: 1024M
     environment:
       LOGGING_LEVEL_IO_CAMUNDA_MODELER: INFO
-      PLAY_ENABLED: "true"
+      TEST_MODE_ENABLED: "true"
 
   postgres:
     deploy:
@@ -116,17 +118,7 @@ services:
           cpus: "0.1"
           memory: 256M
 
-  console:
-    deploy:
-      resources:
-        limits:
-          cpus: "0.5"
-          memory: 1024M
-        reservations:
-          cpus: "0.25"
-          memory: 512M
-
-  web-modeler-websockets:
+  hub-websockets:
     deploy:
       resources:
         limits:

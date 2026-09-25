@@ -19,7 +19,7 @@ usage() {
 Usage: $(basename "$0") [options]
   -p, --projects                 List all projects visible to the configured account
   -P, --project <name>           List repositories in <name> (or, with -r, list tags)
-  -r, --repository <name>        Repository (e.g. "camunda/console"). Requires --project.
+  -r, --repository <name>        Repository (e.g. "camunda/hub"). Requires --project.
   -l, --limit <n>                Number of tags to show per repository (default 10)
   -h, --help                     Show this help
 
@@ -27,7 +27,7 @@ Examples:
   $(basename "$0")
   $(basename "$0") --projects
   $(basename "$0") --project hotfixes
-  $(basename "$0") --project dockerhub-camunda --repository camunda/console --limit 20
+  $(basename "$0") --project dockerhub-camunda --repository camunda/hub --limit 20
 EOF
 }
 
@@ -149,13 +149,11 @@ fi
 # Default: tags for the images referenced by docker-compose.yaml
 DEFAULTS=(
   "dockerhub-camunda|camunda/camunda"
-  "dockerhub-camunda|camunda/console"
   "dockerhub-camunda|camunda/optimize"
   "dockerhub-camunda|camunda/identity"
   "dockerhub-camunda|camunda/connectors-bundle"
-  "dockerhub-camunda|camunda/web-modeler-restapi"
-  "dockerhub-camunda|camunda/web-modeler-webapp"
-  "dockerhub-camunda|camunda/web-modeler-websockets"
+  "dockerhub-camunda|camunda/hub"
+  "dockerhub-camunda|camunda/hub-websockets"
   "dockerhub-camunda|camunda/keycloak"
 )
 

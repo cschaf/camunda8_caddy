@@ -232,7 +232,6 @@ rehost_keycloak_clients() {
     -d "${POSTGRES_DB}" \
     -v "host=${HOST}" \
     -v "connectors_secret=${CONNECTORS_CLIENT_SECRET:-}" \
-    -v "console_secret=${CONSOLE_CLIENT_SECRET:-}" \
     -v "orchestration_secret=${ORCHESTRATION_CLIENT_SECRET:-}" \
     -v "optimize_secret=${OPTIMIZE_CLIENT_SECRET:-}" \
     -v "identity_secret=${CAMUNDA_IDENTITY_CLIENT_SECRET:-}" \
@@ -690,9 +689,11 @@ PYEOF
   log "Removing data volumes..."
   if [[ "$DRY_RUN" == true ]]; then
     if [[ "$RESTORE_ALL" == true ]]; then
-      log "[DRY-RUN] Would remove volumes: orchestration, elastic, postgres, postgres-web"
+      log "[DRY-RUN] Would remove volumes: orchestration, elastic, postgres, postgres-web, camunda-db"
     elif [[ "$RESTORE_ORCHESTRATION" == true ]]; then
       log "[DRY-RUN] Would remove volume: orchestration"
+    elif [[ "$RESTORE_CAMUNDA" == true ]]; then
+      log "[DRY-RUN] Would remove volume: camunda-db"
     else
       log "[DRY-RUN] Would keep existing Docker data volumes"
     fi
@@ -871,7 +872,7 @@ PYEOF
   # recreate Elasticsearch indices before the snapshot restore.
   log "Camunda application services remain stopped until restore is complete."
   if [[ "$DRY_RUN" == true ]]; then
-    log "[DRY-RUN] Would keep orchestration, identity, optimize, console, keycloak, and web-modeler app services stopped"
+    log "[DRY-RUN] Would keep orchestration, identity, optimize, keycloak, and hub app services stopped"
   fi
 
   # Step 8: Restore Elasticsearch

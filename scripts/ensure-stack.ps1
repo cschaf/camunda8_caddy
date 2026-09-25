@@ -51,13 +51,38 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-$ComposeArgs = @(
-    'compose',
+# Same DISPLAY_STAGE fallback as scripts/start.ps1, so a restarted service
+# (e.g. hub's HUB_CLUSTER_TAG) gets the same configuration as on a normal start.
+if ([string]::IsNullOrEmpty($env:DISPLAY_STAGE)) {
+    $DisplayStageValue = $null
+    if (Test-Path $EnvFile) {
+        foreach ($line in Get-Content $EnvFile) {
+            if ($line -match '^\s*DISPLAY_STAGE\s*=(.*)$') { $DisplayStageValue = $matches[1].Trim() }
+        }
+    }
+    $env:DISPLAY_STAGE = if ([string]::IsNullOrEmpty($DisplayStageValue)) { $StageValue } else { $DisplayStageValue }
+}
+
+# Pass both env files so ${VAR} interpolation in docker-compose.yaml works
+# (credentials live in .env-credentials, see scripts/start.ps1).
+$ComposeArgs = @('compose')
+foreach ($file in @($EnvFile, $CredentialsFile)) {
+    if (Test-Path $file) { $ComposeArgs += @('--env-file', $file) }
+}
+$ComposeArgs += @(
     '-f', (Join-Path $ProjectDir 'docker-compose.yaml'),
     '-f', (Join-Path $ProjectDir "stages/$StageValue.yaml")
 )
 
-$ExpectedServices = @(docker @ComposeArgs config --services)
+$configOutput = docker @ComposeArgs config --services 2>&1
+if ($LASTEXITCODE -ne 0) {
+    Write-Log 'ERROR: Could not determine expected services from docker compose config'
+    $configOutput | ForEach-Object { Write-Log "  $_" }
+    exit 1
+}
+# camunda-data-init is a one-shot init container that exits after its work;
+# it is started as a dependency of orchestration and must not be restarted here.
+$ExpectedServices = @($configOutput | Where-Object { $_ -and $_ -ne 'camunda-data-init' })
 $RunningServices = @(docker @ComposeArgs ps --services --status running)
 $RunningLookup = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
 

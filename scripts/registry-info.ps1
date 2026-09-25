@@ -16,7 +16,7 @@
     Project name. Without -Repository, lists the repos in the project.
 
 .PARAMETER Repository
-    Repository name (e.g. "camunda/console"). Requires -Project. Lists the newest tags.
+    Repository name (e.g. "camunda/hub"). Requires -Project. Lists the newest tags.
 
 .PARAMETER Limit
     Number of tags to show per repository (default 10).
@@ -25,7 +25,7 @@
     pwsh -File scripts/registry-info.ps1
     pwsh -File scripts/registry-info.ps1 -ListProjects
     pwsh -File scripts/registry-info.ps1 -Project hotfixes
-    pwsh -File scripts/registry-info.ps1 -Project dockerhub-camunda -Repository camunda/console -Limit 20
+    pwsh -File scripts/registry-info.ps1 -Project dockerhub-camunda -Repository camunda/hub -Limit 20
 #>
 
 param(
@@ -185,13 +185,11 @@ if ($Project -and $Repository) {
 # Default: tags for the images referenced by docker-compose.yaml
 $Defaults = @(
     @{ Project = 'dockerhub-camunda'; Repo = 'camunda/camunda' }
-    @{ Project = 'dockerhub-camunda'; Repo = 'camunda/console' }
     @{ Project = 'dockerhub-camunda'; Repo = 'camunda/optimize' }
     @{ Project = 'dockerhub-camunda'; Repo = 'camunda/identity' }
     @{ Project = 'dockerhub-camunda'; Repo = 'camunda/connectors-bundle' }
-    @{ Project = 'dockerhub-camunda'; Repo = 'camunda/web-modeler-restapi' }
-    @{ Project = 'dockerhub-camunda'; Repo = 'camunda/web-modeler-webapp' }
-    @{ Project = 'dockerhub-camunda'; Repo = 'camunda/web-modeler-websockets' }
+    @{ Project = 'dockerhub-camunda'; Repo = 'camunda/hub' }
+    @{ Project = 'dockerhub-camunda'; Repo = 'camunda/hub-websockets' }
     @{ Project = 'dockerhub-camunda'; Repo = 'camunda/keycloak' }
 )
 

@@ -1,7 +1,7 @@
 flowchart LR
     subgraph clients[" "]
         direction TB
-        browser["🖥️ Browser<br/><b>Web UIs</b><br/>Operate · Tasklist · Optimize<br/>Console · Identity · Web Modeler"]
+        browser["🖥️ Browser<br/><b>Web UIs</b><br/>Operate · Tasklist · Optimize<br/>Identity · Camunda Hub"]
         userapp["⚙️ Eigene Anwendungen<br/>Camunda Clients"]
     end
 
@@ -14,8 +14,7 @@ flowchart LR
             direction TB
             orchestration["<b>Orchestration Cluster</b><br/>Workflow Engine (Zeebe)<br/>+ Operate & Tasklist"]
             optimize["Optimize<br/>Reports & Analytics"]
-            webmodeler["Web Modeler<br/>BPMN modellieren"]
-            console["Console<br/>Verwaltung"]
+            webmodeler["Camunda Hub<br/>BPMN modellieren & Verwaltung"]
             identity["Identity<br/>Benutzer & Rechte"]
         end
 
@@ -30,7 +29,6 @@ flowchart LR
         proxy --> orchestration
         proxy --> optimize
         proxy --> webmodeler
-        proxy --> console
         proxy --> identity
     end
 
@@ -55,6 +53,6 @@ flowchart LR
     classDef infraBox fill:#e5e7eb,stroke:#374151
     classDef proxyBox fill:#fef3c7,stroke:#d97706
     class vm1,vm2 vm
-    class orchestration,optimize,webmodeler,console,identity,customconn svc
+    class orchestration,optimize,webmodeler,identity,customconn svc
     class keycloak,postgres,elastic,mailpit infraBox
     class proxy proxyBox

@@ -1,5 +1,12 @@
 $ErrorActionPreference = "Stop"
 
+# Prefer Windows' bsdtar over GNU tar from Git for Windows (usr\bin). When
+# pwsh is started from Git Bash, GNU tar comes first in PATH and treats
+# "C:\..." as a remote host ("Cannot connect to C: resolve failed").
+if ($IsWindows -and $env:SystemRoot -and (Test-Path (Join-Path $env:SystemRoot 'System32\tar.exe'))) {
+    $env:PATH = (Join-Path $env:SystemRoot 'System32') + [IO.Path]::PathSeparator + $env:PATH
+}
+
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectDir = Resolve-Path (Join-Path $ScriptDir "..\..")
 if (-not $EnvFile) {
@@ -135,8 +142,10 @@ function Check-ServicesHealth {
 
     try {
         $containers = Get-ComposeContainerStatuses
+        # camunda-data-init is a one-shot init container and is expected to exit.
         $unhealthy = $containers | Where-Object {
-            $_.Status -notlike "Up*" -or $_.Status -like "*(unhealthy)*"
+            $_.Name -notlike "*camunda-data-init" -and
+            ($_.Status -notlike "Up*" -or $_.Status -like "*(unhealthy)*")
         }
 
         if ($unhealthy) {

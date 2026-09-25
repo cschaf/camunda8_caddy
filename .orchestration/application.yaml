@@ -42,6 +42,11 @@ camunda:
     primary-storage:
       directory: /usr/local/camunda/data
       snapshot-period: 5m
+      rocks-db:
+        # 8.10 changed the default from PARTITION to FRACTION. Pin the 8.9
+        # behavior so the upgrade does not change RocksDB memory sizing.
+        # Switch to FRACTION deliberately (see Camunda sizing docs) if wanted.
+        memory-allocation-strategy: PARTITION
       disk:
         free-space:
           processing: 2GB
@@ -73,6 +78,8 @@ camunda:
             create-template: true
             index-suffix-date-pattern: "yyyy-MM-dd"
             number-of-shards: 1
+            # Keep explicit: the 8.10 default changed from 0 to 1, which would
+            # turn the single-node Elasticsearch cluster yellow.
             number-of-replicas: 0
             optimize-mode-enabled: true
   database:
@@ -92,7 +99,7 @@ camunda:
       enabled: true
 
   mcp:
-    # Camunda 8.9 built-in Orchestration Cluster MCP server. Docker Compose
+    # Built-in Orchestration Cluster MCP server (since 8.9). Docker Compose
     # enables this by default upstream, but keeping it explicit documents that
     # AI/MCP clients may use /mcp/cluster through localhost:8088 or Caddy.
     enabled: true

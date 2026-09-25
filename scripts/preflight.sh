@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # preflight.sh - Prüft alle per Skript prüfbaren Voraussetzungen für die
-# Installation und den Betrieb der Camunda 8.9 DEV-Umgebung (Docker Compose)
+# Installation und den Betrieb der Camunda 8.10 DEV-Umgebung (Docker Compose)
 # auf einem Ubuntu-Server.
 #
 # Aufruf:
@@ -124,7 +124,7 @@ env_get() {
 
 # --- Hauptprogramm ------------------------------------------------------------
 
-printf '%sCamunda 8.9 - Voraussetzungsprüfung (Preflight)%s\n' "$C_BOLD" "$C_NC"
+printf '%sCamunda 8.10 - Voraussetzungsprüfung (Preflight)%s\n' "$C_BOLD" "$C_NC"
 printf 'Prüfungstiefe: System + Werkzeuge + Netzwerk + Projekt (sofern vorhanden)\n'
 printf 'Server: %s | Projektverzeichnis: %s\n' "$(hostname 2>/dev/null || echo '?')" "$PROJECT_DIR"
 
@@ -370,7 +370,7 @@ else
 fi
 
 # Lokale Diagnose-Ports (nur 127.0.0.1 gebunden); belegt => Stack läuft vermutlich
-local_ports="26500 9600 8088 8086 8083 8084 9200 8070 8060 8087 9100 1025 8075"
+local_ports="26500 9600 8088 8086 8083 8084 9200 8070 8060 1025 8075"
 occupied=()
 for p in $local_ports; do
   if ss -ltn 2>/dev/null | awk -v port="$p" '$4 ~ "[:.]" port "$" {print $4}' | grep -q .; then
@@ -519,7 +519,7 @@ generate_report() {
   fi
 
   {
-    printf '# Camunda 8.9 - Voraussetzungs-Bericht (Preflight)\n\n'
+    printf '# Camunda 8.10 - Voraussetzungs-Bericht (Preflight)\n\n'
     printf 'Automatisch erzeugt am **%s** auf Server **%s**.\n\n' "$(date '+%d.%m.%Y %H:%M')" "$(hostname 2>/dev/null || echo '?')"
 
     printf '## Zusammenfassung\n\n'

@@ -36,13 +36,12 @@ This stack deploys a full Camunda 8.9 self-managed platform with:
 | **Orchestration** | `camunda/camunda:8.9.6` | Zeebe broker + Operate + Tasklist in one container |
 | **Elasticsearch** | `docker.elastic.co/elasticsearch/elasticsearch:8.19.11` | Optimize analytics storage (Optimize requires ES/OpenSearch) |
 | **camunda-db** | `postgres:${POSTGRES_VERSION}` | Camunda core operational data (Zeebe, Operate, Tasklist) |
-| **Identity** | `camunda/identity:8.9.9` | Centralized identity, OIDC provider integration, role management |
+| **Identity** | `camunda/identity:${CAMUNDA_IDENTITY_VERSION}` (8.9 line) | Centralized identity, OIDC provider integration, role management |
 | **Keycloak** | `camunda/keycloak:quay-26.6.4` | OIDC identity provider, realm/client setup, user authentication |
-| **Optimize** | `camunda/optimize:8.9.19` | Process analytics and optimization |
-| **Connectors** | `camunda/connectors-bundle:8.9.10` | Outbound integrations and webhooks |
-| **Web Modeler** | `camunda/web-modeler-restapi:8.9.8` | BPMN process modeling (REST API serves UI + WebSockets) |
-| **Console** | `camunda/console:8.9.104` | Cluster overview and management UI |
-| **PostgreSQL** (×2) | `postgres:15-alpine3.22` | Identity/Keycloak DB + Web Modeler DB |
+| **Optimize** | `camunda/optimize:${CAMUNDA_OPTIMIZE_VERSION}` | Process analytics and optimization |
+| **Connectors** | `camunda/connectors-bundle:${CAMUNDA_CONNECTORS_VERSION}` | Outbound integrations and webhooks |
+| **Camunda Hub** | `camunda/hub:${CAMUNDA_HUB_VERSION}` + `camunda/hub-websockets` | BPMN/DMN modeling and cluster overview/management (replaces Web Modeler and Console since 8.10) |
+| **PostgreSQL** (×2) | `postgres:15-alpine3.22` | Identity/Keycloak DB + Hub DB (`web-modeler-db`) |
 | **Caddy** | `caddy:2.11.2@sha256:25cdc846626b62d05f6b633b9b40c2c9f6ef89b515dc76133cefd920f7dbe562` | Reverse proxy with automatic HTTPS and subdomain routing |
 | **Autoheal** | `willfarrell/autoheal@sha256:75c28b0020543e8eb49fe6514d012e7d2691f095dd622309d045da8647c8bb83` | Restarts labeled containers when Docker health checks mark them as unhealthy |
 
@@ -50,9 +49,9 @@ This stack deploys a full Camunda 8.9 self-managed platform with:
 
 Three Docker networks isolate traffic:
 
-- **`camunda-platform`** — Main platform: orchestration, connectors, optimize, console, elasticsearch, keycloak, identity, web-modeler-restapi, camunda-db, reverse-proxy
+- **`camunda-platform`** — Main platform: orchestration, connectors, optimize, elasticsearch, keycloak, identity, hub, camunda-db, reverse-proxy
 - **`identity-network`** — Keycloak ↔ PostgreSQL (identity DB) ↔ Identity
-- **`web-modeler`** — web-modeler-db ↔ mailpit ↔ web-modeler-restapi ↔ web-modeler-websockets; also connects to `camunda-platform` to reach orchestration and identity
+- **`web-modeler`** (name kept for existing deployments) — web-modeler-db ↔ mailpit ↔ hub ↔ hub-websockets; also connects to `camunda-platform` to reach orchestration and identity
 
 ---
 
@@ -93,7 +92,7 @@ Resources are managed through **environment stages**. The `STAGE` variable in `.
 
 For a complete side-by-side comparison of all stages, see [docs/stage_comparison.md](stage_comparison.md).
 
-> **Display label vs resource profile.** `STAGE` controls *what resources* the stack runs with. The label shown on the `/` dashboard badge / page title and on the Camunda Console release tag also defaults to `STAGE`, but can be overridden independently with the optional `DISPLAY_STAGE` variable in `.env`. This lets you run, e.g., the `dev` profile while displaying `TEST` to users (`STAGE=DEV` + `DISPLAY_STAGE=TEST`). When `DISPLAY_STAGE` is unset, the displayed label falls back to `STAGE`.
+> **Display label vs resource profile.** `STAGE` controls *what resources* the stack runs with. The label shown on the `/` dashboard badge / page title and on the Camunda Hub cluster tag also defaults to `STAGE`, but can be overridden independently with the optional `DISPLAY_STAGE` variable in `.env`. This lets you run, e.g., the `dev` profile while displaying `TEST` to users (`STAGE=DEV` + `DISPLAY_STAGE=TEST`). When `DISPLAY_STAGE` is unset, the displayed label falls back to `STAGE`.
 
 ### Base (Production) Profile
 
@@ -107,13 +106,12 @@ The following table shows the **base** resource configuration — what the `prod
 | keycloak | 1.5 | 2G | 512m | — | Quarkus-based, no JVM heap setting needed |
 | connectors | 1.0 | 1G | 512m | `-Xmx768m` | 75% of limit; outbound integrations only |
 | identity | 1.0 | 1G | 256m | `-Xms256m -Xmx768m` | 75% of limit; Spring Boot service |
-| console | 0.5 | 1G | 512m | `-Xms256m -Xmx768m` | 75% of limit; Node.js but has a JVM sidecar for metrics |
-| web-modeler-restapi | 1.0 | 1G | 512m | `-Xmx768m` | 75% of limit; Java REST API + webapp UI (8.9+) |
+| hub | 1.5 | 2G | 1G | `-Xmx1280m` | ~62% of limit; Camunda Hub (Java REST API + UI, replaces web-modeler-restapi and console since 8.10) |
 | postgres (identity) | 1.0 | 1G | 512m | — | No JVM; PostgreSQL manages own memory |
-| postgres (web-modeler) | 0.5 | 512m | 256m | — | No JVM |
+| postgres (web-modeler-db, Hub DB) | 0.5 | 512m | 256m | — | No JVM |
 | camunda-db | 1.0 | 1536M | 768M | — | No JVM; core Camunda operational DB; handles all Zeebe, Operate, Tasklist data since 8.9 |
 | reverse-proxy | 0.5 | 256m | 64m | — | Caddy Go process |
-| web-modeler-websockets | 0.5 | 256m | 64m | — | Node.js WebSocket server |
+| hub-websockets | 0.5 | 256m | 64m | — | Node.js WebSocket server |
 | mailpit | 0.25 | 128m | 32m | — | Go SMTP server |
 
 **Aggregate CPU limits:** ~17.75 cores, **Total limits:** ~27.2 GB, **Total reservations:** ~16.2 GB
@@ -132,7 +130,7 @@ Reduced profiles halve (dev) or quarter (test) CPU and memory limits for heavy a
 
 ### Why 75% for JVM services?
 
-JVM services (orchestration, connectors, optimize, web-modeler-restapi, console) use the HotSpot JVM with garbage collection. A heap set to 75% of the container limit leaves room for:
+JVM services (orchestration, connectors, optimize, hub) use the HotSpot JVM with garbage collection. A heap set to 75% of the container limit leaves room for:
 - Metaspace (class metadata)
 - Thread stacks
 - Off-heap buffers (Netty, etc.)
@@ -180,7 +178,7 @@ environment:
 | `cluster.routing.allocation.disk.watermark.flood_stage=95%` | `95%` | `95%` | At 95%, Elasticsearch marks all indices on the node as read-only (`index.blocks.read_only_allow_delete`). Requires manual intervention to clear. The gap between 90% and 95% gives operators a window to react. |
 | `indices.breaker.total.limit=75%` | `75%` | `70%` | The parent circuit breaker limit for all sub-breakers (fielddata, request, in-flight). 75% of JVM heap. Raised slightly from 70% because Optimize performs large aggregations that can approach the limit. If this trips, it causes `TooManyBookmarks` or aggregation failures in Optimize. |
 | `ES_JAVA_OPTS=-Xms2g -Xmx2g` | `2g` | 50% of container | 2 GB heap (50% of the 4 GB limit) for Lucene to use the other ~2 GB as off-heap page cache. Scaled down proportionally in `dev` and `test` stages. |
-| `action.auto_create_index=...` | Whitelist (Camunda patterns) | `true` | Prevents rogue services or typos from creating indices outside known patterns. A whitelist (instead of blanket `false`) is safer because Optimize and Web Modeler restapi may auto-create indices on first startup before their templates are registered. All known Camunda index prefixes are explicitly allowed: `zeebe-record*`, `operate-*`, `tasklist-*`, `optimize-*`, `camunda-*`, `web-modeler-*`, `identity-*`. |
+| `action.auto_create_index=...` | Whitelist (Camunda patterns) | `true` | Prevents rogue services or typos from creating indices outside known patterns. A whitelist (instead of blanket `false`) is safer because Optimize and Hub may auto-create indices on first startup before their templates are registered. All known Camunda index prefixes are explicitly allowed: `zeebe-record*`, `operate-*`, `tasklist-*`, `optimize-*`, `camunda-*`, `web-modeler-*`, `identity-*`. |
 | `indices.memory.index_buffer_size=20%` | `20%` | `10%` | The percentage of JVM heap reserved for the indexing buffer. A larger buffer allows Elasticsearch to batch more in-memory writes before flushing to disk, improving throughput for Camunda's high-volume event stream. 20% is appropriate given the 4 GB heap and write-heavy workload. |
 
 ### Index Lifecycle Management (ILM) and Data Retention
@@ -438,7 +436,7 @@ Key environment variables passed to the identity container:
 
 **Keycloak realm initialization:**
 The identity service uses this file to:
-1. Create OIDC clients in Keycloak (orchestration, connectors, optimize, console, web-modeler)
+1. Create OIDC clients in Keycloak (orchestration, connectors, optimize, web-modeler — the latter is used by Camunda Hub)
 2. Configure client secrets, redirect URIs, and allowed origins
 3. Set up the demo user with all required roles
 
@@ -455,9 +453,10 @@ users:
 The demo user is assigned these roles:
 - `ManagementIdentity` — Full access to Identity management
 - `Optimize` — Access to Optimize
-- `Web Modeler` — Access to Web Modeler
-- `Web Modeler Admin` — Elevated Web Modeler access
-- `Console` — Access to Console
+- `Analyst` — Optimize plus Hub catalog/business-intelligence management
+- `Hub` — Access to Camunda Hub
+- `Hub Admin` — Elevated Hub access
+- `DevOps` — Hub cluster management (replaces the former `Console` role)
 - `Orchestration` — Access to Operate/Tasklist
 
 ### Keycloak Service Environment Variables
@@ -499,19 +498,18 @@ The `generate-secrets.sh` script creates a production-quality `.env-credentials`
 |--------|---------|---------|
 | `ORCHESTRATION_CLIENT_SECRET` | Orchestration, Keycloak | OIDC client secret for Operate/Tasklist |
 | `CONNECTORS_CLIENT_SECRET` | Connectors, Keycloak | OIDC client secret for outbound integrations |
-| `CONSOLE_CLIENT_SECRET` | Console, Keycloak | OIDC client secret for Console |
 | `OPTIMIZE_CLIENT_SECRET` | Optimize, Keycloak | OIDC client secret for Optimize |
 | `CAMUNDA_IDENTITY_CLIENT_SECRET` | Identity, Keycloak | OIDC client secret for Identity service (m2m) |
 | `POSTGRES_PASSWORD` | PostgreSQL (identity DB), Keycloak | Database password for Keycloak's PostgreSQL |
-| `WEBMODELER_DB_PASSWORD` | PostgreSQL (web-modeler DB), web-modeler-restapi | Database password for Web Modeler's PostgreSQL |
+| `WEBMODELER_DB_PASSWORD` | PostgreSQL (web-modeler-db), hub | Database password for the Hub (formerly Web Modeler) PostgreSQL |
 | `KEYCLOAK_ADMIN_PASSWORD` | Keycloak | Keycloak admin console password |
-| `WEBMODELER_PUSHER_KEY` | web-modeler-restapi, web-modeler-websockets | Pusher WebSocket authentication |
-| `WEBMODELER_PUSHER_SECRET` | web-modeler-websockets | Pusher WebSocket authentication |
+| `WEBMODELER_PUSHER_KEY` | hub, hub-websockets | Pusher WebSocket authentication |
+| `WEBMODELER_PUSHER_SECRET` | hub, hub-websockets | Pusher WebSocket authentication |
 | `DEMO_USER_PASSWORD` | Identity (creates demo user) | Password for the demo user account |
 | `ELASTIC_PASSWORD` | Elasticsearch, Optimize, orchestration, backup/restore scripts | Password for the Elasticsearch `elastic` user; used by Optimize and Zeebe Exporter for authenticated ES access |
 | `CAMUNDA_DB_PASSWORD` | `camunda-db`, orchestration | Database password for the Camunda core PostgreSQL database |
 | `CAMUNDA_REGISTRY_USERNAME` / `CAMUNDA_REGISTRY_PASSWORD` | `scripts/registry-info.sh` / `.ps1` | Harbor registry credentials for tag lookups |
-| `CAMUNDA_LICENSE_KEY` (optional) | orchestration, optimize, web-modeler-restapi, console | Camunda 8 Self-Managed license key — comment block in `.env-credentials.example` shows the format |
+| `CAMUNDA_LICENSE_KEY` (optional) | orchestration, optimize, connectors, identity, hub | Camunda 8 Self-Managed license key — comment block in `.env-credentials.example` shows the format |
 
 ### Where do backups store the credentials?
 
@@ -626,27 +624,6 @@ Keycloak is the OIDC provider. On first startup, Identity calls the Keycloak Adm
 2. Create OIDC clients for each service with correct redirect URIs
 3. Configure mappers for custom claims (user roles, client ID)
 
-### Console
-
-**Image:** `camunda/console:${CAMUNDA_CONSOLE_VERSION}`
-
-**Ports:** 8087 (UI), 9100 (metrics)
-
-**Key env vars:**
-- `KEYCLOAK_BASE_URL=https://keycloak.${HOST}/auth` — Browser-facing URL
-- `KEYCLOAK_INTERNAL_BASE_URL=http://${KEYCLOAK_HOST}:18080/auth` — Internal URL for Node.js service-to-service calls
-- `NODE_ENV=production` — Runs Console in production mode (disables some dev-only features)
-
-**Configuration:** Console reads its cluster layout from `.console/application.yaml`, which is generated from `.console/application.yaml.template` by the start scripts on every run. The template defines the components Console displays, including:
-
-- **Orchestration cluster** (`id: orchestration`) — Zeebe gateway with `urls.grpc` and `urls.http`. These must use browser-accessible proxy addresses (`https://zeebe.${HOST}` for gRPC and `https://orchestration.${HOST}` for the REST API), not internal container DNS names.
-- **Orchestration Admin** (`id: orchestrationIdentity`) — Renders the **Admin** application card in Console. Without this component the card appears with no link.
-- **Operate**, **Tasklist**, **Optimize**, **Connectors**, **Identity**, **Keycloak**, **WebModeler** — Individual service cards with external URLs and internal readiness probes.
-
-Console is **Node.js**, not Spring Boot. This means Spring Boot configuration gotchas (CSRF origin checking, `SERVER_FORWARD_HEADERS_STRATEGY`, font CORS issues) do not apply. It uses different env vars (`KEYCLOAK_BASE_URL` vs Spring's `issuer-url` style).
-
-**Health checks and autoheal:** Console exposes its readiness probe on port 9100. Docker uses that probe to set the container health state, and the `autoheal` sidecar watches the `autoheal=true` label and restarts Console if it becomes `unhealthy` while still running.
-
 ### Autoheal
 
 **Image:** `willfarrell/autoheal@sha256:75c28b0020543e8eb49fe6514d012e7d2691f095dd622309d045da8647c8bb83`
@@ -719,33 +696,36 @@ This runs the guard twice per hour, writes timestamped output to a dedicated log
 
 **Volumes:** `camunda-db:/var/lib/postgresql/data`
 
-### Web Modeler
+### Camunda Hub (formerly Web Modeler + Console)
 
-Three components:
+Since 8.10, Camunda Hub replaces both Web Modeler and Console. It serves BPMN/DMN modeling and the cluster overview in one UI.
 
 | Component | Image | Port | JVM Heap | Purpose |
 |-----------|-------|------|----------|---------|
-| web-modeler-restapi | `camunda/web-modeler-restapi:8.9.4` | 8081 (internal) / 8070 (host) | `-Xmx768m` | Java REST API + serves webapp UI (8.9+) |
-| web-modeler-websockets | `camunda/web-modeler-websockets:8.9.4` | 8060 | — | Node.js Pusher WebSocket server for real-time collaboration |
-| web-modeler-db | `postgres:15-alpine3.22` | 5432 | — | PostgreSQL for Web Modeler's own data |
+| hub | `camunda/hub:${CAMUNDA_HUB_VERSION}` | 8081 (internal) / 8070 (host), 8091 management | `-Xmx1280m` | Java REST API + UI, cluster registration |
+| hub-websockets | `camunda/hub-websockets:${CAMUNDA_HUB_VERSION}` | 8060 | — | Node.js Pusher WebSocket server for real-time collaboration |
+| web-modeler-db | `postgres:15-alpine3.22` | 5432 | — | PostgreSQL for Hub data. Name and volume (`postgres-web`) kept: Hub 8.10 migrates the former Web Modeler schema in place (Flyway, not backwards compatible) |
 
-**Key env vars for web-modeler-restapi:**
-- `RESTAPI_OAUTH2_TOKEN_ISSUER=https://keycloak.${HOST}/...` — Browser-facing issuer (used for JWT validation from webapp)
-- `RESTAPI_OAUTH2_TOKEN_ISSUER_BACKEND_URL=http://${KEYCLOAK_HOST}:18080/...` — Internal issuer URL
-- `SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI=https://keycloak.${HOST}/...` — Canonical JWT issuer used by Web Modeler REST API on Camunda 8.9; must match Keycloak's advertised issuer even when OIDC discovery uses the internal backend URL.
-- `SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI=http://${KEYCLOAK_HOST}:18080/.../certs` — Internal JWK Set endpoint used for JWT signature validation; avoids calling the public HTTPS issuer from inside the container.
-- `RESTAPI_PUSHER_*` — Pusher configuration for WebSocket communication with the websockets service
-- `CAMUNDA_MODELER_CLUSTERS_0_URL_WEBAPP=https://orchestration.${HOST}` — Points to the **Orchestration** UI (not Web Modeler itself), because Web Modeler connects to the Zeebe broker running in Orchestration. Uses the browser-reachable HTTPS proxy URL so it works from remote clients on the network, not just the Docker host machine.
-- `LOGGING_LEVEL_IO_CAMUNDA_MODELER=INFO` — Keeps Web Modeler logging at production-appropriate verbosity.
-- `LOGGING_LEVEL_ORG_HIBERNATE_ORM_CONNECTIONS_POOLING=WARN` — Suppresses Hibernate's informational database metadata banner that reports some datasource pool values as `undefined/unknown` during startup.
+**Cluster registration:** `.hub/application.yaml` (mounted at `/home/runner/config/application.yaml`) registers the `management` (Identity) and `camunda-platform` clusters under `camunda.hub.clusters`. It replaces the former `.console/application.yaml.template` and the `CAMUNDA_MODELER_CLUSTERS_0_*` env vars. Placeholders are resolved by Spring from the container environment, so no render step is needed. Rules:
+
+- Browser-facing `webapp` URLs use the HTTPS proxy hostnames.
+- Component types `console` and `keycloak` are invalid in 8.10 and make Hub fail at startup; `orchestrationIdentity` is now `admin`.
+- The cluster tag is `HUB_CLUSTER_TAG` = `DISPLAY_STAGE` (fallback `STAGE`).
+
+**Key env vars for hub:**
+- `RESTAPI_OAUTH2_TOKEN_ISSUER`, `RESTAPI_OAUTH2_TOKEN_ISSUER_BACKEND_URL`, `SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI`, `SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI`, `OAUTH2_CLIENT_ID=web-modeler` — Legacy OIDC keys. Hub 8.10 translates them to `camunda.security.authentication.oidc.*` (Camunda Security Library) at startup; they are removed in 8.11. The issuer must match the `iss` claim (`https://keycloak.${HOST}/...`); JWKS is fetched internally.
+- `RESTAPI_PUSHER_*` — Pusher configuration for WebSocket communication with `hub-websockets`
+- `RESTAPI_SERVER_URL=https://webmodeler.${HOST}` — Hub keeps the `webmodeler.*` hostname so existing Keycloak redirect URIs stay valid.
+- `LOGGING_LEVEL_IO_CAMUNDA_MODELER=INFO`, `LOGGING_LEVEL_ORG_HIBERNATE_ORM_CONNECTIONS_POOLING=WARN` — Logging verbosity.
 - `SERVER_HTTPS_ONLY=false` — Allows HTTP on the internal Docker network while Caddy terminates browser-facing HTTPS.
-- `PLAY_ENABLED=true` — Keeps the Web Modeler Play feature enabled.
+- `TEST_MODE_ENABLED=true` — Test mode (renamed from `PLAY_ENABLED` in 8.10).
+- Healthcheck `start_period: 600s` — gives the one-time 8.9 → 8.10 database migration time before autoheal may restart Hub.
 
-**Key env vars for web-modeler-websockets:**
+**Key env vars for hub-websockets:**
 - `APP_DEBUG=false` — Runs the WebSocket service without debug mode.
-- `PUSHER_APP_*` — Pusher app credentials shared with `web-modeler-restapi`.
+- `PUSHER_APP_*` — Pusher app credentials shared with `hub`.
 
-**WebSocket via proxy:** When `webmodeler.camunda.dev.local` is served over HTTPS, the browser's Pusher client connects to `wss://webmodeler.camunda.dev.local/app/*`. Caddy proxies this to `web-modeler-websockets:8060`. See [Reverse Proxy section](#9-reverse-proxy-caddy) for the `handle /app/*` directive.
+**WebSocket via proxy:** The browser's Pusher client connects to `wss://webmodeler.camunda.dev.local/app/*`. Caddy proxies this to `hub-websockets:8060`. See [Reverse Proxy section](#9-reverse-proxy-caddy) for the `handle /app/*` directive.
 
 ---
 
@@ -766,11 +746,11 @@ The reverse proxy also defines a Docker health check against Caddy's local admin
 | `camunda.dev.local` | Dashboard (`/srv/dashboard`) | Landing page with links to all services |
 | `keycloak.camunda.dev.local` | `keycloak:18080` | Keycloak admin + OIDC provider |
 | `identity.camunda.dev.local` | `identity:8084` | Identity UI |
-| `console.camunda.dev.local` | `console:8080` | Console UI |
+| `console.camunda.dev.local` | redirect → `webmodeler.camunda.dev.local` | Console was merged into Camunda Hub (8.10) |
 | `optimize.camunda.dev.local` | `optimize:8090` | Optimize UI |
 | `orchestration.camunda.dev.local` | `orchestration:8080` | Operate + Tasklist UIs |
 | `zeebe.camunda.dev.local` | `orchestration:26500` | Zeebe gRPC gateway (h2c) |
-| `webmodeler.camunda.dev.local` | `web-modeler-restapi:8081` | Web Modeler UI + WebSocket |
+| `webmodeler.camunda.dev.local` | `hub:8081` (+ `hub-websockets:8060` for `/app/*`) | Camunda Hub UI + WebSocket |
 
 ### TLS Configuration
 
@@ -837,15 +817,15 @@ reverse_proxy orchestration:8080 {
 }
 ```
 
-**5. WebSocket proxying for Web Modeler**
+**5. WebSocket proxying for Camunda Hub**
 
 ```caddy
 handle /app/* {
-    reverse_proxy web-modeler-websockets:8060
+    reverse_proxy hub-websockets:8060
 }
 ```
 
-Pusher's WebSocket connections use the `/app/*` path pattern. Caddy routes them to the websockets container while the rest of `webmodeler.camunda.dev.local` goes to the webapp.
+Pusher's WebSocket connections use the `/app/*` path pattern. Caddy routes them to the websockets container while the rest of `webmodeler.camunda.dev.local` goes to `hub`.
 
 **6. Forwarded headers for Optimize**
 
@@ -902,9 +882,8 @@ Direct host binding is loopback-only (`127.0.0.1`) for local diagnostics and scr
 | identity | **127.0.0.1:8084** | 8084 | HTTP | Local diagnostics/scripts + via proxy |
 | keycloak | (internal) | 18080 | HTTP | Via proxy only |
 | elasticsearch | **127.0.0.1:9200**, 127.0.0.1:9300 | 9200, 9300 | HTTP/REST | Local backup/restore and diagnostics only |
-| console | **127.0.0.1:8087**, 127.0.0.1:9100 | 8080, 9100 | HTTP | Local diagnostics/scripts + via proxy |
-| web-modeler-restapi | **127.0.0.1:8070** | 8081 | HTTP | Local diagnostics/scripts + via proxy (serves UI + API since 8.9) |
-| web-modeler-websockets | **127.0.0.1:8060** | 8060 | WebSocket | Local diagnostics/scripts + via proxy (webmodeler.dev.local/app/*) |
+| hub | **127.0.0.1:8070** | 8081 | HTTP | Local diagnostics/scripts + via proxy (Camunda Hub UI + API) |
+| hub-websockets | **127.0.0.1:8060** | 8060 | WebSocket | Local diagnostics/scripts + via proxy (webmodeler.dev.local/app/*) |
 | mailpit | 127.0.0.1:1025, 127.0.0.1:8075 | 1025, 8025 | SMTP/HTTP | Local SMTP/UI diagnostics |
 
 When adding a new service, publish host ports only if a host-side script or local diagnostic workflow needs them. Bind such ports to `127.0.0.1`. Public user-facing access should be routed through Caddy on port 443.
@@ -937,7 +916,7 @@ The base Compose file and `stages/prod.yaml` are configured as a production-read
 | Setting | Current Value | Production Value | Risk if Left |
 |---------|---------------|------------------|--------------|
 | `/actuator/configprops` exposure | Disabled for runtime services | Keep disabled; if temporarily needed, use `show-values: NEVER` | Exposing config properties can leak OAuth client secrets, database passwords, and connector credentials |
-| `LOGGING_LEVEL_IO_CAMUNDA_MODELER=INFO` | web-modeler-restapi | `INFO` | Keeps Web Modeler logging at production-appropriate verbosity |
+| `LOGGING_LEVEL_IO_CAMUNDA_MODELER=INFO` | hub | `INFO` | Keeps Web Modeler logging at production-appropriate verbosity |
 | `xpack.security.enabled=true` | elasticsearch | `true` | Basic Auth required on Elasticsearch API |
 
 ### Data Durability Settings
@@ -987,7 +966,7 @@ Camunda 8.9 adds two AI integration paths that this stack keeps separate:
 
 | Path | Purpose | Primary Configuration |
 |------|---------|-----------------------|
-| AI inside BPMN | AI Agent, MCP Client, and A2A Client connectors run as process tasks | `connectors`, `connector-secrets.txt`, Web Modeler element templates |
+| AI inside BPMN | AI Agent, MCP Client, and A2A Client connectors run as process tasks | `connectors`, `connector-secrets.txt`, Hub element templates |
 | AI outside Camunda | External AI clients inspect and operate the cluster through MCP | `camunda.mcp.enabled=true`, `/mcp/cluster` endpoint |
 
 ### AI Agent Connectors

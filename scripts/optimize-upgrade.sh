@@ -41,17 +41,36 @@ if [[ ! -f "$CREDENTIALS_FILE" ]]; then
   exit 1
 fi
 
+# Use the same stage overlay as scripts/start.sh. Without it, "up -d optimize"
+# would recreate optimize and its dependencies (elasticsearch, identity,
+# keycloak, postgres) with the base resource profile instead of the stage one.
+set -a
+# shellcheck source=/dev/null
+source "$ENV_FILE"
+set +a
+stage="$(printf '%s' "${STAGE:-}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+case "$stage" in
+  prod|dev|test) ;;
+  *)
+    echo "ERROR: Unsupported or missing STAGE '${STAGE:-}' in .env. Expected one of: prod, dev, test" >&2
+    exit 1
+    ;;
+esac
+export DISPLAY_STAGE="${DISPLAY_STAGE:-$stage}"
+
 COMPOSE_BASE=(
   docker compose
   --env-file "$ENV_FILE"
   --env-file "$CREDENTIALS_FILE"
+  -f "$PROJECT_DIR/docker-compose.yaml"
+  -f "$PROJECT_DIR/stages/${stage}.yaml"
 )
 
-# Disable Git Bash on Windows path translation. The Optimize upgrade script
-# lives at /optimize/upgrade/upgrade.sh inside the container; the leading
-# double-slash tells MSYS to leave the path alone. On Linux/macOS the env
-# var and the double-slash are harmless no-ops.
-export MSYS_NO_PATHCONV=1
+# The Optimize upgrade script lives at /optimize/upgrade/upgrade.sh inside the
+# container. The leading double-slash (//optimize/...) stops Git Bash on
+# Windows from rewriting it into a Windows path; on Linux/macOS it is a no-op.
+# Do NOT export MSYS_NO_PATHCONV here: it would also stop the conversion of the
+# --env-file / -f host paths above ("couldn't find env file: C:\c\Users\...").
 
 # Show what is about to happen.
 echo ">> Stopping the (currently broken) optimize service..."
@@ -77,7 +96,8 @@ echo
 
 echo
 echo ">> Upgrade finished. Starting the regular optimize service..."
-"${COMPOSE_BASE[@]}" up -d optimize
+# --no-deps: only (re)start optimize; its dependencies are already running.
+"${COMPOSE_BASE[@]}" up -d --no-deps optimize
 
 echo
 echo ">> Waiting for optimize to become healthy (timeout 120s)..."

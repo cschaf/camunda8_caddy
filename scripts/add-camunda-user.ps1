@@ -224,8 +224,8 @@ function Add-UserRoleMappings {
 # Role mappings — specify exact role names from Keycloak
 # ---------------------------------------------------------------------------
 $roleMap = @{
-    NormalUser = @("Default user role", "Orchestration", "Optimize", "Web Modeler")
-    Admin      = @("Web Modeler", "ManagementIdentity", "Default user role", "Orchestration", "Optimize", "Web Modeler Admin", "Console")
+    NormalUser = @("Default user role", "Orchestration", "Optimize", "Hub")
+    Admin      = @("Hub", "ManagementIdentity", "Default user role", "Orchestration", "Optimize", "Hub Admin", "DevOps")
 }
 
 # Camunda internal role mapping (camunda.security.authorizations.enabled=true requires explicit role assignment)

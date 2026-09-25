@@ -81,17 +81,18 @@ services:
     environment:
       JAVA_TOOL_OPTIONS: "-Xms384m -Xmx384m"
 
-  web-modeler-restapi:
+  hub:
+    # Camunda Hub replaces web-modeler-restapi and console (8.10).
     deploy:
       resources:
         limits:
-          cpus: "0.5"
-          memory: 512M
+          cpus: "1.0"
+          memory: 1024M
         reservations:
-          cpus: "0.125"
-          memory: 256M
+          cpus: "0.25"
+          memory: 512M
     environment:
-      JAVA_OPTIONS: "-Xmx384m"
+      JAVA_OPTIONS: "-Xmx640m"
 
   postgres:
     deploy:
@@ -123,19 +124,7 @@ services:
           cpus: "0.05"
           memory: 128M
 
-  console:
-    deploy:
-      resources:
-        limits:
-          cpus: "0.5"
-          memory: 512M
-        reservations:
-          cpus: "0.125"
-          memory: 256M
-    environment:
-      JAVA_TOOL_OPTIONS: "-Xms384m -Xmx384m"
-
-  web-modeler-websockets:
+  hub-websockets:
     deploy:
       resources:
         limits:

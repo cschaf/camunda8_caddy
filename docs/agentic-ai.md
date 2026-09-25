@@ -16,7 +16,7 @@ The runtime configuration is intentionally provider-neutral. Add only the LLM an
 | AI Agent, MCP Client, A2A Client connectors | `connectors` | `camunda/connectors-bundle:${CAMUNDA_CONNECTORS_VERSION}` |
 | Connector secrets | `connectors` | `connector-secrets.txt` with `CONNECTORS_SECRET` prefix |
 | Orchestration Cluster MCP server | `orchestration` | `camunda.mcp.enabled: true` |
-| BPMN modeling | `web-modeler-restapi` | Connected to local orchestration cluster |
+| BPMN modeling | `hub` (Camunda Hub) | Connected to local orchestration cluster |
 
 ## Secret Naming
 
@@ -125,9 +125,9 @@ Recommended connector settings:
 
 After this works, add an ad-hoc subprocess with a small set of allowed tools. Keep the first tool set narrow, for example one REST connector or one MCP tool, then expand after observing behavior.
 
-## Web Modeler Connector Template Import
+## Hub Connector Template Import
 
-Web Modeler can add connector templates from the marketplace when changing a BPMN task type. In this stack, prefer connector templates that match `CAMUNDA_CONNECTORS_VERSION` and `CAMUNDA_WEB_MODELER_VERSION`.
+Web Modeler can add connector templates from the marketplace when changing a BPMN task type. In this stack, prefer connector templates that match `CAMUNDA_CONNECTORS_VERSION` and `CAMUNDA_HUB_VERSION`.
 
 If the marketplace import fails with browser console messages such as:
 
@@ -138,10 +138,10 @@ Failed to import resource
 COULD_NOT_IMPORT_RESOURCES
 ```
 
-check `web-modeler-restapi` first:
+check `hub` first:
 
 ```bash
-docker logs web-modeler-restapi --since 15m
+docker logs hub --since 15m
 ```
 
 Warnings about `c3-navigation-appbar`, Statsig, or `ContextPad#getPad is deprecated` are not the root cause. The actionable failure is the `POST /api/internal/files` response. If the logs show successful authentication and some connector template files were created, the proxy and login path are working; Web Modeler is rejecting only part of the imported template bundle.

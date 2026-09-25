@@ -148,10 +148,15 @@ fi
 # ---------------------------------------------------------------------------
 
 SUBDOMAINS="keycloak identity console optimize orchestration webmodeler zeebe"
+# Every managed line carries HOSTS_TAG so a re-run (or a HOST change) can
+# remove exactly the lines this script wrote. Lines containing the legacy
+# marker "# Camunda Compose NVL" are removed too (older versions wrote the
+# whole block into one line with literal "\n").
 HOSTS_MARKER="# Camunda Compose NVL - $HOST"
-HOSTS_BLOCK="$HOSTS_MARKER\n127.0.0.1 ${HOST}"
+HOSTS_TAG="# camunda-compose-nvl"
+HOSTS_LINES=("$HOSTS_MARKER" "127.0.0.1 ${HOST} ${HOSTS_TAG}")
 for subdomain in $SUBDOMAINS; do
-    HOSTS_BLOCK="$HOSTS_BLOCK\n127.0.0.1 ${subdomain}.${HOST}"
+    HOSTS_LINES+=("127.0.0.1 ${subdomain}.${HOST} ${HOSTS_TAG}")
 done
 
 # Check if we need sudo to write to hosts file
@@ -159,11 +164,11 @@ _write_hosts() {
     local temp_hosts
     temp_hosts="$(mktemp)"
 
-    # Remove old Camunda entries
-    grep -v '# Camunda Compose NVL' "$HOSTS_FILE" > "$temp_hosts"
+    # Remove old Camunda entries (grep exits 1 when nothing is left; that is fine)
+    grep -v -e '# Camunda Compose NVL' -e "$HOSTS_TAG" "$HOSTS_FILE" > "$temp_hosts" || true
 
-    # Append new entries
-    printf "%s\n" "$HOSTS_BLOCK" >> "$temp_hosts"
+    # Append new entries, one per line
+    printf '%s\n' "${HOSTS_LINES[@]}" >> "$temp_hosts"
 
     if [[ "$HOSTS_FILE" == "/etc/hosts" ]]; then
         if [[ -w "$HOSTS_FILE" ]]; then

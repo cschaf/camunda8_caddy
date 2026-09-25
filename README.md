@@ -22,6 +22,7 @@ For end user usage, please check the official documentation of [Camunda 8 Self-M
 - [`docs/agentic-ai.md`](docs/agentic-ai.md) - Camunda 8.9 Agentic AI setup for AI Agent connectors, MCP clients, LLM provider secrets, proxy/truststore notes, and safety guardrails.
 - [`docs/backup-restore.md`](docs/backup-restore.md) - Backup, restore, and disaster-recovery drills. Covers the three scripts (`backup.sh`, `restore.sh`, `restore-drill.sh`), the cold-backup model, granular and cross-cluster restore, and the isolated drill stack used to verify backups end-to-end without touching live data.
 - [`docs/cluster_upgrade.md`](docs/cluster_upgrade.md) - The 8.8 → 8.9 cluster upgrade: what changed, file-by-file migration steps, config diffs, and troubleshooting for common post-upgrade issues including the Optimize schema migration.
+- [`docs/upgrade-8.10.md`](docs/upgrade-8.10.md) - **Migration 8.9.19 → 8.10.x (German).** Camunda Hub replaces Web Modeler and Console: what changes, runbook for existing environments (manual `.env` / Caddyfile / Keycloak role steps), rollback, file-by-file reference of the branch changes, local test results, and open TODOs before GA and before 8.11.
 - [`docs/update_guide.md`](docs/update_guide.md) - The minor/patch update procedure: how to look up new versions, the file list to review per update, the backup-before-update protocol, and a step-by-step plan with a restore drill at the end.
 
 ## First Start Setup
@@ -74,7 +75,7 @@ CAMUNDA_LICENSE_KEY='--------------- BEGIN CAMUNDA LICENSE KEY ---------------
 --------------- END CAMUNDA LICENSE KEY ---------------'
 ```
 
-Restart the stack with the normal stage-aware start script after adding or changing the key. Check `orchestration`, `optimize`, `web-modeler-restapi`, and `console` logs for remaining license warnings.
+Restart the stack with the normal stage-aware start script after adding or changing the key. Check `orchestration`, `optimize`, and `hub` logs for remaining license warnings.
 
 ### 2. Create the connector secrets file
 
@@ -175,7 +176,7 @@ pwsh -File scripts/setup-host.ps1
 
 Both scripts read `HOST` from `.env` and update:
 - `Caddyfile` — replaces all `*.localhost` domain names with `*.{HOST}`, including the root `{HOST} {` dashboard block; also injects `tls` directives if custom certificates are configured
-- hosts file — adds `127.0.0.1 {HOST}` and `127.0.0.1` entries for all subdomains (keycloak, identity, console, optimize, orchestration, webmodeler)
+- hosts file — adds `127.0.0.1 {HOST}` and `127.0.0.1` entries for all subdomains (keycloak, identity, console, optimize, orchestration, webmodeler, zeebe); `console.{HOST}` only redirects to Camunda Hub since 8.10
 
 The scripts are **idempotent** — re-running them will not produce duplicate entries.
 
@@ -197,7 +198,7 @@ Wait for all services to be healthy:
 docker compose --env-file .env --env-file .env-credentials -f docker-compose.yaml -f stages/prod.yaml ps
 ```
 
-> **Expect a slow first start (5–10 minutes).** The very first `up` runs a one-time bootstrap regardless of stage: Keycloak imports the realm, Identity provisions all OIDC clients in Keycloak, Postgres and web-modeler-db run schema migrations, and Elasticsearch creates index templates and ILM policies. During this phase `keycloak`, `identity`, and `web-modeler-restapi` are CPU-heavy and the UIs feel unresponsive. Subsequent starts reuse the persisted named volumes (`postgres`, `elastic`, `postgres-web`, …) and come up in 1–2 minutes. If a *later* start ever feels slow again, a volume was likely wiped (e.g. `docker compose down -v`) and you are paying the bootstrap cost a second time — check `docker volume ls` before assuming a config issue.
+> **Expect a slow first start (5–10 minutes).** The very first `up` runs a one-time bootstrap regardless of stage: Keycloak imports the realm, Identity provisions all OIDC clients in Keycloak, Postgres and web-modeler-db (Hub database) run schema migrations, and Elasticsearch creates index templates and ILM policies. During this phase `keycloak`, `identity`, and `hub` are CPU-heavy and the UIs feel unresponsive. Subsequent starts reuse the persisted named volumes (`postgres`, `elastic`, `postgres-web`, …) and come up in 1–2 minutes. If a *later* start ever feels slow again, a volume was likely wiped (e.g. `docker compose down -v`) and you are paying the bootstrap cost a second time — check `docker volume ls` before assuming a config issue.
 >
 > **Always use the start scripts — not bare `docker compose up -d`.** The scripts pass both `.env` and `.env-credentials` to Compose for interpolation, read `STAGE` from `.env`, and overlay `stages/<stage>.yaml` on top of `docker-compose.yaml`. Plain `docker compose up -d` does not load `.env-credentials` for `${VAR}` interpolation and loads only the base file, which is sized for `prod`. With `STAGE=dev` or `STAGE=test` you must use the wrapper, otherwise the JVM heap settings from the stage overlay are not applied and Java services get the production heap (e.g. `-Xms4500m` for orchestration, `-Xms4g` for Elasticsearch) inside smaller container memory limits — the kernel OOM-killer terminates them on startup (exit 137).
 
@@ -214,9 +215,8 @@ The dashboard at `https://{HOST}` provides a landing page with links to all serv
 | Dashboard | https://{HOST} |
 | Operate / Tasklist | https://orchestration.{HOST} |
 | Identity | https://identity.{HOST} |
-| Console | https://console.{HOST} |
 | Optimize | https://optimize.{HOST} |
-| Web Modeler | https://webmodeler.{HOST} |
+| Camunda Hub (Modeling + Cluster Management, replaces Web Modeler and Console since 8.10) | https://webmodeler.{HOST} (`https://console.{HOST}` redirects here) |
 | Keycloak Admin | https://keycloak.{HOST}/auth/ (admin / admin) |
 | Zeebe Gateway | https://zeebe.{HOST} |
 | Admin | https://orchestration.{HOST}/admin |
@@ -240,7 +240,7 @@ Supported values:
 
 ### Decoupling the displayed label (`DISPLAY_STAGE`)
 
-`STAGE` selects the resource profile *and*, by default, the label shown on the dashboard badge / page title and the Camunda Console release tag. To run one profile while displaying a different label — for example `dev` resources but a `TEST` badge — set the optional `DISPLAY_STAGE` variable in `.env`:
+`STAGE` selects the resource profile *and*, by default, the label shown on the dashboard badge / page title and the Camunda Hub cluster tag. To run one profile while displaying a different label — for example `dev` resources but a `TEST` badge — set the optional `DISPLAY_STAGE` variable in `.env`:
 
 ```
 STAGE=DEV
@@ -411,8 +411,8 @@ bash scripts/add-camunda-user.sh --username svc-bot --password "s3cret" --email 
 
 | Role | Keycloak realm roles | Camunda internal role | Access |
 |------|----------------------|-----------------------|--------|
-| `NormalUser` | Default user role, Orchestration, Optimize, Web Modeler | `readonly-admin` | Read-only in Operate + Tasklist; can complete tasks |
-| `Admin` | All roles incl. ManagementIdentity, Console, Web Modeler Admin | `admin` | Full access to all components |
+| `NormalUser` | Default user role, Orchestration, Optimize, Hub | `readonly-admin` | Read-only in Operate + Tasklist; can complete tasks |
+| `Admin` | All roles incl. ManagementIdentity, Hub Admin, DevOps (Hub cluster management) | `admin` | Full access to all components |
 
 The scripts read `HOST` and `ORCHESTRATION_CLIENT_SECRET` from `.env`. On failure the created user is automatically rolled back.
 
@@ -470,7 +470,7 @@ Both forms accept the repository either as the bare name (`console-sm`) or the f
 
 | Mode | Output |
 |------|--------|
-| Default | Newest tags for each of the nine standard images used by `docker-compose.yaml` (camunda, console, optimize, identity, connectors-bundle, web-modeler-restapi/webapp/websockets, keycloak), pulled from the `dockerhub-camunda` mirror project |
+| Default | Newest tags for each of the seven standard images used by `docker-compose.yaml` (camunda, optimize, identity, connectors-bundle, hub, hub-websockets, keycloak), pulled from the `dockerhub-camunda` mirror project |
 | Projects | Project name, repo count, and whether the project is public |
 | Project repositories | Repo name, artifact count, and last update timestamp |
 | Repository tags | Tag name and push timestamp, sorted newest-first, capped to `--limit` (default 10) |

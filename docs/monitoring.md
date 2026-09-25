@@ -46,12 +46,11 @@ host** should probe.
 | identity | `identity:8084` (API), `:8082` (management — not host-published) | `8084` (API only) | `docker inspect identity` (health field) — see §4.4 | not exposed by default | n/a |
 | keycloak | `keycloak:18080` | (proxy only) | `GET https://keycloak.{HOST}/auth/` | not exposed by default | none |
 | elasticsearch | `elasticsearch:9200`, `:9300` | `9200`, `9300` | `GET :9200/_cluster/health` | `GET :9200/_nodes/stats`, `_cat/indices`, etc. | **HTTP Basic** (`elastic` / `$ELASTIC_PASSWORD`) |
-| console | `console:8080`, `:9100` | `8087`, `9100` | `GET :9100/health/readiness` | `GET :9100/prometheus` *(not `/actuator/prometheus`)* | none on metrics port |
-| web-modeler-restapi | `web-modeler-restapi:8081` (API), `:8091` (management — not host-published) | `8070` (API only) | `docker inspect web-modeler-restapi` (health field) | not exposed by default | n/a |
-| web-modeler-websockets | `web-modeler-websockets:8060` | `8060` | `GET :8060/up` | not exposed | none |
+| hub (Camunda Hub, replaces Web Modeler + Console since 8.10) | `hub:8081` (API), `:8091` (management — not host-published) | `8070` (API only) | `docker inspect hub` (health field) | not exposed by default | n/a |
+| hub-websockets | `hub-websockets:8060` | `8060` | `GET :8060/up` | not exposed | none |
 | postgres (Identity/Keycloak DB) | `postgres:5432` | not published | `pg_isready` via `docker exec` | n/a | psql credentials |
 | camunda-db (Camunda core DB) | `camunda-db:5432` | not published | `pg_isready` via `docker exec` | n/a | psql credentials |
-| web-modeler-db | `web-modeler-db:5432` | not published | `pg_isready` via `docker exec` | n/a | psql credentials |
+| web-modeler-db (Hub DB) | `web-modeler-db:5432` | not published | `pg_isready` via `docker exec` | n/a | psql credentials |
 | mailpit | `mailpit:1025`, `:8025` | `1025`, `8075` | TCP probe `1025` | not exposed | none |
 | reverse-proxy (Caddy) | `reverse-proxy:80`, `:443`, `:2019` | `443` (LAN), `2019` (loopback) | `GET :2019/config/` | not enabled in default build | none on admin port (loopback) |
 
@@ -257,8 +256,8 @@ thresholds remain stage-agnostic.
 | `MEM %` (RSS / limit) | > 80 % for > 10 min | > 95 % for > 2 min |
 | `CPU %` (sustained) | > 80 % of allocated cores for > 15 min | > 95 % for > 5 min |
 
-JVM containers (orchestration, optimize, connectors, identity, console,
-web-modeler-restapi) have heap sizes set in the stage files via
+JVM containers (orchestration, optimize, connectors, identity,
+hub) have heap sizes set in the stage files via
 `JAVA_TOOL_OPTIONS` / `JAVA_OPTIONS` / `ES_JAVA_OPTS`. Heap is typically
 50–75 % of the container memory limit; the rest is reserved for off-heap
 buffers (RocksDB, Lucene page cache, GC overhead). A healthy JVM stays
@@ -437,7 +436,7 @@ within minutes are the alert-worthy signal — they mean the container goes
 unhealthy almost immediately after restart. Investigate the affected
 service's logs, not autoheal's.
 
-### 4.4 Identity and Web Modeler RestAPI: management port not host-published
+### 4.4 Identity and Camunda Hub: management port not host-published
 
 Both services run their Spring Boot Actuator on a *separate* internal port
 that is not published to the host:
@@ -445,7 +444,7 @@ that is not published to the host:
 | Service | API port (host-published) | Management port (internal only) |
 |---------|---------------------------|----------------------------------|
 | identity | `8084 → 127.0.0.1:8084` | `8082` (`/actuator/health`) |
-| web-modeler-restapi | `8081 → 127.0.0.1:8070` | `8091` (`/health/readiness`) |
+| hub | `8081 → 127.0.0.1:8070` | `8091` (`/health/readiness`) |
 
 This is intentional ([CLAUDE.md gotcha 2](../CLAUDE.md)) and means a
 host-side `curl` to the published port will *not* reach the actuator.
@@ -454,12 +453,12 @@ Two ways to monitor these from outside the container:
 ```bash
 # Option A — read the result of the in-container Docker healthcheck:
 docker inspect --format='{{.State.Health.Status}}' identity
-docker inspect --format='{{.State.Health.Status}}' web-modeler-restapi
+docker inspect --format='{{.State.Health.Status}}' hub
 # Returns: starting | healthy | unhealthy
 
 # Option B — run the same probe as the healthcheck inside the container:
 docker exec identity wget -q -O - http://localhost:8082/actuator/health
-docker exec web-modeler-restapi wget -q -O - http://localhost:8091/health/readiness
+docker exec hub wget -q -O - http://localhost:8091/health/readiness
 ```
 
 Option A is preferred for unattended monitoring — Docker already runs the
@@ -618,50 +617,45 @@ curl -fsS -u "elastic:${ELASTIC_PASSWORD}" \
 interface; the only auth in front of it is the static `elastic` password
 from `.env`.
 
-### 5.7 Console
+### 5.7 Camunda Hub (formerly Console + Web Modeler REST API)
+
+Since 8.10, Camunda Hub serves modeling and the former Console cluster
+overview. The health port (`8091`) is not host-published — the host-bound
+`8070` maps to container port `8081` (the user-facing API). See §4.4.
+Recommended probe:
 
 ```bash
-curl -fsS http://127.0.0.1:9100/health/readiness
-
-# Note: /prometheus, NOT /actuator/prometheus
-curl -fsS http://127.0.0.1:9100/prometheus | head
-```
-
-Console aggregates other services' health internally (configured in
-`.console/application.yaml.template`). That aggregation is for the Console
-UI; **external monitoring should still probe each backend directly** so an
-unrelated Console outage does not mask other failures.
-
-### 5.8 Web Modeler REST API
-
-The health port (`8091`) is not host-published — the host-bound `8070`
-maps to container port `8081` (the user-facing API). See §4.4. Recommended
-probe:
-
-```bash
-docker inspect --format='{{.State.Health.Status}}' web-modeler-restapi
+docker inspect --format='{{.State.Health.Status}}' hub
 ```
 
 Or via `docker exec`:
 
 ```bash
-docker exec web-modeler-restapi \
-  wget -q -O - http://localhost:8091/health/readiness
+docker exec hub   wget -q -O - http://localhost:8091/health/readiness
 ```
 
 Metrics are not exposed by default
 (`management.endpoints.web.exposure.include: health,info` in
 `docker-compose.yaml`).
 
-### 5.9 Web Modeler WebSockets
+Hub also shows component health for the registered clusters
+(`.hub/application.yaml`). That aggregation is for the Hub UI; **external
+monitoring should still probe each backend directly** so a Hub outage does
+not mask other failures.
+
+### 5.8 (removed)
+
+The standalone Console service was removed in 8.10; see §5.7.
+
+### 5.9 Camunda Hub WebSockets
 
 ```bash
 curl -fsS http://127.0.0.1:8060/up
 ```
 
-No auth, no metrics. The WebSocket itself is established after Web Modeler
-authentication via `web-modeler-restapi`; alerting on this endpoint
-catches process death only.
+No auth, no metrics. The WebSocket itself is established after Hub
+authentication via `hub`; alerting on this endpoint catches process death
+only.
 
 ### 5.10 Postgres (Identity / Keycloak DB)
 
@@ -700,7 +694,7 @@ archival when growth becomes a capacity concern. The 90-day Elasticsearch
 retention ([CLAUDE.md gotcha 20](../CLAUDE.md)) does not apply to the
 Camunda RDBMS; it only trims Zeebe records in `elasticsearch`.
 
-### 5.12 Web Modeler DB (Postgres)
+### 5.12 Hub DB (`web-modeler-db`, Postgres)
 
 ```bash
 docker exec web-modeler-db pg_isready \
@@ -711,7 +705,7 @@ docker exec web-modeler-db pg_isready \
 
 ### 5.13 Mailpit
 
-Local-only test SMTP sink. Worth probing only because Web Modeler depends
+Local-only test SMTP sink. Worth probing only because Camunda Hub depends
 on it for email flows:
 
 ```bash
@@ -787,8 +781,7 @@ high-impact services (extracted from the stage files):
 | camunda-db | 1536 MB / 1.0 CPU | 1024 MB / 0.5 CPU | 512 MB / 0.5 CPU | n/a (PostgreSQL) |
 | connectors | 1024 MB / 1.0 CPU | 512 MB / 1.0 CPU | 384 MB / 0.75 CPU | varies |
 | identity | 1024 MB / 1.0 CPU | 512 MB / 0.5 CPU | 384 MB / 0.5 CPU | varies |
-| console | 1024 MB / 0.5 CPU | 512 MB / 0.5 CPU | 512 MB / 0.5 CPU | varies |
-| web-modeler-restapi | 1024 MB / 1.0 CPU | 512 MB / 0.5 CPU | 384 MB / 0.5 CPU | varies |
+| hub | 2048 MB / 1.5 CPU | 1024 MB / 1.0 CPU | 768 MB / 1.0 CPU | `-Xmx1280m` / `-Xmx640m` / `-Xmx512m` |
 | postgres | 1024 MB / 1.0 CPU | 512 MB / 0.5 CPU | 512 MB / 0.5 CPU | n/a |
 | web-modeler-db | 512 MB / 0.5 CPU | 256 MB / 0.25 CPU | 256 MB / 0.25 CPU | n/a |
 | reverse-proxy | 256 MB / 0.5 CPU | 128 MB / 0.25 CPU | 128 MB / 0.25 CPU | n/a (Go) |

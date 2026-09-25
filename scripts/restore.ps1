@@ -14,8 +14,10 @@ $EnvFile = Join-Path $ProjectDir ".env"
 for ($i = 0; $i -lt $CliArgs.Count; $i++) {
     if ($CliArgs[$i] -eq "--env-file" -and ($i + 1) -lt $CliArgs.Count) {
         $EnvFile = $CliArgs[$i + 1]
-        $before = if ($i -gt 0) { $CliArgs[0..($i-1)] } else { @() }
-        $after = if (($i + 2) -lt $CliArgs.Count) { $CliArgs[($i+2)..($CliArgs.Count-1)] } else { @() }
+        # @() keeps single-element slices as arrays; otherwise "$before + $after"
+        # becomes a string concatenation and the remaining arguments merge.
+        $before = @(if ($i -gt 0) { $CliArgs[0..($i-1)] })
+        $after = @(if (($i + 2) -lt $CliArgs.Count) { $CliArgs[($i+2)..($CliArgs.Count-1)] })
         $CliArgs = $before + $after
         break
     }
@@ -194,7 +196,6 @@ function Invoke-KeycloakRehost {
         -d "$env:POSTGRES_DB" `
         -v "host=$($env:HOST)" `
         -v "connectors_secret=$($env:CONNECTORS_CLIENT_SECRET)" `
-        -v "console_secret=$($env:CONSOLE_CLIENT_SECRET)" `
         -v "orchestration_secret=$($env:ORCHESTRATION_CLIENT_SECRET)" `
         -v "optimize_secret=$($env:OPTIMIZE_CLIENT_SECRET)" `
         -v "identity_secret=$($env:CAMUNDA_IDENTITY_CLIENT_SECRET)" | Out-Null
@@ -819,7 +820,7 @@ function Main {
         # recreate Elasticsearch indices before the snapshot restore.
         Log "Camunda application services remain stopped until restore is complete."
         if ($DryRun) {
-            Log "[DRY-RUN] Would keep orchestration, identity, optimize, console, keycloak, and web-modeler app services stopped"
+            Log "[DRY-RUN] Would keep orchestration, identity, optimize, keycloak, and hub app services stopped"
         }
 
         # Restore Elasticsearch

@@ -25,11 +25,11 @@ The project ships **three scripts**, one for each job in the backup lifecycle. E
 
 | Script | What it does | When to run it |
 |---|---|---|
-| `backup.sh` / `backup.ps1` | Cold-snapshots the live stack into a timestamped folder under `backups/` (Postgres dumps for Keycloak / Camunda / Web Modeler, Zeebe volume archive, Elasticsearch snapshot, configs, manifest with SHA256 checksums). Application services are briefly stopped; core data services keep running. | Daily, and before risky changes (image upgrades, config edits, schema changes) |
+| `backup.sh` / `backup.ps1` | Cold-snapshots the live stack into a timestamped folder under `backups/` (Postgres dumps for Keycloak / Camunda / Hub (Web Modeler DB), Zeebe volume archive, Elasticsearch snapshot, configs, manifest with SHA256 checksums). Application services are briefly stopped; core data services keep running. | Daily, and before risky changes (image upgrades, config edits, schema changes) |
 | `restore.sh <dir>` / `restore.ps1 <dir>` | **Destructive.** Stops the live stack, wipes data volumes, restores the chosen backup back into the same compose project. Auto-creates a rollback backup of current state first (skip with `--no-pre-backup`). Prompts for confirmation unless `--force`. | Real disaster recovery, refreshing a dev stack from a prod backup |
-| `restore-drill.sh` / `restore-drill.ps1` | **Non-destructive.** Spins up a *second, isolated* Camunda stack (project name `camunda-restoredrill`, ports offset by +10000, dedicated `elastic-backup-drill` volume), restores a backup into it, runs Keycloak / Orchestration / Web Modeler smoke tests, then tears it down. The live stack is never touched. | Weekly, and after any change that could affect restore (Compose, image, or script edits) |
+| `restore-drill.sh` / `restore-drill.ps1` | **Non-destructive.** Spins up a *second, isolated* Camunda stack (project name `camunda-restoredrill`, ports offset by +10000, dedicated `elastic-backup-drill` volume), restores a backup into it, runs Keycloak / Orchestration / Hub smoke tests, then tears it down. The live stack is never touched. | Weekly, and after any change that could affect restore (Compose, image, or script edits) |
 
-The model is a **cold backup**: application services (orchestration, connectors, optimize, identity, console, keycloak, web-modeler-*) are stopped for the duration of the backup so Zeebe and the databases reach a quiet state. Core data services (`postgres`, `camunda-db`, `web-modeler-db`, `elasticsearch`) keep running so dumps and snapshots can be taken in place. Typical downtime is ~5-10 min depending on data volume.
+The model is a **cold backup**: application services (orchestration, connectors, optimize, identity, keycloak, hub, hub-websockets) are stopped for the duration of the backup so Zeebe and the databases reach a quiet state. Core data services (`postgres`, `camunda-db`, `web-modeler-db`, `elasticsearch`) keep running so dumps and snapshots can be taken in place. Typical downtime is ~5-10 min depending on data volume.
 
 The single question every backup plan has to answer is *"can you actually restore from this?"* — `restore.sh --verify` checks file integrity (manifest checksums, gzip/tar readability) in seconds, but only the **drill** actually starts containers, runs the real restore script against them, and confirms services come back healthy. That's why drill exists as a separate script: a green drill is the only thing that proves the entire pipeline still works end-to-end without committing to a destructive restore on the live stack.
 
@@ -57,7 +57,7 @@ When `restore-drill.sh` is invoked with no arguments it picks the most recent `b
 #   Keycloak realm    → http://localhost:28080/auth/realms/camunda-platform
 #   Orchestration UI  → http://localhost:18088
 #   Orchestration health → http://localhost:19600/actuator/health
-#   Web Modeler ready    → http://localhost:18071/health/readiness
+#   Hub ready            → http://localhost:18071/health/readiness
 # Tear down later with:
 #   docker compose -p camunda-restoredrill down --volumes --remove-orphans
 ```
@@ -88,7 +88,7 @@ The backup system secures the following data:
 | Camunda DB | `pg_dump -Fc` | GZIP-compressed (`camunda.sql.gz`) — Camunda core operational data (Zeebe, Operate, Tasklist) |
 | Elasticsearch | Snapshot API | FS repository via Docker volume `elastic-backup`, copied to host after snapshot — Optimize indices only |
 | Keycloak DB | `pg_dump -Fc` | GZIP-compressed (`keycloak.sql.gz`) |
-| Web Modeler DB | `pg_dump -Fc` | GZIP-compressed (`webmodeler.sql.gz`) |
+| Hub DB (`web-modeler-db`) | `pg_dump -Fc` | GZIP-compressed (`webmodeler.sql.gz`) |
 | Configurations | `tar.gz` | `.env`, `.env-credentials`, `connector-secrets.txt`, `Caddyfile`, `application.yaml` files |
 
 **Not backed up:** UI theme assets are baked into the `camunda/keycloak` and `camunda/identity` images; no separate theme volume exists anymore.
@@ -247,7 +247,7 @@ Users and authorizations created via `scripts/add-camunda-user.sh` / `scripts/ad
 | What the user script creates | Where it's stored | Captured by |
 |---|---|---|
 | Keycloak user (credentials, email, first/last name) | `postgres` container, database `bitnami_keycloak` | `pg_dump` → `keycloak.sql.gz` |
-| Realm role mappings (`Default user role`, `Orchestration`, `Optimize`, `Web Modeler`, `Console`, `ManagementIdentity`, `Web Modeler Admin`) | Same Keycloak database | Same `pg_dump` |
+| Realm role mappings (`Default user role`, `Orchestration`, `Optimize`, `Hub`, `Hub Admin`, `DevOps`, `Analyst`, `ManagementIdentity`, plus legacy `Web Modeler` / `Web Modeler Admin` / `Console` from 8.9 realms) | Same Keycloak database | Same `pg_dump` |
 | Camunda internal role assignment (`admin` or `readonly-admin`, via `PUT /v2/roles/{role}/users/{user}`) | Zeebe log → PostgreSQL `camunda-db` (via RDBMS secondaryStorage configured in `.orchestration/application.yaml`) | `orchestration.tar.gz` volume dump + `camunda.sql.gz` |
 
 On restore, the Keycloak database is restored via `pg_restore --clean --if-exists`, the Zeebe state is restored from the volume archive, and the Elasticsearch snapshot restore recreates the `camunda-*` indices that hold the authorization records (the restore's targeted delete includes the `camunda-` prefix so stale records are wiped before the snapshot is restored).
@@ -282,7 +282,7 @@ backups/20240115_120000/
 ├── camunda.sql.gz          # Camunda core database dump
 ├── orchestration.tar.gz    # Zeebe state volume dump
 ├── snapshot-info.json      # Elasticsearch snapshot metadata
-└── webmodeler.sql.gz       # Web Modeler database dump
+└── webmodeler.sql.gz       # Hub (formerly Web Modeler) database dump
 ```
 
 **Cross-platform compatibility:** Both `backup.sh` / `restore.sh` (Linux/macOS/WSL) and `backup.ps1` / `restore.ps1` (Windows) produce the **same directory structure and file formats**. Backups created on one platform can be restored on the other.
@@ -416,16 +416,15 @@ Use `--rehost-keycloak` when restoring a backup from one hostname into a cluster
 
 | Client | Rehosted values |
 |---|---|
-| `console` | root URL, redirect URIs, web origins, client secret |
 | `orchestration` | root URL, redirect URIs, web origins, client secret |
 | `optimize` | root URL, redirect URIs, web origins, client secret |
 | `web-modeler` | root URL, redirect URIs, web origins |
 | `camunda-identity` | root URL, redirect URIs, web origins, client secret |
 | `connectors` | client secret |
 
-This lets the restored Keycloak realm issue tokens and accept redirects for the local hostname, while keeping the restored users, roles, and realm data. The patch uses the current `HOST` from `.env` and the OIDC client secrets (`ORCHESTRATION_CLIENT_SECRET`, `CONNECTORS_CLIENT_SECRET`, `CONSOLE_CLIENT_SECRET`, `OPTIMIZE_CLIENT_SECRET`, `CAMUNDA_IDENTITY_CLIENT_SECRET`) from `.env-credentials`.
+This lets the restored Keycloak realm issue tokens and accept redirects for the local hostname, while keeping the restored users, roles, and realm data. The patch uses the current `HOST` from `.env` and the OIDC client secrets (`ORCHESTRATION_CLIENT_SECRET`, `CONNECTORS_CLIENT_SECRET`, `OPTIMIZE_CLIENT_SECRET`, `CAMUNDA_IDENTITY_CLIENT_SECRET`) from `.env-credentials`.
 
-`web-modeler` is a public browser client in this stack and has no client secret to rehost. `connectors` uses the client credentials flow only, so it has no redirect URIs or web origins to rehost.
+`web-modeler` (used by Camunda Hub) is a public browser client in this stack and has no client secret to rehost. The former `console` client is no longer provisioned in 8.10 and is not rehosted; a restored 8.9 realm may still contain it and it can be deleted manually. `connectors` uses the client credentials flow only, so it has no redirect URIs or web origins to rehost.
 
 For a production-to-local debugging restore, prepare the local `.env` and `.env-credentials` first:
 
@@ -494,7 +493,7 @@ Allowed components:
 | `all` | Full stack data and configs | Default; keeps the original disaster-recovery behavior |
 | `camunda` | `camunda.sql.gz` into `camunda-db` | Camunda core operational data (Zeebe, Operate, Tasklist) |
 | `keycloak` | `keycloak.sql.gz` into the `postgres` service | Users, credentials, realm/client config, role mappings |
-| `webmodeler` | `webmodeler.sql.gz` into `web-modeler-db` | Web Modeler projects and database state |
+| `webmodeler` | `webmodeler.sql.gz` into `web-modeler-db` | Hub (formerly Web Modeler) projects and database state. An 8.9 dump restored into 8.10 is migrated again by Hub on start; the reverse is not possible. |
 | `elasticsearch` | Snapshot under `elasticsearch/` | Deletes and restores Optimize indices only |
 | `orchestration` | `orchestration.tar.gz` into the Zeebe volume | Best used together with `camunda` |
 | `configs` | `configs.tar.gz` | In `--cross-cluster` mode configs are extracted to `restored-configs/` instead of overwriting local files |
@@ -597,7 +596,7 @@ When you run `restore-drill.sh`, the script:
 
 1. **Generates an isolated environment** — copies your `.env` and `.env-credentials` into `backups/.drill/.env.drill` (single combined env file with secrets appended), overrides `HOST`, `COMPOSE_PROJECT_NAME`, and `ES_PORT`, and creates a compose port-remap override
 2. **Restores the backup into the drill stack** — invokes the real `restore.sh --force --no-pre-backup --rehost-keycloak` against the isolated project, so you are testing the exact same restore logic you would use in production
-3. **Runs smoke tests** — probes the remapped ports to verify Keycloak, Orchestration, and Web Modeler are healthy
+3. **Runs smoke tests** — probes the remapped ports to verify Keycloak, Orchestration, and Hub are healthy
 4. **Tears down unconditionally** — runs `docker compose down --volumes --remove-orphans` and deletes temporary files, even if a previous step failed
 
 If any step fails, the script exits with a non-zero status and still completes teardown, so drills never leak volumes or containers.
@@ -607,7 +606,7 @@ If any step fails, the script exits with a non-zero status and still completes t
 Three independent layers guarantee the drill cannot touch live data:
 
 1. **Compose project name and container names** (`COMPOSE_PROJECT_NAME=camunda-restoredrill`) — Docker prefixes managed volumes with the project name, and `stages/drill.yaml` overrides the fixed `container_name` values from the main compose file. The drill gets its own `camunda-restoredrill-orchestration`, `camunda-restoredrill-postgres`, `camunda-restoredrill_orchestration`, `camunda-restoredrill_postgres`, etc., completely separate from the live stack.
-2. **Port remap** (`DRILL_PORT_OFFSET`, default `+10000`) — every host-bound port in the drill is replaced with an offset port so it never collides with the live stack. Keycloak moves from `18080` to `28080`, Orchestration REST from `8088` to `18088`, Orchestration management from `9600` to `19600`, Web Modeler readiness from `8071` to `18071`, Elasticsearch from `9200` to `19200`, and every other service follows suit.
+2. **Port remap** (`DRILL_PORT_OFFSET`, default `+10000`) — every host-bound port in the drill is replaced with an offset port so it never collides with the live stack. Keycloak moves from `18080` to `28080`, Orchestration REST from `8088` to `18088`, Orchestration management from `9600` to `19600`, Hub readiness (management port 8091) from `8071` to `18071`, Elasticsearch from `9200` to `19200`, and every other service follows suit.
 3. **Dedicated ES backup volume** (`ES_BACKUP_VOLUME=elastic-backup-drill` via `stages/drill.yaml`) — the drill's Elasticsearch snapshot staging uses its own named volume. Even if something goes wrong mid-drill, the live `elastic-backup` volume is untouched.
 
 All drill-generated files (`backups/.drill/.env.drill`, `backups/.drill/ports.yaml`, and any runtime state) are deleted on teardown.
@@ -634,7 +633,7 @@ The drill waits up to 120 seconds for each check, polling every 5 seconds:
 
 - **Keycloak realm endpoint** (`http://localhost:<remapped_port>/auth/realms/camunda-platform` returns HTTP 200) — confirms authentication infrastructure is functional
 - **Orchestration health** (`/actuator/health` on the remapped management port returns `status: UP`) — confirms Operate, Tasklist, and Zeebe are operational
-- **Web Modeler readiness** (`/health/readiness` on the remapped webapp readiness port returns HTTP 200) — confirms the Web Modeler stack is ready to serve requests
+- **Hub readiness** (`/health/readiness` on the remapped Hub management port returns HTTP 200) — confirms Camunda Hub is ready to serve requests
 - **Optional known project check** (only if `DRILL_KNOWN_PROJECT_ID` is set) — verifies a specific project is accessible via `/internal-api/projects/{id}`, proving data integrity beyond generic health checks
 
 ### Customizing the drill
@@ -644,7 +643,7 @@ The drill waits up to 120 seconds for each check, polling every 5 seconds:
 | `DRILL_PORT_OFFSET` | `10000` | Added to every host-bound port in the drill stack. Change this if the default offset range is already in use on your machine. |
 | `DRILL_HOST` | `drill.localhost` | Hostname injected into the drill `.env`. Affects OIDC redirect URIs inside the drill stack. |
 | `DRILL_PROJECT_NAME` | `camunda-restoredrill` | Docker Compose project name. All drill containers and volumes are prefixed with this. |
-| `DRILL_KNOWN_PROJECT_ID` | *(none)* | Optional Web Modeler project ID to verify after restore. Set this to a stable project ID from your live stack for deeper data-integrity validation. |
+| `DRILL_KNOWN_PROJECT_ID` | *(none)* | Optional Hub project ID to verify after restore (queried on the remapped Hub API port `8070 + offset`). Set this to a stable project ID from your live stack for deeper data-integrity validation. |
 
 Example with a custom port offset and known project:
 

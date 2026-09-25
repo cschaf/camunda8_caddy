@@ -1,0 +1,87 @@
+# Camunda Hub (8.10+) cluster registration.
+#
+# Hub replaces Web Modeler and Console. This file takes over the role of the
+# former .console/application.yaml.template: it registers the local clusters
+# and their components so Hub can deploy to Orchestration and render the
+# cluster overview with links and health status.
+#
+# Mounted read-only at /home/runner/config/application.yaml. Placeholders are
+# resolved by Spring from the container environment (see the `hub` service in
+# docker-compose.yaml), so no render step in the start scripts is needed.
+#
+# Rules:
+# - Browser-facing `webapp` URLs must use the HTTPS proxy hostnames.
+# - Component types `console` and `keycloak` are invalid in 8.10 and make Hub
+#   fail on startup. `orchestrationIdentity` is now `admin`.
+# - Do not expose `configprops` via management endpoints here (see CLAUDE.md).
+camunda:
+  hub:
+    clusters:
+      - id: management
+        name: management
+        namespace: management
+        # Must be a full SemVer (major.minor.patch). Hub image tags such as
+        # "8.10-rc1" fail Hub's cluster validation, so use the platform version.
+        version: "${CAMUNDA_VERSION}"
+        tags:
+          - "${HUB_CLUSTER_TAG}"
+          - local
+        authentication: BEARER_TOKEN
+        authorizations:
+          enabled: "${RESOURCE_AUTHORIZATIONS_ENABLED:true}"
+        components:
+          - name: Identity
+            type: identity
+            version: "${CAMUNDA_IDENTITY_VERSION}"
+            urls:
+              webapp: "https://identity.${HOST}"
+              readiness: http://identity:8082/actuator/health
+      - id: camunda-platform
+        name: camunda-platform
+        namespace: camunda-platform
+        version: "${CAMUNDA_VERSION}"
+        tags:
+          - "${HUB_CLUSTER_TAG}"
+          - local
+        authentication: BEARER_TOKEN
+        authorizations:
+          enabled: "${RESOURCE_AUTHORIZATIONS_ENABLED:true}"
+        components:
+          - name: Orchestration
+            type: orchestration
+            version: "${CAMUNDA_VERSION}"
+            urls:
+              # Hub talks to Orchestration over the internal Docker network.
+              grpc: grpc://orchestration:26500
+              rest: http://orchestration:8080
+              readiness: http://orchestration:9600/actuator/health/status
+          - name: Operate
+            type: operate
+            version: "${CAMUNDA_VERSION}"
+            urls:
+              webapp: "https://orchestration.${HOST}/operate"
+              readiness: http://orchestration:9600/actuator/health/readiness
+          - name: Tasklist
+            type: tasklist
+            version: "${CAMUNDA_VERSION}"
+            urls:
+              webapp: "https://orchestration.${HOST}/tasklist"
+              readiness: http://orchestration:9600/actuator/health/readiness
+          - name: Admin
+            type: admin
+            version: "${CAMUNDA_VERSION}"
+            urls:
+              webapp: "https://orchestration.${HOST}/admin"
+              readiness: http://orchestration:9600/actuator/health/readiness
+          - name: Optimize
+            type: optimize
+            version: "${CAMUNDA_OPTIMIZE_VERSION}"
+            urls:
+              webapp: "https://optimize.${HOST}"
+              readiness: http://optimize:8090/api/readyz
+          - name: Connectors
+            type: connectors
+            version: "${CAMUNDA_CONNECTORS_VERSION}"
+            urls:
+              rest: http://connectors:8080
+              readiness: http://connectors:8080/actuator/health/readiness

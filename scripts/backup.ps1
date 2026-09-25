@@ -9,8 +9,10 @@ $rawArgs = $args
 for ($i = 0; $i -lt $rawArgs.Count; $i++) {
     if ($rawArgs[$i] -eq "--env-file" -and ($i + 1) -lt $rawArgs.Count) {
         $EnvFile = $rawArgs[$i + 1]
-        $before = if ($i -gt 0) { $rawArgs[0..($i-1)] } else { @() }
-        $after = if (($i + 2) -lt $rawArgs.Count) { $rawArgs[($i+2)..($rawArgs.Count-1)] } else { @() }
+        # @() keeps single-element slices as arrays; otherwise "$before + $after"
+        # becomes a string concatenation and the remaining arguments merge.
+        $before = @(if ($i -gt 0) { $rawArgs[0..($i-1)] })
+        $after = @(if (($i + 2) -lt $rawArgs.Count) { $rawArgs[($i+2)..($rawArgs.Count-1)] })
         $rawArgs = $before + $after
         break
     }
@@ -224,7 +226,7 @@ function Main {
                 (Join-Path $ProjectDir ".connectors\application.yaml"),
                 (Join-Path $ProjectDir ".optimize\environment-config.yaml"),
                 (Join-Path $ProjectDir ".identity\application.yaml"),
-                (Join-Path $ProjectDir ".console\application.yaml")
+                (Join-Path $ProjectDir ".hub\application.yaml")
         )
         $existingItems = $configItems | Where-Object { Test-Path $_ }
         if (-not $existingItems) {
@@ -257,7 +259,7 @@ function Main {
             Log "[TEST] Would backup Zeebe state from volume 'orchestration'"
             Log "[TEST] Would pg_dump Keycloak DB: $env:POSTGRES_DB"
             Log "[TEST] Would pg_dump Camunda DB: $env:CAMUNDA_DB_NAME"
-            Log "[TEST] Would pg_dump Web Modeler DB: $env:WEBMODELER_DB_NAME"
+            Log "[TEST] Would pg_dump Hub (Web Modeler) DB: $env:WEBMODELER_DB_NAME"
             Log "[TEST] Would create Elasticsearch snapshot"
         }
         else {
@@ -365,7 +367,7 @@ function Main {
             }
             Log "Camunda DB backed up: $outputFile"
 
-            Log "Backing up Web Modeler database..."
+            Log "Backing up Hub (Web Modeler) database..."
             $outputFile = Join-Path $backupDir "webmodeler.sql.gz"
             $tmpDumpFile = Join-Path $backupDir "webmodeler.sql"
             try {

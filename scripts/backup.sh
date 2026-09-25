@@ -268,7 +268,7 @@ main() {
       ".connectors/application.yaml"
       ".optimize/environment-config.yaml"
       ".identity/application.yaml"
-      ".console/application.yaml"
+      ".hub/application.yaml"
     )
     for f in "${all_config_paths[@]}"; do
       [[ -f "$PROJECT_DIR/$f" ]] && config_files+=("$f")
@@ -299,7 +299,7 @@ main() {
     log "[TEST] Would backup Zeebe state from volume 'orchestration'"
     log "[TEST] Would pg_dump Keycloak DB: ${POSTGRES_DB:-}"
     log "[TEST] Would pg_dump Camunda DB: ${CAMUNDA_DB_NAME:-}"
-    log "[TEST] Would pg_dump Web Modeler DB: ${WEBMODELER_DB_NAME:-}"
+    log "[TEST] Would pg_dump Hub (Web Modeler) DB: ${WEBMODELER_DB_NAME:-}"
     log "[TEST] Would create Elasticsearch snapshot"
   else
     collect_es_state "backup" "$backup_dir/backup-state.json" || true
@@ -364,7 +364,7 @@ main() {
     fi
     log "Camunda DB backed up: $backup_dir/camunda.sql.gz"
 
-    log "Backing up Web Modeler database..."
+    log "Backing up Hub (Web Modeler) database..."
     if ! docker exec web-modeler-db pg_dump -Fc -U "${WEBMODELER_DB_USER}" "${WEBMODELER_DB_NAME}" 2>>"$LOG_FILE" | gzip > "$backup_dir/webmodeler.sql.gz"; then
       log "ERROR: Web Modeler DB backup failed"
       exit 1

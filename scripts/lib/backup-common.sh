@@ -78,17 +78,28 @@ check_services_health() {
 
   log "Checking services health..."
   local unhealthy
-  unhealthy="$($cmd ps --format json 2>>"$LOG_FILE" | python3 -c '
+  # docker compose v2 prints one JSON object per line (NDJSON); older versions
+  # print a JSON array. Accept both. "ps -a" also lists stopped services.
+  # camunda-data-init is a one-shot init container and is expected to exit.
+  unhealthy="$($cmd ps -a --format json 2>>"$LOG_FILE" | python3 -c '
 import json, sys
-try:
-    data = json.load(sys.stdin)
-    if isinstance(data, dict): data = [data]
-    for item in data:
-        health = item.get("Health", "")
-        state = item.get("State", "")
-        if health == "unhealthy" or (state not in ("running", "")):
-            print(item.get("Service", ""))
-except: pass
+raw = sys.stdin.read().strip()
+items = []
+if raw.startswith("["):
+    items = json.loads(raw)
+else:
+    for line in raw.splitlines():
+        line = line.strip()
+        if line:
+            items.append(json.loads(line))
+for item in items:
+    service = item.get("Service", "")
+    if service == "camunda-data-init":
+        continue
+    health = item.get("Health", "")
+    state = item.get("State", "")
+    if health == "unhealthy" or state != "running":
+        print("%s (%s%s)" % (service, state, ", " + health if health else ""))
 ' 2>>"$LOG_FILE" || true)"
 
   if [[ -n "$unhealthy" ]]; then
