@@ -645,11 +645,18 @@ services:
       CAMUNDA_OPTIMIZE_VERSION: ${CAMUNDA_OPTIMIZE_VERSION:?CAMUNDA_OPTIMIZE_VERSION is required}
       CAMUNDA_CONNECTORS_VERSION: ${CAMUNDA_CONNECTORS_VERSION:?CAMUNDA_CONNECTORS_VERSION is required}
       CAMUNDA_IDENTITY_VERSION: ${CAMUNDA_IDENTITY_VERSION:?CAMUNDA_IDENTITY_VERSION is required}
+      # Camunda Hub AI features (optional, off by default). Non-secret switches
+      # come from .env; the LLM API key (HUB_COPILOT_API_KEY) arrives via
+      # env_file from .env-credentials. See .hub/application-ai.yaml.
+      HUB_AI_ENABLED: ${HUB_AI_ENABLED:-false}
+      HUB_COPILOT_PROVIDER: ${HUB_COPILOT_PROVIDER:-OPENAI}
+      HUB_COPILOT_MODEL_ID: ${HUB_COPILOT_MODEL_ID:-gpt-4.1}
     env_file:
       - path: .env-credentials
         required: true
     volumes:
       - "./.hub/application.yaml:/home/runner/config/application.yaml:ro"
+      - "./.hub/application-ai.yaml:/home/runner/config/application-ai.yaml:ro"
     networks:
       - web-modeler
       - camunda-platform

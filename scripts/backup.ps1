@@ -227,6 +227,7 @@ function Main {
                 (Join-Path $ProjectDir ".optimize\environment-config.yaml"),
                 (Join-Path $ProjectDir ".identity\application.yaml"),
                 (Join-Path $ProjectDir ".hub\application.yaml"),
+                (Join-Path $ProjectDir ".hub\application-ai.yaml"),
                 (Join-Path $ProjectDir "secrets")
         )
         $existingItems = $configItems | Where-Object { Test-Path $_ }

@@ -269,6 +269,7 @@ main() {
       ".optimize/environment-config.yaml"
       ".identity/application.yaml"
       ".hub/application.yaml"
+      ".hub/application-ai.yaml"
       "secrets"
     )
     for f in "${all_config_paths[@]}"; do

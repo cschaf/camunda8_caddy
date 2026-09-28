@@ -962,12 +962,17 @@ Management endpoint policy: expose only the endpoints needed for health checks a
 
 ## 12. Agentic AI and MCP
 
-Camunda 8.9 adds two AI integration paths that this stack keeps separate:
+Camunda 8.10 offers three AI integration paths that this stack keeps separate:
 
 | Path | Purpose | Primary Configuration |
 |------|---------|-----------------------|
+| AI while modeling | Hub Copilot generates BPMN, FEEL and forms | `.hub/application-ai.yaml`, `HUB_AI_ENABLED` in `.env`, `HUB_COPILOT_API_KEY` in `.env-credentials` |
 | AI inside BPMN | AI Agent, MCP Client, and A2A Client connectors run as process tasks | `connectors`, `connector-secrets.txt`, Hub element templates |
 | AI outside Camunda | External AI clients inspect and operate the cluster through MCP | `camunda.mcp.enabled=true`, `/mcp/cluster` endpoint |
+
+### Hub Copilot
+
+Hub Copilot (BPMN, FEEL and form generation) is disabled by default. To enable: set `HUB_AI_ENABLED=true` in `.env`, add the provider key (`HUB_COPILOT_API_KEY`) to `.env-credentials` and restart the stack. Provider presets (OpenAI-compatible, Ollama, Anthropic, Bedrock, Azure, Vertex, Hugging Face) are prepared in `.hub/application-ai.yaml`; the step-by-step guide is in [docs/agentic-ai.md](agentic-ai.md).
 
 ### AI Agent Connectors
 

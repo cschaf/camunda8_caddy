@@ -55,6 +55,7 @@ deploy-sandbox:
     # Non-Root-User (UID 1001). Nach dem Sync sicherstellen, dass die Datei
     # lesbar ist. (Serverlokale Dateien in secrets/ sind vom Sync ausgenommen.)
     - sudo test ! -f "$DEPLOY_PATH/.hub/application.yaml" || sudo chmod 0644 "$DEPLOY_PATH/.hub/application.yaml"
+    - sudo test ! -f "$DEPLOY_PATH/.hub/application-ai.yaml" || sudo chmod 0644 "$DEPLOY_PATH/.hub/application-ai.yaml"
     # Nur Shell-Skripte ausführbar machen. Kein breites chmod auf alle Dateien,
     # damit Konfigurations- und Secret-Rechte nicht unnötig verändert werden.
     - sudo find "$DEPLOY_PATH/scripts" -type f -name "*.sh" -exec chmod 750 {} +
@@ -103,6 +104,7 @@ deploy-dev:
     # Non-Root-User (UID 1001). Nach dem Sync sicherstellen, dass die Datei
     # lesbar ist. (Serverlokale Dateien in secrets/ sind vom Sync ausgenommen.)
     - sudo test ! -f "$DEPLOY_PATH/.hub/application.yaml" || sudo chmod 0644 "$DEPLOY_PATH/.hub/application.yaml"
+    - sudo test ! -f "$DEPLOY_PATH/.hub/application-ai.yaml" || sudo chmod 0644 "$DEPLOY_PATH/.hub/application-ai.yaml"
   only:
     # Dev-Sync nur vom Branch "development".
     - development
@@ -154,6 +156,7 @@ deploy-prod:
     # Non-Root-User (UID 1001). Nach dem Sync sicherstellen, dass die Datei
     # lesbar ist. (Serverlokale Dateien in secrets/ sind vom Sync ausgenommen.)
     - sudo test ! -f "$DEPLOY_PATH/.hub/application.yaml" || sudo chmod 0644 "$DEPLOY_PATH/.hub/application.yaml"
+    - sudo test ! -f "$DEPLOY_PATH/.hub/application-ai.yaml" || sudo chmod 0644 "$DEPLOY_PATH/.hub/application-ai.yaml"
     # Nur Shell-Skripte ausführbar machen. Kein breites chmod auf alle Dateien,
     # damit Konfigurations- und Secret-Rechte nicht unnötig verändert werden.
     - sudo find "$DEPLOY_PATH/scripts" -type f -name "*.sh" -exec chmod 750 {} +

@@ -108,6 +108,7 @@ $Files.AddRange([string[]]@(
     '.connectors/application.yaml'
     '.optimize/environment-config.yaml.example'
     '.hub/application.yaml'
+    '.hub/application-ai.yaml'
     'secrets/.gitignore'
 ))
 

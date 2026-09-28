@@ -14,6 +14,14 @@
 # - Component types `console` and `keycloak` are invalid in 8.10 and make Hub
 #   fail on startup. `orchestrationIdentity` is now `admin`.
 # - Do not expose `configprops` via management endpoints here (see CLAUDE.md).
+
+# Optional AI/Copilot configuration, kept in a separate file so this one stays
+# cluster-only. `optional:` means a missing file is ignored. Activation is a
+# pure env change - see .hub/application-ai.yaml.
+spring:
+  config:
+    import: optional:file:/home/runner/config/application-ai.yaml
+
 camunda:
   hub:
     clusters:

@@ -1,0 +1,70 @@
+# Camunda Hub AI features (Copilot) - optional and disabled by default.
+#
+# This file is loaded by Hub in addition to .hub/application.yaml (see the
+# `spring.config.import` entry there). Everything is driven by environment
+# variables, so activating AI is a pure .env/.env-credentials change:
+#
+#   1. .env             HUB_AI_ENABLED=true
+#                      (optional) HUB_COPILOT_PROVIDER=OPENAI
+#                      (optional) HUB_COPILOT_MODEL_ID=gpt-4.1
+#   2. .env-credentials HUB_COPILOT_API_KEY=sk-...
+#   3. bash scripts/start.sh     (or: docker compose restart hub)
+#
+# Scope behind HUB_AI_ENABLED: BPMN Copilot, FEEL Copilot, Form Copilot and
+# AI-assisted element templates in Hub. Providers (HUB_COPILOT_PROVIDER):
+# OPENAI (and OpenAI-compatible gateways), ANTHROPIC, OLLAMA, BEDROCK,
+# AZURE_OPENAI, AZURE_AI, VERTEX_AI, HUGGING_FACE.
+#
+# IMPORTANT (verified against camunda/hub:8.10-rc1): provider blocks with
+# empty credentials make Hub refuse to start ("Binding to CopilotProperties
+# failed"). Every placeholder therefore carries a non-empty default. The
+# "not-configured" values are inert - no request is sent while the feature
+# flag is off or the provider is not selected - and produce a clear auth
+# error if you enable AI without setting a real key.
+camunda:
+  hub:
+    feature:
+      ai-enabled: "${HUB_AI_ENABLED:false}"
+    copilot:
+      default-bpmn-copilot-llm-provider: "${HUB_COPILOT_PROVIDER:OPENAI}"
+      default-feel-copilot-llm-provider: "${HUB_COPILOT_PROVIDER:OPENAI}"
+      default-form-copilot-llm-provider: "${HUB_COPILOT_PROVIDER:OPENAI}"
+      providers:
+        # Cloud API key, or any OpenAI-compatible gateway/proxy (endpoint).
+        open-ai:
+          api-key: "${HUB_COPILOT_API_KEY:not-configured}"
+          default-model-id: "${HUB_COPILOT_MODEL_ID:gpt-4.1}"
+          # endpoint: "${HUB_COPILOT_ENDPOINT:https://api.openai.com/v1}"
+        # Local models via Ollama - no cloud key. host.docker.internal works
+        # out of the box when Ollama runs on the Docker host.
+        ollama:
+          base-url: "${HUB_OLLAMA_BASE_URL:http://host.docker.internal:11434}"
+          default-model-id: "${HUB_OLLAMA_MODEL_ID:llama3.1}"
+
+        # ---- Alternative providers -------------------------------------
+        # Uncomment ONE block, put the matching variables in .env-credentials
+        # and set HUB_COPILOT_PROVIDER accordingly. No docker-compose change
+        # needed: .env-credentials is injected into the hub container and
+        # every placeholder below has a default.
+        #
+        # anthropic:
+        #   api-key: "${HUB_ANTHROPIC_API_KEY:not-configured}"
+        #   default-model-id: "${HUB_ANTHROPIC_MODEL_ID:claude-3-5-sonnet-20240620}"
+        # bedrock:
+        #   region: "${HUB_BEDROCK_REGION:us-east-1}"
+        #   access-key-id: "${HUB_BEDROCK_ACCESS_KEY_ID:not-configured}"
+        #   secret-access-key: "${HUB_BEDROCK_SECRET_ACCESS_KEY:not-configured}"
+        #   default-model-id: "${HUB_BEDROCK_MODEL_ID:anthropic.claude-3-5-sonnet-20240620-v1:0}"
+        # azure-open-ai:
+        #   endpoint: "${HUB_AZURE_OPENAI_ENDPOINT:not-configured}"
+        #   api-key: "${HUB_AZURE_OPENAI_API_KEY:not-configured}"
+        #   default-model-id: "${HUB_AZURE_OPENAI_MODEL_ID:gpt-4o}"
+        # vertex-ai:
+        #   project-id: "${HUB_VERTEX_PROJECT_ID:not-configured}"
+        #   location: "${HUB_VERTEX_LOCATION:us-central1}"
+        #   credentials-json: "${HUB_VERTEX_CREDENTIALS_JSON:not-configured}"
+        #   default-model-id: "${HUB_VERTEX_MODEL_ID:gemini-1.5-pro-002}"
+        # hugging-face:
+        #   access-token: "${HUB_HF_ACCESS_TOKEN:not-configured}"
+        #   base-url: "${HUB_HF_BASE_URL:https://api-inference.huggingface.co/models}"
+        #   default-model-id: "${HUB_HF_MODEL_ID:mistralai/Mixtral-8x7B-Instruct-v0.1}"

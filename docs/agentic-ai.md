@@ -1,7 +1,8 @@
-# Camunda 8.9 Agentic AI Configuration
+# Camunda 8.10 AI Features and Agentic AI Configuration
 
-This stack is prepared for Camunda 8.9 agentic AI features:
+This stack is prepared for the AI features of Camunda 8.10:
 
+- **Hub Copilot** (BPMN, FEEL and form generation, AI-assisted element templates) - optional, see [Hub Copilot quick activation](#hub-copilot-quick-activation)
 - AI Agent connector tasks in BPMN processes
 - MCP Client connectors inside BPMN processes
 - A2A Client connectors for agent-to-agent handoffs
@@ -13,10 +14,67 @@ The runtime configuration is intentionally provider-neutral. Add only the LLM an
 
 | Capability | Service | Current Configuration |
 |------------|---------|-----------------------|
+| BPMN, FEEL and form Copilot | `hub` | `.hub/application-ai.yaml`, switched via `HUB_AI_ENABLED` (off by default) |
 | AI Agent, MCP Client, A2A Client connectors | `connectors` | `camunda/connectors-bundle:${CAMUNDA_CONNECTORS_VERSION}` |
 | Connector secrets | `connectors` | `connector-secrets.txt` with `CONNECTORS_SECRET` prefix |
 | Orchestration Cluster MCP server | `orchestration` | `camunda.mcp.enabled: true` |
 | BPMN modeling | `hub` (Camunda Hub) | Connected to local orchestration cluster |
+
+## Hub Copilot quick activation
+
+Camunda Hub can generate BPMN, FEEL expressions and forms (Copilot, Alpha) and
+assist with element templates. The feature is disabled by default and needs one
+LLM provider. Activation is a configuration-only change:
+
+1. `.env` - switch the feature on (and optionally pick provider and model):
+
+   ```env
+   HUB_AI_ENABLED=true
+   HUB_COPILOT_PROVIDER=OPENAI
+   HUB_COPILOT_MODEL_ID=gpt-4.1
+   ```
+
+2. `.env-credentials` - add the provider key (never commit that file):
+
+   ```env
+   HUB_COPILOT_API_KEY=sk-...
+   ```
+
+3. Restart: `bash scripts/start.sh` (or `docker compose restart hub`).
+
+OpenAI-compatible gateways work the same way: set `HUB_COPILOT_ENDPOINT` in
+`.env-credentials` and uncomment the `endpoint` line in
+`.hub/application-ai.yaml`. Local models via Ollama need no key at all - set
+`HUB_COPILOT_PROVIDER=OLLAMA` (plus optional `HUB_OLLAMA_MODEL_ID`).
+
+| Provider | `HUB_COPILOT_PROVIDER` | Credentials in `.env-credentials` |
+|----------|------------------------|-----------------------------------|
+| OpenAI / OpenAI-compatible | `OPENAI` | `HUB_COPILOT_API_KEY`, optional `HUB_COPILOT_ENDPOINT` |
+| Ollama (local, no cloud) | `OLLAMA` | none; optional `HUB_OLLAMA_BASE_URL`, `HUB_OLLAMA_MODEL_ID` |
+| Anthropic | `ANTHROPIC` | `HUB_ANTHROPIC_API_KEY` + uncomment block |
+| AWS Bedrock | `BEDROCK` | `HUB_BEDROCK_*` + uncomment block |
+| Azure OpenAI | `AZURE_OPENAI` | `HUB_AZURE_OPENAI_*` + uncomment block |
+| Azure AI | `AZURE_AI` | `HUB_AZURE_AI_*` + uncomment block |
+| Google Vertex AI | `VERTEX_AI` | `HUB_VERTEX_*` + uncomment block |
+| Hugging Face | `HUGGING_FACE` | `HUB_HF_*` + uncomment block |
+
+Everything is pre-wired in `.hub/application-ai.yaml`, which `hub` loads in
+addition to `.hub/application.yaml`. The full option list (temperature,
+timeouts, separate providers per copilot, agent/sub-agent tuning) is in the
+[Camunda Hub Copilot documentation](https://github.com/camunda/camunda-docs/blob/main/docs/self-managed/components/hub/configuration/copilot.md).
+
+Notes:
+
+- **Model strength matters.** Camunda recommends a GPT-4-class model for BPMN
+  generation; weaker models often return invalid BPMN XML even after the
+  built-in repair attempts.
+- **Never leave provider credentials empty.** Hub refuses to start
+  (`Binding to CopilotProperties failed`) when a provider block contains empty
+  values - verified against `camunda/hub:8.10-rc1`. The prepared file
+  therefore uses non-empty placeholder defaults (`not-configured`) that stay
+  inert until you set a real key.
+- The switch is Hub-only: processes, workers and connectors are unaffected.
+  With `HUB_AI_ENABLED=false` (the default) the stack stays AI-free.
 
 ## Secret Naming
 
@@ -127,7 +185,7 @@ After this works, add an ad-hoc subprocess with a small set of allowed tools. Ke
 
 ## Hub Connector Template Import
 
-Web Modeler can add connector templates from the marketplace when changing a BPMN task type. In this stack, prefer connector templates that match `CAMUNDA_CONNECTORS_VERSION` and `CAMUNDA_HUB_VERSION`.
+Hub can add connector templates from the marketplace when changing a BPMN task type. In this stack, prefer connector templates that match `CAMUNDA_CONNECTORS_VERSION` and `CAMUNDA_HUB_VERSION`.
 
 If the marketplace import fails with browser console messages such as:
 
@@ -144,16 +202,16 @@ check `hub` first:
 docker logs hub --since 15m
 ```
 
-Warnings about `c3-navigation-appbar`, Statsig, or `ContextPad#getPad is deprecated` are not the root cause. The actionable failure is the `POST /api/internal/files` response. If the logs show successful authentication and some connector template files were created, the proxy and login path are working; Web Modeler is rejecting only part of the imported template bundle.
+Warnings about `c3-navigation-appbar`, Statsig, or `ContextPad#getPad is deprecated` are not the root cause. The actionable failure is the `POST /api/internal/files` response. If the logs show successful authentication and some connector template files were created, the proxy and login path are working; Hub is rejecting only part of the imported template bundle.
 
-For Camunda 8.9.6, import the AI Agent templates from the version-pinned connector repository URLs instead of URLs under `refs/heads/main`:
+For Camunda 8.9.6, import the AI Agent templates from the version-pinned connector repository URLs instead of URLs under `refs/heads/main` (replace `8.9.6` with the `CAMUNDA_CONNECTORS_VERSION` in use, e.g. `8.10.0` - the tag must exist in the `camunda/connectors` repository):
 
 ```text
 https://raw.githubusercontent.com/camunda/connectors/8.9.6/connectors/agentic-ai/element-templates/agenticai-aiagent-outbound-connector.json
 https://raw.githubusercontent.com/camunda/connectors/8.9.6/connectors/agentic-ai/element-templates/agenticai-aiagent-job-worker.json
 ```
 
-After importing, refresh Web Modeler and check the task type selector for `AI Agent Task` and `AI Agent Sub-process`. If a previous marketplace import partially succeeded, remove duplicate or partially imported connector templates in Web Modeler before re-importing the version-pinned templates.
+After importing, refresh Hub and check the task type selector for `AI Agent Task` and `AI Agent Sub-process`. If a previous marketplace import partially succeeded, remove duplicate or partially imported connector templates in Hub before re-importing the version-pinned templates.
 
 ## Orchestration Cluster MCP Server
 

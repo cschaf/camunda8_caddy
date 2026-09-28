@@ -19,7 +19,7 @@ For end user usage, please check the official documentation of [Camunda 8 Self-M
 - [`docs/operations-handover-template.md`](docs/operations-handover-template.md) - **Operations & handover manual template (German content).** Self-contained, fill-in template for running the stack at a customer site: per-installation facts, server environments (PROD/DEV/SANDBOX) with connection paths, roles/contacts, a customer & infra-admin part (what's installed, access, what to monitor, security, backup essentials) and an operator part with runbooks and a symptom→action incident playbook. Designed to be delivered on its own, without the other reference docs.
 - [`docs/project_configuration.md`](docs/project_configuration.md) - Full configuration reference for this stack, including service settings, resource sizing, reverse proxy behavior, `autoheal`, the host recovery guard, and a decision guide for PostgreSQL vs Elasticsearch as Camunda core data backend.
 - [`docs/stage_comparison.md`](docs/stage_comparison.md) - Side-by-side comparison of the `prod`, `dev`, and `test` stage resource profiles.
-- [`docs/agentic-ai.md`](docs/agentic-ai.md) - Camunda 8.9 Agentic AI setup for AI Agent connectors, MCP clients, LLM provider secrets, proxy/truststore notes, and safety guardrails.
+- [`docs/agentic-ai.md`](docs/agentic-ai.md) - Camunda 8.10 AI features: Hub Copilot quick activation, AI Agent connectors, MCP clients, LLM provider secrets, proxy/truststore notes, and safety guardrails.
 - [`docs/backup-restore.md`](docs/backup-restore.md) - Backup, restore, and disaster-recovery drills. Covers the three scripts (`backup.sh`, `restore.sh`, `restore-drill.sh`), the cold-backup model, granular and cross-cluster restore, and the isolated drill stack used to verify backups end-to-end without touching live data.
 - [`docs/cluster_upgrade.md`](docs/cluster_upgrade.md) - The 8.8 → 8.9 cluster upgrade: what changed, file-by-file migration steps, config diffs, and troubleshooting for common post-upgrade issues including the Optimize schema migration.
 - [`docs/upgrade-8.10.md`](docs/upgrade-8.10.md) - **Migration 8.9.19 → 8.10.x (German).** Camunda Hub replaces Web Modeler and Console: what changes, runbook for existing environments (manual `.env` / Caddyfile / Keycloak role steps), rollback, file-by-file reference of the branch changes, local test results, and open TODOs before GA and before 8.11.
@@ -85,7 +85,7 @@ cp connector-secrets.txt.example connector-secrets.txt
 
 `connector-secrets.txt` is mounted into the Connectors container as an env file. Add any connector secrets you need in `NAME=VALUE` format. The file is gitignored — never commit it.
 
-For Camunda 8.9 Agentic AI connectors, this stack uses the `CONNECTORS_SECRET` prefix. A connector field such as `{{secrets.OPENAI_API_KEY}}` resolves `CONNECTORS_SECRET_OPENAI_API_KEY` from `connector-secrets.txt`.
+For Camunda 8.10 Agentic AI connectors, this stack uses the `CONNECTORS_SECRET` prefix. A connector field such as `{{secrets.OPENAI_API_KEY}}` resolves `CONNECTORS_SECRET_OPENAI_API_KEY` from `connector-secrets.txt`.
 
 Example:
 
