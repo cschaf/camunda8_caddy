@@ -256,7 +256,7 @@ main() {
   local config_archive="$backup_dir/configs.tar.gz"
   if [[ "$TEST_MODE" == true ]]; then
     log "[TEST] Would create config archive: $config_archive"
-    log "[TEST] Including: .env, .env-credentials, connector-secrets.txt, Caddyfile, .*/application.yaml"
+    log "[TEST] Including: .env, .env-credentials, connector-secrets.txt, Caddyfile, .*/application.yaml, secrets/"
   else
     local config_files=()
     local all_config_paths=(
@@ -269,9 +269,10 @@ main() {
       ".optimize/environment-config.yaml"
       ".identity/application.yaml"
       ".hub/application.yaml"
+      "secrets"
     )
     for f in "${all_config_paths[@]}"; do
-      [[ -f "$PROJECT_DIR/$f" ]] && config_files+=("$f")
+      [[ -e "$PROJECT_DIR/$f" ]] && config_files+=("$f")
     done
 
     if [[ ${#config_files[@]} -eq 0 ]]; then
@@ -376,8 +377,12 @@ main() {
     log "Web Modeler DB backed up: $backup_dir/webmodeler.sql.gz"
 
     log "Creating Elasticsearch snapshot..."
+    # Same override as scripts/restore.sh: the snapshot lives in the ES backup
+    # volume (remapped by stages/drill.yaml for the restore drill).
+    local es_backup_volume
+    es_backup_volume="${ES_BACKUP_VOLUME:-elastic-backup}"
     # Ensure the Docker volume has open permissions for the elasticsearch user
-    docker run --rm -v "elastic-backup:/backup" alpine sh -c "chmod -R 777 /backup 2>/dev/null || true" >>"$LOG_FILE" 2>&1 || true
+    docker run --rm -v "${es_backup_volume}:/backup" alpine sh -c "chmod -R 777 /backup 2>/dev/null || true" >>"$LOG_FILE" 2>&1 || true
 
     local es_host es_port es_url
     es_host="${ES_HOST:-localhost}"
@@ -442,7 +447,7 @@ PYEOF
     # above, so a non-root reader is sufficient).
     MSYS_NO_PATHCONV=1 docker run --rm \
       --user "$(id -u):$(id -g)" \
-      -v "elastic-backup:/source:ro" \
+      -v "${es_backup_volume}:/source:ro" \
       -v "$es_backup_dir:/dest" \
       alpine sh -c 'cp -r /source/. /dest/' > /dev/null 2>&1 || {
         log "ERROR: Could not copy snapshot data from volume"

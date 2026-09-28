@@ -358,7 +358,10 @@ cleanup_dangling_compose_volumes() {
   local removed=0
   while IFS= read -r volume_name; do
     [[ -z "$volume_name" ]] && continue
+    # Never touch the ES backup volume: the fixed name plus the active
+    # override (ES_BACKUP_VOLUME, e.g. elastic-backup-drill in the drill).
     [[ "$volume_name" == "elastic-backup" ]] && continue
+    [[ -n "${ES_BACKUP_VOLUME:-}" && "$volume_name" == "$ES_BACKUP_VOLUME" ]] && continue
 
     local inspect_json
     inspect_json="$(docker volume inspect "$volume_name" 2>>"$LOG_FILE" || true)"

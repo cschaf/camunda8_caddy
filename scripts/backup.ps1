@@ -214,7 +214,7 @@ function Main {
         $configArchive = Join-Path $backupDir "configs.tar.gz"
         if ($TestMode) {
             Log "[TEST] Would create config archive: $configArchive"
-            Log "[TEST] Including: .env, .env-credentials, connector-secrets.txt, Caddyfile, .*/application.yaml"
+            Log "[TEST] Including: .env, .env-credentials, connector-secrets.txt, Caddyfile, .*/application.yaml, secrets/"
         }
         else {
             $configItems = @(
@@ -226,7 +226,8 @@ function Main {
                 (Join-Path $ProjectDir ".connectors\application.yaml"),
                 (Join-Path $ProjectDir ".optimize\environment-config.yaml"),
                 (Join-Path $ProjectDir ".identity\application.yaml"),
-                (Join-Path $ProjectDir ".hub\application.yaml")
+                (Join-Path $ProjectDir ".hub\application.yaml"),
+                (Join-Path $ProjectDir "secrets")
         )
         $existingItems = $configItems | Where-Object { Test-Path $_ }
         if (-not $existingItems) {
@@ -394,9 +395,12 @@ function Main {
             Log "Web Modeler DB backed up: $outputFile"
 
             Log "Creating Elasticsearch snapshot..."
+            # Same override as scripts/restore.ps1: the snapshot lives in the ES
+            # backup volume (remapped by stages/drill.yaml for the restore drill).
+            $esBackupVolume = if ($env:ES_BACKUP_VOLUME) { $env:ES_BACKUP_VOLUME } else { "elastic-backup" }
             # Ensure the Docker volume has open permissions for the elasticsearch user
             try {
-                docker run --rm -v "elastic-backup:/backup" alpine sh -c "chmod -R 777 /backup 2>/dev/null || true" 2>> $Global:LogFile | Out-Null
+                docker run --rm -v "${esBackupVolume}:/backup" alpine sh -c "chmod -R 777 /backup 2>/dev/null || true" 2>> $Global:LogFile | Out-Null
             }
             catch {
                 Log "WARNING: Could not set volume permissions: $_"
@@ -466,7 +470,7 @@ function Main {
             New-Item -ItemType Directory -Path $esBackupDir -Force | Out-Null
             try {
                 docker run --rm `
-                    -v "elastic-backup:/source:ro" `
+                    -v "${esBackupVolume}:/source:ro" `
                     -v "${esBackupDir}:/dest" `
                     alpine sh -c 'cp -r /source/. /dest/' | Out-Null
                 Log "Snapshot data copied to: $esBackupDir"

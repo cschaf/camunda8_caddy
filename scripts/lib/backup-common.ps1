@@ -372,7 +372,12 @@ function Cleanup-DanglingComposeVolumes {
 
     $removed = 0
     foreach ($volumeName in $dangling) {
+        # Never touch the ES backup volume: the fixed name plus the active
+        # override (ES_BACKUP_VOLUME, e.g. elastic-backup-drill in the drill).
         if ($volumeName -eq "elastic-backup") {
+            continue
+        }
+        if ($env:ES_BACKUP_VOLUME -and $volumeName -eq $env:ES_BACKUP_VOLUME) {
             continue
         }
 

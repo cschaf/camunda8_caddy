@@ -89,7 +89,7 @@ The backup system secures the following data:
 | Elasticsearch | Snapshot API | FS repository via Docker volume `elastic-backup`, copied to host after snapshot — Optimize indices only |
 | Keycloak DB | `pg_dump -Fc` | GZIP-compressed (`keycloak.sql.gz`) |
 | Hub DB (`web-modeler-db`) | `pg_dump -Fc` | GZIP-compressed (`webmodeler.sql.gz`) |
-| Configurations | `tar.gz` | `.env`, `.env-credentials`, `connector-secrets.txt`, `Caddyfile`, `application.yaml` files |
+| Configurations | `tar.gz` | `.env`, `.env-credentials`, `connector-secrets.txt`, `Caddyfile`, `application.yaml` files, `secrets/` (central Camunda secret store, 8.10+) |
 
 **Not backed up:** UI theme assets are baked into the `camunda/keycloak` and `camunda/identity` images; no separate theme volume exists anymore.
 
@@ -152,7 +152,7 @@ Relevant Camunda sizing and retention references:
 
 ## Security
 
-Backups contain secrets in clear text. This includes the Keycloak realm, OAuth client secrets, database passwords, `.env-credentials`, and `connector-secrets.txt`. (`.env` carries only non-credential configuration.) Access to the backup directory MUST be restricted to trusted users. For off-site storage, use transport encryption and at-rest encryption.
+Backups contain secrets in clear text. This includes the Keycloak realm, OAuth client secrets, database passwords, `.env-credentials`, `connector-secrets.txt`, and the central secret files in `secrets/`. (`.env` carries only non-credential configuration.) Access to the backup directory MUST be restricted to trusted users. For off-site storage, use transport encryption and at-rest encryption.
 
 For optional local encryption, pass a recipient to the backup script:
 
@@ -191,7 +191,7 @@ The current setup is best described as a **full-stack infrastructure backup** fo
 - Optimize and Zeebe record indices through an Elasticsearch snapshot
 - Keycloak identity data from PostgreSQL
 - Web Modeler data from PostgreSQL
-- Runtime configuration files such as `.env`, `.env-credentials`, `connector-secrets.txt`, `Caddyfile`, and application YAML files
+- Runtime configuration files such as `.env`, `.env-credentials`, `connector-secrets.txt`, `Caddyfile`, application YAML files, and the central secret files in `secrets/`
 
 This is intentional for the local/single-node Compose profile because it also covers services outside Camunda's backup API scope, especially Keycloak, Web Modeler, and local configuration. The trade-off is that the stack must stop the application services during the backup window.
 
