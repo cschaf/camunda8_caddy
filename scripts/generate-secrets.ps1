@@ -116,6 +116,13 @@ WEBMODELER_PUSHER_APP_ID=$(Get-EnvValOrDefault 'WEBMODELER_PUSHER_APP_ID')
 WEBMODELER_PUSHER_KEY=$webmodelerPusherKey
 WEBMODELER_PUSHER_SECRET=$webmodelerPusherSecret
 
+## Camunda Hub AI / Copilot (Optional) ##
+# Provider API key for Hub Copilot (BPMN/FEEL/Form). Only needed when
+# HUB_AI_ENABLED=true in .env. Provider-specific keys can live here as well
+# (HUB_ANTHROPIC_API_KEY, HUB_BEDROCK_*, ...); env_file injects every key
+# into the hub container automatically.
+# HUB_COPILOT_API_KEY=sk-...
+
 ## Camunda License (Optional for non-production, required for production use) ##
 # Keep the real key only in .env-credentials. For multi-line keys, use
 # single quotes so docker compose and the bash start script keep the value

@@ -21,6 +21,8 @@ Assert-Contains -Text $bashScriptText -Expected 'CAMUNDA_DB_USER=$(get_val_or_de
 Assert-Contains -Text $bashScriptText -Expected 'CAMUNDA_DB_PASSWORD=$CAMUNDA_DB_PASSWORD' -Label "generate-secrets.sh"
 Assert-Contains -Text $bashScriptText -Expected '## Camunda License (Optional for non-production, required for production use) ##' -Label "generate-secrets.sh"
 Assert-Contains -Text $bashScriptText -Expected "# CAMUNDA_LICENSE_KEY='--------------- BEGIN CAMUNDA LICENSE KEY ---------------" -Label "generate-secrets.sh"
+Assert-Contains -Text $bashScriptText -Expected '## Camunda Hub AI / Copilot (Optional) ##' -Label "generate-secrets.sh"
+Assert-Contains -Text $bashScriptText -Expected '# HUB_COPILOT_API_KEY=sk-...' -Label "generate-secrets.sh"
 Assert-Contains -Text $bashScriptText -Expected 'POSTGRES_PASSWORD, WEBMODELER_DB_PASSWORD, CAMUNDA_DB_PASSWORD' -Label "generate-secrets.sh"
 
 Assert-Contains -Text $psScriptText -Expected 'CAMUNDA_DB_NAME=$(Get-EnvValOrDefault ''CAMUNDA_DB_NAME'')' -Label "generate-secrets.ps1"
@@ -28,6 +30,8 @@ Assert-Contains -Text $psScriptText -Expected 'CAMUNDA_DB_USER=$(Get-EnvValOrDef
 Assert-Contains -Text $psScriptText -Expected 'CAMUNDA_DB_PASSWORD=$camundaDbPassword' -Label "generate-secrets.ps1"
 Assert-Contains -Text $psScriptText -Expected '## Camunda License (Optional for non-production, required for production use) ##' -Label "generate-secrets.ps1"
 Assert-Contains -Text $psScriptText -Expected "# CAMUNDA_LICENSE_KEY='--------------- BEGIN CAMUNDA LICENSE KEY ---------------" -Label "generate-secrets.ps1"
+Assert-Contains -Text $psScriptText -Expected '## Camunda Hub AI / Copilot (Optional) ##' -Label "generate-secrets.ps1"
+Assert-Contains -Text $psScriptText -Expected '# HUB_COPILOT_API_KEY=sk-...' -Label "generate-secrets.ps1"
 Assert-Contains -Text $psScriptText -Expected 'POSTGRES_PASSWORD, WEBMODELER_DB_PASSWORD, CAMUNDA_DB_PASSWORD' -Label "generate-secrets.ps1"
 
 $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("camunda-generate-secrets-test-" + [guid]::NewGuid().ToString("N"))
@@ -53,6 +57,8 @@ try {
         "WEBMODELER_DB_USER=web-modeler-db-user",
         "KEYCLOAK_ADMIN_USER=admin",
         "WEBMODELER_PUSHER_APP_ID=web-modeler-app",
+        "## Camunda Hub AI / Copilot (Optional) ##",
+        "# HUB_COPILOT_API_KEY=sk-...",
         "## Camunda License (Optional for non-production, required for production use) ##",
         "# CAMUNDA_LICENSE_KEY='--------------- BEGIN CAMUNDA LICENSE KEY ---------------"
     )) {
