@@ -32,14 +32,17 @@ camunda:
       default-feel-copilot-llm-provider: "${HUB_COPILOT_PROVIDER:OPENAI}"
       default-form-copilot-llm-provider: "${HUB_COPILOT_PROVIDER:OPENAI}"
       providers:
-        # Cloud API key, or any OpenAI-compatible gateway/proxy (set the
-        # endpoint below - e.g. Langdock: https://api.langdock.com/openai/eu/v1).
+        # OpenAI's public API or any OpenAI-compatible gateway/proxy. The token
+        # is always sent as `Authorization: Bearer`. For a custom endpoint use
+        # `bearer`, not `api-key`: Hub's api-key auth targets api.openai.com
+        # regardless of the endpoint (verified against camunda/hub:8.10-rc1).
         open-ai:
-          api-key: "${HUB_COPILOT_API_KEY:not-configured}"
           default-model-id: "${HUB_COPILOT_MODEL_ID:gpt-4.1}"
-          # Custom base URL for OpenAI-compatible gateways. Leave at the OpenAI
-          # default for api.openai.com. Override via HUB_COPILOT_ENDPOINT in .env.
+          # Custom base URL; leave the default for OpenAI's public API. Override
+          # via HUB_COPILOT_ENDPOINT in .env (e.g. Langdock).
           endpoint: "${HUB_COPILOT_ENDPOINT:https://api.openai.com/v1}"
+          # Provider/API key, sent as `Authorization: Bearer <value>`.
+          bearer: "${HUB_COPILOT_API_KEY:not-configured}"
         # Local models via Ollama - no cloud key. host.docker.internal works
         # out of the box when Ollama runs on the Docker host.
         ollama:
