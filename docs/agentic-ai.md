@@ -43,9 +43,44 @@ LLM provider. Activation is a configuration-only change:
 3. Restart: `bash scripts/start.sh` (or `docker compose restart hub`).
 
 OpenAI-compatible gateways work the same way: set `HUB_COPILOT_ENDPOINT` in
-`.env-credentials` and uncomment the `endpoint` line in
-`.hub/application-ai.yaml`. Local models via Ollama need no key at all - set
+`.env` (non-secret, passed through `docker-compose.yaml`) and keep the API key
+in `.env-credentials`. Local models via Ollama need no key at all - set
 `HUB_COPILOT_PROVIDER=OLLAMA` (plus optional `HUB_OLLAMA_MODEL_ID`).
+
+### Langdock
+
+[Langdock](https://docs.langdock.com/de/developer/overview/api-introduction)
+exposes an OpenAI-compatible Chat Completions endpoint, so it works through the
+`OPENAI` provider. EU base URL: `https://api.langdock.com/openai/eu/v1`.
+
+`.env`:
+
+```env
+HUB_AI_ENABLED=true
+HUB_COPILOT_PROVIDER=OPENAI
+HUB_COPILOT_MODEL_ID=gpt-5.4-mini
+HUB_COPILOT_ENDPOINT=https://api.langdock.com/openai/eu/v1
+```
+
+`.env-credentials` (never commit this file):
+
+```env
+HUB_COPILOT_API_KEY=<langdock-api-key>
+```
+
+List the model ids available to your key, then use one as
+`HUB_COPILOT_MODEL_ID`:
+
+```bash
+curl -s https://api.langdock.com/openai/eu/v1/models \
+  -H "Authorization: Bearer $LANGDOCK_API_KEY"
+```
+
+Only OpenAI and Azure OpenAI models are served on Langdock's `/openai/`
+endpoint. Anthropic Claude models (for example Haiku 4.5) are served on
+Langdock's Anthropic Messages endpoint (`/anthropic/eu/v1`), which Hub's
+`ANTHROPIC` provider cannot target because it has no custom-endpoint option.
+Use an OpenAI model via Langdock, or a direct Anthropic key for Claude.
 
 | Provider | `HUB_COPILOT_PROVIDER` | Credentials in `.env-credentials` |
 |----------|------------------------|-----------------------------------|

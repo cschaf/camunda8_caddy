@@ -651,6 +651,9 @@ services:
       HUB_AI_ENABLED: ${HUB_AI_ENABLED:-false}
       HUB_COPILOT_PROVIDER: ${HUB_COPILOT_PROVIDER:-OPENAI}
       HUB_COPILOT_MODEL_ID: ${HUB_COPILOT_MODEL_ID:-gpt-4.1}
+      # Custom base URL for OpenAI-compatible gateways (e.g. Langdock:
+      # https://api.langdock.com/openai/eu/v1). Defaults to OpenAI's public API.
+      HUB_COPILOT_ENDPOINT: ${HUB_COPILOT_ENDPOINT:-https://api.openai.com/v1}
     env_file:
       - path: .env-credentials
         required: true
