@@ -412,7 +412,7 @@ bash scripts/add-camunda-user.sh --username svc-bot --password "s3cret" --email 
 | Role | Keycloak realm roles | Camunda internal role | Access |
 |------|----------------------|-----------------------|--------|
 | `NormalUser` | Default user role, Orchestration, Optimize, Hub | `readonly-admin` | Read-only in Operate + Tasklist; can complete tasks |
-| `Admin` | All roles incl. ManagementIdentity, Hub Admin, DevOps (Hub cluster management) | `admin` | Full access to all components |
+| `Admin` | All roles incl. ManagementIdentity, Hub Admin, DevOps (Hub cluster management), Analyst (Optimize + Hub Catalog/BI) | `admin` | Full access to all components |
 
 The scripts read `HOST` and `ORCHESTRATION_CLIENT_SECRET` from `.env`. On failure the created user is automatically rolled back.
 

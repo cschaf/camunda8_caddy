@@ -23,6 +23,7 @@ Assert-Contains -Text $scriptText -Expected 'check_host_resolution "Keycloak" "$
 Assert-Contains -Text $scriptText -Expected 'check_host_resolution "Orchestration" "$ORCHESTRATION_HOST"'
 Assert-Contains -Text $scriptText -Expected "Keycloak token endpoint returned non-JSON"
 Assert-Contains -Text $scriptText -Expected "Response body preview"
+Assert-Contains -Text $scriptText -Expected 'ROLE_MAP["Admin"]="Hub,ManagementIdentity,Default user role,Orchestration,Optimize,Analyst,Hub Admin,DevOps"'
 
 $missingRoleOutput = & bash "scripts/add-camunda-user.sh" `
     --username christian.schaf `

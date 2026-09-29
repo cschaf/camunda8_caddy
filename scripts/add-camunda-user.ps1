@@ -225,7 +225,7 @@ function Add-UserRoleMappings {
 # ---------------------------------------------------------------------------
 $roleMap = @{
     NormalUser = @("Default user role", "Orchestration", "Optimize", "Hub")
-    Admin      = @("Hub", "ManagementIdentity", "Default user role", "Orchestration", "Optimize", "Hub Admin", "DevOps")
+    Admin      = @("Hub", "ManagementIdentity", "Default user role", "Orchestration", "Optimize", "Analyst", "Hub Admin", "DevOps")
 }
 
 # Camunda internal role mapping (camunda.security.authorizations.enabled=true requires explicit role assignment)
