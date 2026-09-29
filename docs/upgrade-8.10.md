@@ -91,6 +91,12 @@ Leitfäden: [Migrate to Camunda API](https://docs.camunda.io/docs/next/apis-tool
 
 Sobald 8.10 GA ist, im Branch:
 
+0. **Vorab-Check (Pre-Release-Pins finden).** Nach dem Switch muss dieser Befehl leer sein:
+   ```bash
+   grep -nE '_(VERSION|IMAGE)=.*(rc[0-9]|alpha|beta|SNAPSHOT)' .env .env.example
+   ```
+   Registry-Stand zum 28.09.2026 (Docker Hub): `camunda/camunda` und `camunda/optimize` bis **`8.10.0-rc3`**, `camunda/hub`, `camunda/hub-websockets` und `camunda/connectors-bundle` bis **`8.10.0-rc2`**; **`camunda/identity:8.10.0` ist bereits verfuegbar** (der Branch pinnt noch `8.9.9`). Die GA-Tags der uebrigen Repos folgen laut Camunda am 13.10.2026.
+
 1. **Tags ermitteln** mit `bash scripts/registry-info.sh` (Default-Modus listet `camunda`, `optimize`, `identity`, `connectors-bundle`, `hub`, `hub-websockets`, `keycloak`) oder über Docker Hub.
 2. **`.env` und `.env.example`** anpassen:
    ```dotenv
@@ -98,7 +104,7 @@ Sobald 8.10 GA ist, im Branch:
    CAMUNDA_CONNECTORS_VERSION=8.10.x
    CAMUNDA_OPTIMIZE_VERSION=8.10.x
    CAMUNDA_HUB_VERSION=8.10.x          # Hub-Tag prüfen; RC-Tags hießen z. B. "8.10-rc1"
-   CAMUNDA_IDENTITY_VERSION=8.9.9      # bzw. 8.10.x, falls Camunda ein verifiziertes Identity-8.10-Tag veröffentlicht
+   CAMUNDA_IDENTITY_VERSION=8.9.9      # camunda/identity:8.10.0 ist seit 28.09.2026 verfuegbar - vor dem Switch gegen 8.9.9 pruefen
    ELASTIC_VERSION=8.19.22             # oder aktueller 8.19.x-Patch
    ```
 3. **Secfix-/Hotfix-Images:** Mit `scripts/registry-info.sh --project hotfixes-ee` prüfen, ob es 8.10-Hotfix-Images gibt. Falls ja, `CAMUNDA_IMAGE`, `CAMUNDA_CONNECTORS_IMAGE`, `HUB_IMAGE` und `HUB_WEBSOCKETS_IMAGE` in `.env` setzen.
@@ -403,8 +409,8 @@ Umgebung: Windows, Docker Desktop (Hyper-V, 8,3 GB VM-RAM), `stages/dev.yaml`, I
 
 | Punkt | Status |
 |---|---|
-| GA-Tags für `camunda`, `connectors-bundle`, `optimize`, `hub`, `hub-websockets` eintragen | Offen (GA am 13.10.2026) |
-| Gibt es ein verifiziertes `camunda/identity:8.10.x`? | Offen; auf Docker Hub gab es nur `8.10.0-alpha*`, upstream bleibt bei `8.9.9` |
+| GA-Tags für `camunda`, `connectors-bundle`, `optimize`, `hub`, `hub-websockets` eintragen | Offen (GA am 13.10.2026). Stand 28.09.2026: `camunda`/`optimize` bis `8.10.0-rc3`, `hub`/`hub-websockets`/`connectors-bundle` bis `8.10.0-rc2` |
+| Gibt es ein verifiziertes `camunda/identity:8.10.x`? | Teilweise: `camunda/identity:8.10.0` ist seit 28.09.2026 auf Docker Hub verfügbar; der Branch pinnt noch `8.9.9`. Vor dem GA-Switch mit Release Notes/Restore-Drill prüfen, dann ggf. bumpen |
 | 8.10-Hotfix-/Secfix-Images | Offen (`scripts/registry-info.sh`) |
 | Restore-Drill mit Prod-Backup auf GA-Images (Zeebe + Hub + Optimize an Echtdaten, Laufzeit messen) | Offen |
 | Browser-Login in Hub inklusive Gotcha 13 (Chrome-Iframe-Session-Check) | Offen, bisher nur per `curl` geprüft |

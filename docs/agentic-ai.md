@@ -20,6 +20,49 @@ The runtime configuration is intentionally provider-neutral. Add only the LLM an
 | Orchestration Cluster MCP server | `orchestration` | `camunda.mcp.enabled: true` |
 | BPMN modeling | `hub` (Camunda Hub) | Connected to local orchestration cluster |
 
+## ProcessOS (Closed Beta) - Readiness
+
+Camunda **ProcessOS** is the intelligence layer inside Camunda Hub: four agents
+(**Discover, Design, Build, Optimize**) that derive processes from real systems
+and data, re-engineer them AI-natively, generate the BPMN/DMN/forms, and
+continuously improve them in production. It was announced at CamundaCon on
+2026-05-20, runs on top of the Hub surfaces (Workspaces, Web Modeler, Catalog,
+Business Value Dashboard, Agentic Control Plane), extends via **MCP** plugins,
+and stores its organizational memory in a **private Git repository** (Git Sync).
+Everything is human-in-the-loop; no change reaches production without approval.
+Access is **closed beta** by application only (https://camunda.com/platform/process-os/).
+
+**Status in this stack:** ProcessOS is **not** part of `camunda/hub:8.10-rc1`
+(verified: no `processos`/`process-os` in the image config or code), so nothing
+can be switched on yet. GA is expected with 8.10 (Camunda date: 2026-10-13).
+
+What ProcessOS depends on, mapped to this stack:
+
+| ProcessOS need | Status here |
+|---|---|
+| Hub on an 8.10 **GA** tag (not RC) | TODO - switch `rc` pins to GA, see `docs/upgrade-8.10.md` section 3 |
+| Hub Copilot AI provider (LLM) | Done - `HUB_AI_ENABLED`, Langdock (see above) |
+| Agent-grade model (tool calling / reasoning) | TODO - `gpt-5.4-mini` is fine for Copilot but weak for agents; use `gpt-5.4` / `gpt-6-sol`, or Bedrock/Claude |
+| MCP for plugins and tools | Done - `camunda.mcp.enabled: true`, `/mcp/cluster` |
+| Agentic connectors (AI Agent, MCP Client, A2A, Bedrock AgentCore Runtime) | Done - `connectors` 8.10 bundle |
+| Hub surfaces: Catalog, Workspaces, Business Value Dashboard, Marketplace | Available via `camunda.hub.feature.*` flags |
+| Organizational memory in a private Git repo (Git Sync) | TODO - provide the repo plus Git Sync credentials/permissions |
+| AWS Bedrock + Bedrock AgentCore (native path) | TODO - region, IAM, model access, egress; `HUB_BEDROCK_*` placeholders exist in `.hub/application-ai.yaml` |
+| Governance / human-in-the-loop | Done - user tasks, authorizations, Hub roles (Admin/Analyst, `admin:clusters`/`admin:catalog`/`admin:bi`) |
+| Resources | Review - agentic workloads are CPU/RAM heavy (Hub `prod` is at 2 GB today) |
+
+Open / not public yet: whether the beta is AWS/Bedrock-only, the exact
+self-managed configuration, and license/gating. Confirm on beta onboarding
+before wiring anything.
+
+Preparation when access/beta docs land:
+
+1. Switch to 8.10 GA images (`docs/upgrade-8.10.md` section 3).
+2. Point the agent model at a strong provider (Bedrock/Claude, or `gpt-6-sol`).
+3. Prepare the private Git repo for organizational memory plus Git Sync credentials.
+4. Prepare AWS/Bedrock/AgentCore access and outbound egress.
+5. Re-check `camunda.hub.feature.*` and resource sizing on the GA image.
+
 ## Hub Copilot quick activation
 
 Camunda Hub can generate BPMN, FEEL expressions and forms (Copilot, Alpha) and
