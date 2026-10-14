@@ -191,8 +191,9 @@ services:
       # Optimize permission only for users. Without client-id-claim no token
       # counts as M2M, so API clients without an Optimize permission get 403.
       # username-claim is deliberately NOT set: Optimize derives the user ID
-      # from it (default `sub`, as in 8.9). Switching it to preferred_username
-      # would change the owner IDs of existing collections and reports.
+      # from it (default `sub`). It must match the IDs Optimize 8.9 stored in
+      # collections/reports, otherwise users lose access to them. Check this
+      # per environment before upgrading (docs/upgrade-8.10.md, step 4.2.1).
       CAMUNDA_SECURITY_AUTHENTICATION_OIDC_CLIENTIDCLAIM: client_id
       # Trust X-Forwarded headers from reverse proxy (required for correct URL construction behind HTTPS proxy)
       SERVER_FORWARD_HEADERS_STRATEGY: framework

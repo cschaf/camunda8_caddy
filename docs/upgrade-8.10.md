@@ -78,7 +78,7 @@ Leitfäden: [Migrate to Camunda API](https://docs.camunda.io/docs/next/apis-tool
 | RocksDB-Speicherstrategie | `PARTITION` (wie 8.9) | Bewusst auf `FRACTION` wechseln (Camunda-Sizing-Doku). |
 | Hub-URL | `https://webmodeler.{HOST}`; `console.{HOST}` leitet per 302 um | Eine neue Subdomain `hub.{HOST}` erfordert Hosts, Caddy, `RESTAPI_SERVER_URL`, `CLIENT_PUSHER_HOST`, Identity `root-url` **und** Keycloak-Redirect-URIs. |
 | Variablennamen | `WEBMODELER_*` bleiben (keine Umbenennung zu `HUB_*`) | Als späteres Refactoring. Die Werte müssen dabei 1:1 übernommen werden (DB-Passwort!). |
-| Optimize-Token-Claims | `client-id-claim: client_id`; `username-claim` nicht gesetzt (Default `sub`) | Optimize 8.10 leitet die **User-ID** aus `username-claim` ab. Die Camunda-Doku schlägt für Keycloak `preferred_username` vor, das würde aber die Owner-IDs bestehender Collections/Reports ändern. Nur nach einem Restore-Drill umstellen, der zeigt, dass Bestandsnutzer ihre Collections behalten. |
+| Optimize-Token-Claims | `client-id-claim: client_id`; `username-claim` nicht gesetzt (Default `sub`) | Optimize 8.10 leitet die **User-ID** aus `username-claim` ab. Der Default `sub` passt nur, wenn Optimize 8.9 die Keycloak-UUID gespeichert hat. **Das ist nicht verifiziert und muss vor dem Upgrade pro Umgebung geprüft werden (Pflichtschritt 4.2.1).** Stehen dort Benutzernamen, muss `CAMUNDA_SECURITY_AUTHENTICATION_OIDC_USERNAMECLAIM=preferred_username` beim Upgrade gesetzt werden. Stehen dort UUIDs, bleibt es bei `sub`. Eine spätere Umstellung auf `preferred_username` (einheitlich mit Orchestration, Camunda-Empfehlung für Keycloak) erfordert eine Migration der Owner-/Rollen-IDs in Elasticsearch und ist ein eigener Schritt nach dem Upgrade, erst im Restore-Drill, dann in Prod. Achtung: Benutzernamen sind in Keycloak änderbar, `sub` nicht. |
 | Produktions-Policy in Hub | Cluster-Tag = `DISPLAY_STAGE`/`STAGE` | Hub behandelt nur Cluster mit dem Tag `prod` als Produktionsumgebung (Deployment-Policy, Snapshot-Freigabe). Auf der Prod-Umgebung ggf. `DISPLAY_STAGE=prod` setzen oder einen zusätzlichen Tag in `.hub/application.yaml` ergänzen. Achtung: In 8.10 darf jeder mit Deploy-Recht auf `prod` deployen. Eine Pflicht-Freigabe gibt es nur über die Projekt-Einstellung „Require approval of project snapshots“. |
 
 ### 2.4 Ressourcen
@@ -162,6 +162,31 @@ bash scripts/restore.sh --verify backups/<ordner>
 ```
 
 Das Backup enthält die Dumps von Keycloak, Camunda-DB und **Web-Modeler-/Hub-DB** (`webmodeler.sql.gz`), den Zeebe-State, einen ES-Snapshot und die Configs. **Ohne dieses Backup gibt es kein Rollback.**
+
+#### 4.2.1 Optimize-User-IDs prüfen (Pflicht, solange noch 8.9 läuft)
+
+Optimize 8.10 identifiziert Benutzer über `camunda.security.authentication.oidc.username-claim` (Default `sub`). Passt der Claim nicht zu den IDs, die Optimize 8.9 gespeichert hat, verlieren Bestandsnutzer nach dem Upgrade den Zugriff auf ihre Collections und Reports. Deshalb vor dem Stoppen (4.3) prüfen, welche IDs gespeichert sind:
+
+```bash
+set -a; . ./.env-credentials; set +a
+# Collections: Owner und berechtigte Identitäten
+curl -s -u "elastic:$ELASTIC_PASSWORD" \
+  "http://127.0.0.1:9200/optimize-collection*/_search?size=20&_source=owner,data.roles.identity" \
+  | jq '.hits.hits[]._source'
+# Reports ohne Collection (private Reports)
+curl -s -u "elastic:$ELASTIC_PASSWORD" \
+  "http://127.0.0.1:9200/optimize-*report*/_search?size=20&_source=owner,collectionId" \
+  | jq '.hits.hits[]._source'
+```
+
+| Ergebnis | Bedeutung | Aktion |
+|---|---|---|
+| `owner` / `identity.id` sind UUIDs (z. B. `3f2a9c1e-…`) | Optimize 8.9 nutzte `sub` | Nichts tun. Der Branch-Stand (`username-claim` nicht gesetzt) ist korrekt. |
+| Dort stehen Benutzernamen (z. B. `demo`) | Optimize 8.9 nutzte `preferred_username` | **Vor dem Start von 8.10** im `optimize`-Service in `docker-compose.yaml` `CAMUNDA_SECURITY_AUTHENTICATION_OIDC_USERNAMECLAIM: preferred_username` ergänzen (im Branch committen, nicht nur auf dem Server). |
+| Gemischt oder unklar | | Upgrade anhalten und im Restore-Drill klären. |
+| Keine Treffer | Keine Collections/Reports vorhanden | Kein Risiko. Es bleibt bei `sub`. |
+
+Gruppen (`identity.type: group`) sind nicht betroffen, nur Einträge mit `type: user` und `owner`. Das Ergebnis mit Datum im Upgrade-Protokoll festhalten. Nach dem Upgrade wird es in Kapitel 7, Punkt 9 bestätigt.
 
 > **Achtung, Retention:** `backup.sh`/`backup.ps1` löschen standardmäßig Backups, die älter als **7 Tage** sind. Das 8.9-Backup vor dem Upgrade deshalb zusätzlich außerhalb von `backups/` sichern oder spätere Backups mit `--retention-days <n>` ausführen, damit der Rollback-Stand nicht automatisch verschwindet.
 
@@ -396,7 +421,7 @@ README, `docs/update_guide.md`, `project_configuration.md`, `monitoring.md`, `st
 6. Hub-Cluster-Übersicht: `camunda-platform` und `management` mit allen Komponenten grün, Links zeigen auf Proxy-URLs, Tag = `DISPLAY_STAGE`.
 7. Aus Hub deployen und eine Instanz starten; Test-Mode funktioniert.
 8. Operate, Tasklist und Admin: laufende Instanzen aus 8.9 sind sichtbar und laufen weiter.
-9. Optimize: Login, bestehende Reports liefern Daten (insbesondere Objekt-Variablen). **Bestandsnutzer sehen ihre eigenen Collections/Reports** (User-ID weiter aus `sub`). Falls ein M2M-Client die Optimize-API nutzt: Ein Aufruf mit Client-Credentials-Token liefert kein 403.
+9. Optimize: Login, bestehende Reports liefern Daten (insbesondere Objekt-Variablen). **Bestandsnutzer sehen ihre eigenen Collections/Reports** (bestätigt das Ergebnis aus 4.2.1). Ein neu angelegter Report hat als `owner` dieselbe ID-Art wie die Bestandsdaten (gleiche Abfrage wie in 4.2.1). Falls ein M2M-Client die Optimize-API nutzt: Ein Aufruf mit Client-Credentials-Token liefert kein 403.
 10. Connectors: eine Instanz mit Secret-Nutzung (Outbound) und ein Inbound-/Webhook-Connector.
 11. Rollen: Ein Benutzer mit `DevOps` sieht das Cluster-Management, ein Benutzer nur mit `Hub` nicht. Ein Bestandsbenutzer mit der alten Rolle `Console` sieht es ebenfalls (`admin:clusters`, 4.9).
 12. Externe Worker und Clients verbinden sich (gRPC über `zeebe.{HOST}`, REST v2).
@@ -436,6 +461,7 @@ Umgebung: Windows, Docker Desktop (Hyper-V, 8,3 GB VM-RAM), `stages/dev.yaml`, I
 | Punkt | Status |
 |---|---|
 | GA-Tags für `camunda`, `connectors-bundle`, `optimize`, `hub`, `hub-websockets` eintragen | ✅ 14.10.2026 (3.1) |
+| Optimize-User-ID-Art (`sub` vs. `preferred_username`) pro Umgebung geprüft | Offen, Pflichtschritt 4.2.1 vor jedem Upgrade |
 | Gibt es ein verifiziertes `camunda/identity:8.10.x`? | ✅ `8.10.1` (wie Upstream). Im Restore-Drill prüfen, dass die Rolle `Console` `admin:clusters` hat (4.9) |
 | 8.10-Hotfix-/Secfix-Images | ✅ Am 14.10.2026 keine vorhanden. Vor dem Prod-Termin erneut prüfen: `bash scripts/registry-info.sh -P hotfixes-ee -r camunda` |
 | Runtime-Test mit GA-Images (frischer Aufbau und Upgrade eines 8.9-Stands) | Offen: Der GA-Switch ist bisher nur per `docker compose config` validiert. Besonders prüfen: Hub 8.10.2 übersetzt die Legacy-Env-Keys weiterhin (Log `Deprecated Camunda Hub configuration keys detected`, kein Startfehler); Optimize-Login und Collections von Bestandsnutzern |
