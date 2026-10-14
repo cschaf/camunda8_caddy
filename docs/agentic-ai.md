@@ -20,48 +20,78 @@ The runtime configuration is intentionally provider-neutral. Add only the LLM an
 | Orchestration Cluster MCP server | `orchestration` | `camunda.mcp.enabled: true` |
 | BPMN modeling | `hub` (Camunda Hub) | Connected to local orchestration cluster |
 
-## ProcessOS (Closed Beta) - Readiness
+## ProcessOS Harness (Early Access)
 
-Camunda **ProcessOS** is the intelligence layer inside Camunda Hub: four agents
-(**Discover, Design, Build, Optimize**) that derive processes from real systems
-and data, re-engineer them AI-natively, generate the BPMN/DMN/forms, and
-continuously improve them in production. It was announced at CamundaCon on
-2026-05-20, runs on top of the Hub surfaces (Workspaces, Web Modeler, Catalog,
-Business Value Dashboard, Agentic Control Plane), extends via **MCP** plugins,
-and stores its organizational memory in a **private Git repository** (Git Sync).
-Everything is human-in-the-loop; no change reaches production without approval.
-Access is **closed beta** by application only (https://camunda.com/platform/process-os/).
+Camunda **ProcessOS** discovers existing processes, re-engineers them for AI and
+generates executable Camunda solutions. In 8.10 it ships as **ProcessOS
+Harness**: a governance process that runs on Camunda and drives an AI coding
+agent in the builder's terminal (Claude Code CLI or GitHub Copilot CLI) through
+four phases with SME review gates:
 
-**Status in this stack:** ProcessOS is **not** part of `camunda/hub:8.10-rc1`
-(verified: no `processos`/`process-os` in the image config or code), so nothing
-can be switched on yet. GA is expected with 8.10 (Camunda date: 2026-10-13).
+| Phase | Goal | Milestone |
+|---|---|---|
+| Scope | Define the process to re-engineer | Process scope defined |
+| Discover | Derive the as-is process from files, systems and SMEs | As-is models finalized |
+| Transform | Turn it into an agentic to-be process | To-be models finalized |
+| Implement | Generate BPMN/DMN/forms, workers and tests | Executable solution generated |
 
-What ProcessOS depends on, mapped to this stack:
+**Status in this stack (checked 14.10.2026 against `camunda/hub:8.10.2` and the
+8.10 docs):**
 
-| ProcessOS need | Status here |
+- ProcessOS is **not** a Hub feature. The Hub image has no ProcessOS module and
+  no `camunda.hub.feature.*` flag for it. The only `process-os` strings in the
+  image are inside the Hub Copilot prompts, which follow the modeling
+  conventions of Camunda's reference repo `camunda/process-os` (for example
+  `retries="3"` on service tasks, a 3-step error pattern, form-based user task
+  assignment). That is Copilot behavior, not ProcessOS.
+- Nothing in this repo has to be switched on. The stack can serve as the
+  organization-wide Camunda cluster that hosts the governance process.
+- Access is **early access** for Camunda Enterprise customers with trained
+  builders or enabled partners. Ask the Camunda Customer Success Manager.
+
+### How it is delivered
+
+ProcessOS Harness runs on the builder's own machine, not in this stack:
+
+```bash
+npm install -g @camunda8/cli@latest                 # c8ctl, alias c8
+c8 load plugin @camunda8/c8ctl-plugin-process-os
+# Download claudecode.zip or copilotcli.zip from the Camunda Download Center
+# (Enterprise Releases), then inside a new project folder:
+c8 os install claudecode --zip /path/to/claudecode.zip
+git init && git add . && git commit -m "chore(job) commit process-os-harness setup"
+# In Claude Code: /process-os-governance-start
+```
+
+Builder client requirements: c8ctl, Node.js 22.18.0 or later, Git and the
+GitHub CLI, a local `c8run` cluster for validating generated solutions, Camunda
+Desktop Modeler for reviews, Maven for Java workers. On Windows only via WSL.
+Generated workers target Spring Boot, TypeScript or Python.
+
+### What this stack provides
+
+| ProcessOS Harness need | Status here |
 |---|---|
-| Hub on an 8.10 **GA** tag (not RC) | TODO - switch `rc` pins to GA, see `docs/upgrade-8.10.md` section 3 |
-| Hub Copilot AI provider (LLM) | Done - `HUB_AI_ENABLED`, Langdock (see above) |
-| Agent-grade model (tool calling / reasoning) | TODO - `gpt-5.4-mini` is fine for Copilot but weak for agents; use `gpt-5.4` / `gpt-6-sol`, or Bedrock/Claude |
-| MCP for plugins and tools | Done - `camunda.mcp.enabled: true`, `/mcp/cluster` |
-| Agentic connectors (AI Agent, MCP Client, A2A, Bedrock AgentCore Runtime) | Done - `connectors` 8.10 bundle |
-| Hub surfaces: Catalog, Workspaces, Business Value Dashboard, Marketplace | Available via `camunda.hub.feature.*` flags |
-| Organizational memory in a private Git repo (Git Sync) | TODO - provide the repo plus Git Sync credentials/permissions |
-| AWS Bedrock + Bedrock AgentCore (native path) | TODO - region, IAM, model access, egress; `HUB_BEDROCK_*` placeholders exist in `.hub/application-ai.yaml` |
-| Governance / human-in-the-loop | Done - user tasks, authorizations, Hub roles (Admin/Analyst, `admin:clusters`/`admin:catalog`/`admin:bi`) |
-| Resources | Review - agentic workloads are CPU/RAM heavy (Hub `prod` is at 2 GB today) |
+| Camunda cluster reachable across the organization (governance process, project state) | Available: `https://orchestration.{HOST}` (REST v2) behind Caddy |
+| Tasklist for scope and phase-configuration forms | Available: `https://orchestration.{HOST}/tasklist` |
+| c8ctl access to the cluster (deploy, start, jobs) | Not verified: needs an OAuth client-credentials client in Keycloak with matching authorizations. Test whether an existing client is enough or create a dedicated one |
+| Git repository per project | Outside this repo (any Git-compatible VCS) |
+| AI platform for the coding agent | Outside this repo: whatever Claude Code / Copilot CLI support (Anthropic, Amazon Bedrock, Azure OpenAI, Ollama). Camunda recommends Opus-class models |
+| Deployment of the generated solution | Normal deployment to this cluster (Hub or c8ctl) |
 
-Open / not public yet: whether the beta is AWS/Bedrock-only, the exact
-self-managed configuration, and license/gating. Confirm on beta onboarding
-before wiring anything.
+Out of scope in this release according to Camunda: production deployment and
+lifecycle management, platform/CI setup, custom UIs beyond Camunda Forms,
+process mining, shared memory across projects (each project keeps its own
+private memory locally).
 
-Preparation when access/beta docs land:
+Planning figures from Camunda: about USD 300-600 in tokens and 6-8 hours per
+journey from discovery to implementation. Camunda expects the first project to
+run with a partner or a Camunda Forward Deployed Engineer and the Camunda
+Academy learning path to be completed first.
 
-1. Switch to 8.10 GA images (`docs/upgrade-8.10.md` section 3).
-2. Point the agent model at a strong provider (Bedrock/Claude, or `gpt-6-sol`).
-3. Prepare the private Git repo for organizational memory plus Git Sync credentials.
-4. Prepare AWS/Bedrock/AgentCore access and outbound egress.
-5. Re-check `camunda.hub.feature.*` and resource sizing on the GA image.
+Sources: [ProcessOS Harness overview](https://docs.camunda.io/docs/components/process-os-harness/overview/),
+[Installation](https://docs.camunda.io/docs/components/process-os-harness/installation/),
+[System requirements](https://docs.camunda.io/docs/components/process-os-harness/setup/system-requirements/).
 
 ## Hub Copilot quick activation
 
