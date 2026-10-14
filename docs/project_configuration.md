@@ -716,7 +716,7 @@ Since 8.10, Camunda Hub replaces both Web Modeler and Console. It serves BPMN/DM
 - `RESTAPI_OAUTH2_TOKEN_ISSUER`, `RESTAPI_OAUTH2_TOKEN_ISSUER_BACKEND_URL`, `SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI`, `SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI`, `OAUTH2_CLIENT_ID=web-modeler` — Legacy OIDC keys. Hub 8.10 translates them to `camunda.security.authentication.oidc.*` (Camunda Security Library) at startup; they are removed in 8.11. The issuer must match the `iss` claim (`https://keycloak.${HOST}/...`); JWKS is fetched internally.
 - `RESTAPI_PUSHER_*` — Pusher configuration for WebSocket communication with `hub-websockets`
 - `RESTAPI_SERVER_URL=https://webmodeler.${HOST}` — Hub keeps the `webmodeler.*` hostname so existing Keycloak redirect URIs stay valid.
-- `LOGGING_LEVEL_IO_CAMUNDA_MODELER=INFO`, `LOGGING_LEVEL_ORG_HIBERNATE_ORM_CONNECTIONS_POOLING=WARN` — Logging verbosity.
+- `LOGGING_LEVEL_IO_CAMUNDA_HUB=INFO`, `LOGGING_LEVEL_ORG_HIBERNATE_ORM_CONNECTIONS_POOLING=WARN` — Logging verbosity.
 - `SERVER_HTTPS_ONLY=false` — Allows HTTP on the internal Docker network while Caddy terminates browser-facing HTTPS.
 - `TEST_MODE_ENABLED=true` — Test mode (renamed from `PLAY_ENABLED` in 8.10).
 - Healthcheck `start_period: 600s` — gives the one-time 8.9 → 8.10 database migration time before autoheal may restart Hub.
@@ -916,7 +916,7 @@ The base Compose file and `stages/prod.yaml` are configured as a production-read
 | Setting | Current Value | Production Value | Risk if Left |
 |---------|---------------|------------------|--------------|
 | `/actuator/configprops` exposure | Disabled for runtime services | Keep disabled; if temporarily needed, use `show-values: NEVER` | Exposing config properties can leak OAuth client secrets, database passwords, and connector credentials |
-| `LOGGING_LEVEL_IO_CAMUNDA_MODELER=INFO` | hub | `INFO` | Keeps Web Modeler logging at production-appropriate verbosity |
+| `LOGGING_LEVEL_IO_CAMUNDA_HUB=INFO` | hub | `INFO` | Keeps Hub logging at production-appropriate verbosity |
 | `xpack.security.enabled=true` | elasticsearch | `true` | Basic Auth required on Elasticsearch API |
 
 ### Data Durability Settings
@@ -955,7 +955,7 @@ Management endpoint policy: expose only the endpoints needed for health checks a
 3. **Replace self-signed TLS certs** with certificates from a corporate CA or Let's Encrypt
 4. **Set Elasticsearch-backed index replicas to `1`** for the Zeebe exporter and Optimize only when Elasticsearch has at least two data nodes
 5. **Keep `/actuator/configprops` disabled** for all runtime services; if temporarily enabled for debugging, set `show-values: NEVER` and restrict access to localhost.
-6. **Keep `LOGGING_LEVEL_IO_CAMUNDA_MODELER`** at `INFO`
+6. **Keep `LOGGING_LEVEL_IO_CAMUNDA_HUB`** at `INFO`
 7. **Consider multi-node Elasticsearch** for HA production deployments
 
 ---

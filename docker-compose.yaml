@@ -187,6 +187,13 @@ services:
       CAMUNDA_IDENTITY_CLIENT_SECRET: ${OPTIMIZE_CLIENT_SECRET:?OPTIMIZE_CLIENT_SECRET is required}
       CAMUNDA_IDENTITY_AUDIENCE: optimize-api
       CAMUNDA_IDENTITY_BASE_URL: http://identity:8084
+      # 8.10 classifies bearer tokens as user or M2M client and checks the
+      # Optimize permission only for users. Without client-id-claim no token
+      # counts as M2M, so API clients without an Optimize permission get 403.
+      # username-claim is deliberately NOT set: Optimize derives the user ID
+      # from it (default `sub`, as in 8.9). Switching it to preferred_username
+      # would change the owner IDs of existing collections and reports.
+      CAMUNDA_SECURITY_AUTHENTICATION_OIDC_CLIENTIDCLAIM: client_id
       # Trust X-Forwarded headers from reverse proxy (required for correct URL construction behind HTTPS proxy)
       SERVER_FORWARD_HEADERS_STRATEGY: framework
       # Management endpoints
@@ -518,8 +525,9 @@ services:
 
   mailpit:
     # If you want to use your own SMTP server, you can remove this container
-    # and configure RESTAPI_MAIL_HOST, RESTAPI_MAIL_PORT, REST_API_MAIL_USER,
-    # REST_API_MAIL_PASSWORD and RESTAPI_MAIL_ENABLE_TLS in hub
+    # and configure SPRING_MAIL_HOST, SPRING_MAIL_PORT, SPRING_MAIL_USERNAME,
+    # SPRING_MAIL_PASSWORD and SPRING_MAIL_PROPERTIES_MAIL_SMTP_STARTTLS_ENABLE
+    # in hub (Hub 8.10 still accepts the legacy RESTAPI_MAIL_* keys until 8.12)
     container_name: mailpit
     image: axllent/mailpit:${MAILPIT_VERSION}
     ports:
@@ -594,7 +602,7 @@ services:
       start_period: 600s
     environment:
       JAVA_OPTIONS: -Xmx1280m
-      LOGGING_LEVEL_IO_CAMUNDA_MODELER: INFO
+      LOGGING_LEVEL_IO_CAMUNDA_HUB: INFO
       LOGGING_LEVEL_ORG_HIBERNATE_ORM_CONNECTIONS_POOLING: WARN
       CAMUNDA_IDENTITY_BASEURL: http://identity:8084/
       SPRING_DATASOURCE_URL: jdbc:postgresql://web-modeler-db:5432/${WEBMODELER_DB_NAME:?WEBMODELER_DB_NAME is required}

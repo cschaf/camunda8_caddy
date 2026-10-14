@@ -4,12 +4,12 @@ Leitfaden für dieses Docker-Compose-Projekt. Er beschreibt den **im Branch `fea
 
 | | |
 |---|---|
-| Stand | 25.09.2026 |
+| Stand | 14.10.2026 (GA-Switch) |
 | Ausgangsversion | Camunda 8.9.19 (Connectors 8.9.10, Optimize 8.9.19, Web Modeler 8.9.8, Console 8.9.104, Identity 8.9.9) |
-| Zielversion | Camunda 8.10.x. GA laut Camunda am **13.10.2026**. Der Branch nutzt bis dahin die Release Candidates `8.10.0-rc2` (Hub `8.10-rc1`). |
-| Getestet | Lokal mit RC-Images: frischer Aufbau, Hub-DB-Migration, Optimize-Schema-Upgrade und Identity-Rollen-Provisionierung auf einem 8.9-Realm (Details in [Kapitel 8](#8-testergebnisse-lokal-rc-images)) |
+| Zielversion | **Camunda 8.10.4** (Orchestration, Optimize), Connectors **8.10.0**, Hub/Hub-WebSockets **8.10.2**, Identity **8.10.1**, Elasticsearch **8.19.23**; Keycloak bleibt `quay-26.6.4`. Entspricht dem Upstream-Stand `camunda-distributions/docker-compose/versions/camunda-8.10` vom 14.10.2026 (siehe [3.1](#31-ga-switch-am-14102026)). |
+| Getestet | Lokal mit RC-Images: frischer Aufbau, Hub-DB-Migration, Optimize-Schema-Upgrade und Identity-Rollen-Provisionierung auf einem 8.9-Realm (Details in [Kapitel 8](#8-testergebnisse-lokal-rc-images)). **Mit den GA-Images bisher nur statisch geprüft** (`docker compose config` für alle Stages); Runtime-Test und Restore-Drill auf GA stehen aus (9.1). |
 
-> **Das Upgrade bestehender Umgebungen geht nur auf ein GA-Release.** Zeebe verweigert die State-Migration auf eine Pre-Release-Version (`Cannot upgrade to or from a pre-release version`). Empfehlung: nicht vor `8.10.1` produktiv gehen und das Upgrade vorher per Restore-Drill mit einem Prod-Backup proben.
+> **Das Upgrade bestehender Umgebungen geht nur auf ein GA-Release.** Zeebe verweigert die State-Migration auf eine Pre-Release-Version (`Cannot upgrade to or from a pre-release version`). Der Branch pinnt jetzt GA-Tags. Mindestens `8.10.4` verwenden: 8.10.0 bis 8.10.3 haben bekannte Auth-Fehler (Claims bei benannten OIDC-Providern, Physical Tenants mit mehreren IdPs), die erst 8.10.4 behebt. Das Upgrade vorher per Restore-Drill mit einem Prod-Backup proben.
 
 ---
 
@@ -35,16 +35,16 @@ Leitfaden für dieses Docker-Compose-Projekt. Er beschreibt den **im Branch `fea
 | 1 | **Camunda Hub ersetzt Web Modeler und Console** (`camunda/hub`, `camunda/hub-websockets`) | Die Services `console`, `web-modeler-restapi` und `web-modeler-websockets` entfallen. Neu sind `hub` und `hub-websockets`. | ✅ |
 | 2 | Hub migriert die **Web-Modeler-Datenbank** beim ersten Start per Flyway. Das ist **nicht rückwärtskompatibel**. | Vorher ist ein Backup Pflicht. Ein Rollback geht nur per Restore. Beim Umbau werden Dateien ohne Process Application in „`<Projekt> - General`“ verschoben. | ✅ (DB/Volume bleiben erhalten) |
 | 3 | Die Console-Konfiguration entfällt. Cluster werden in Hub unter `camunda.hub.clusters` registriert. | `.console/application.yaml.template` wird ersetzt durch `.hub/application.yaml`. Das Rendern in den Start-Skripten entfällt. | ✅ |
-| 4 | Neue Management-Identity-Rollen `Hub`, `Hub Admin`, `Analyst` und `DevOps` (Nachfolger von `Console`); neue Permissions `admin:clusters`, `admin:catalog` und `admin:bi` | Die Rollen werden automatisch angelegt, **aber Bestandsbenutzern nicht automatisch zugewiesen** (siehe 4.9). | ✅ + manueller Schritt |
+| 4 | Neue Management-Identity-Rollen `Hub`, `Hub Admin`, `Analyst` und `DevOps` (Nachfolger von `Console`); neue Permissions `admin:clusters`, `admin:catalog` und `admin:bi` | Die Rollen werden automatisch angelegt, aber Bestandsbenutzern nicht zugewiesen. Laut Camunda behalten `Web Modeler`/`Web Modeler Admin` dieselben Rechte wie `Hub`/`Hub Admin`, und `Console` bekommt `admin:clusters`. Mit Identity 8.9.9 war Letzteres im Test **nicht** der Fall, deshalb steht Identity jetzt auf 8.10.1 (siehe 4.9). | ✅ + Prüfung |
 | 5 | Zeebe: RocksDB-Speicherstrategie `PARTITION` → `FRACTION`; ES-Exporter-Replicas 0 → 1 | Wir pinnen `PARTITION`. Die Replicas stehen bereits explizit auf `0`. | ✅ |
 | 6 | Zeebe blockiert Upgrades von und zu Pre-Release-Versionen | Nur GA-zu-GA-Upgrades sind möglich. | Hinweis |
-| 7 | Optimize authentifiziert über die Camunda Security Library (CSL). Die `CAMUNDA_OPTIMIZE_IDENTITY_*`-Keys sind deprecated und entfallen in 8.11. | Die Legacy-Keys funktionieren in 8.10 weiter (werden intern übersetzt). `security.auth.cookie.same-site` entfällt ersatzlos. | ✅ / TODO vor 8.11 |
+| 7 | Optimize authentifiziert über die Camunda Security Library (CSL). Die `CAMUNDA_OPTIMIZE_IDENTITY_*`-Keys sind deprecated (Entfernung in einem späteren Release). Bearer-Tokens werden als User oder M2M-Client klassifiziert, die Optimize-Permission wird nur bei Usern geprüft. Der statische `api.accessToken` wird nicht mehr akzeptiert. | Die Legacy-Keys funktionieren in 8.10 weiter (werden intern übersetzt). `security.auth.cookie.same-site` entfällt ersatzlos. `api.accessToken` / `OPTIMIZE_API_ACCESS_TOKEN` wird hier nicht genutzt. | ✅ `client-id-claim: client_id` gesetzt, `username-claim` bewusst **nicht** (siehe 2.3) / TODO Key-Migration |
 | 8 | Optimize zerlegt Objekt-Variablen standardmäßig nicht mehr in Einzelfelder. | Reports auf `obj.feld` würden brechen. | ✅ 8.9-Verhalten beibehalten (`includeObjectVariableValue: true`) |
 | 9 | Connectors: Secret-Filter-Default `DISABLED` → `STRICT`; JWT-Webhooks verlangen `iss`/`aud`/`exp`; AWS SDK v2 | Aufgelöst werden nur noch Secrets, die im Connector-Template deklariert sind. | ✅ `STRICT` explizit gesetzt, Test nötig |
 | 10 | Operate-/Tasklist-v1-API, Tasklist-V1-Mode, Zeebe Java Client und Zeebe Process Test **entfernt** | Externe Worker und Clients müssen den Camunda Java Client und die v2-API nutzen. | Außerhalb des Repos (siehe 2.2) |
-| 11 | Hub: `camunda.modeler.*` → `camunda.hub.*`, `PLAY_ENABLED` → `TEST_MODE_ENABLED`, Komponententyp `orchestrationIdentity` → `admin`; `console`/`keycloak` sind als Typ ungültig | Wird in 8.10 noch übersetzt (Deprecation-Warnung). | ✅ neue Keys verwendet |
+| 11 | Hub: `camunda.modeler.*` → `camunda.hub.*`, `PLAY_ENABLED` → `TEST_MODE_ENABLED`, Komponententyp `orchestrationIdentity` → `admin`; `console`/`keycloak` sind als Typ ungültig | Legacy-Keys werden in 8.10 noch übersetzt (Deprecation-Warnung), Entfernung laut Camunda in **8.12**. Der Logger heißt jetzt `io.camunda.hub`. | ✅ Cluster-Keys und Logger neu; Env-Variablen (`RESTAPI_*`, `OAUTH2_*`, `CLIENT_PUSHER_*`) noch Legacy (siehe 9.2) |
 | 12 | Neu (optional): zentrale Secrets (`=camunda.secrets.NAME`), Physical Tenants, Business ID | Nur Opt-in. Die bestehende Konfiguration wird zum `default`-Tenant. | ✅ `./secrets` gemountet |
-| 13 | Unterstützt: Elasticsearch 8.19+ / 9.4+, PostgreSQL ≥ 15 | ES 8.19.22 und PostgreSQL 15 sind in Ordnung. | ✅ |
+| 13 | Unterstützt: Elasticsearch 8.19+ / 9.4+, PostgreSQL ≥ 15 | ES 8.19.23 und PostgreSQL 15 sind in Ordnung. | ✅ |
 
 Nicht betroffen: Helm v4, Bitnami-Keycloak (bereits `camunda/keycloak`), die Einzel-Images `camunda/zeebe`, `camunda/operate` und `camunda/tasklist` (wir nutzen `camunda/camunda`).
 
@@ -54,7 +54,7 @@ Nicht betroffen: Helm v4, Bitnami-Keycloak (bereits `camunda/keycloak`), die Ein
 
 ### 2.1 Versionsstand
 
-- Upgrades sind nur Minor für Minor möglich (8.9 → 8.10). **8.9.19 ist ein gültiger Ausgangspunkt.** Camunda empfiehlt den jeweils neuesten 8.9-Patch; upstream war am 25.09. bei 8.9.21. Einspielen kann man ihn vorher optional als eigenes Patch-Update.
+- Upgrades sind nur Minor für Minor möglich (8.9 → 8.10). **8.9.19 ist ein gültiger Ausgangspunkt.** Camunda empfiehlt den jeweils neuesten 8.9-Patch (Docker Hub am 14.10.2026: `8.9.23`). Für maximale Sicherheit vorher auf `master` ein eigenes Patch-Update 8.9.19-secfix → 8.9.23 einspielen und einen Tag laufen lassen. Vorher in den Release Notes 8.9.20 bis 8.9.23 prüfen, dass der FEEL-RCE-Fix aus `8.9.19-secfix` enthalten ist. Pflicht ist das nicht.
 - **Zeebe-Datenstand prüfen:** Der Stand im Volume kann älter sein als `.env` suggeriert. Lokal war er z. B. `8.9.6`. Das ist für 8.9 → 8.10 unkritisch.
 - Das Ziel muss ein GA-Tag sein (siehe Hinweis oben).
 
@@ -78,6 +78,8 @@ Leitfäden: [Migrate to Camunda API](https://docs.camunda.io/docs/next/apis-tool
 | RocksDB-Speicherstrategie | `PARTITION` (wie 8.9) | Bewusst auf `FRACTION` wechseln (Camunda-Sizing-Doku). |
 | Hub-URL | `https://webmodeler.{HOST}`; `console.{HOST}` leitet per 302 um | Eine neue Subdomain `hub.{HOST}` erfordert Hosts, Caddy, `RESTAPI_SERVER_URL`, `CLIENT_PUSHER_HOST`, Identity `root-url` **und** Keycloak-Redirect-URIs. |
 | Variablennamen | `WEBMODELER_*` bleiben (keine Umbenennung zu `HUB_*`) | Als späteres Refactoring. Die Werte müssen dabei 1:1 übernommen werden (DB-Passwort!). |
+| Optimize-Token-Claims | `client-id-claim: client_id`; `username-claim` nicht gesetzt (Default `sub`) | Optimize 8.10 leitet die **User-ID** aus `username-claim` ab. Die Camunda-Doku schlägt für Keycloak `preferred_username` vor, das würde aber die Owner-IDs bestehender Collections/Reports ändern. Nur nach einem Restore-Drill umstellen, der zeigt, dass Bestandsnutzer ihre Collections behalten. |
+| Produktions-Policy in Hub | Cluster-Tag = `DISPLAY_STAGE`/`STAGE` | Hub behandelt nur Cluster mit dem Tag `prod` als Produktionsumgebung (Deployment-Policy, Snapshot-Freigabe). Auf der Prod-Umgebung ggf. `DISPLAY_STAGE=prod` setzen oder einen zusätzlichen Tag in `.hub/application.yaml` ergänzen. Achtung: In 8.10 darf jeder mit Deploy-Recht auf `prod` deployen. Eine Pflicht-Freigabe gibt es nur über die Projekt-Einstellung „Require approval of project snapshots“. |
 
 ### 2.4 Ressourcen
 
@@ -89,23 +91,46 @@ Leitfäden: [Migrate to Camunda API](https://docs.camunda.io/docs/next/apis-tool
 
 ## 3. Branch auf GA umstellen (vor dem ersten Produktiv-Upgrade)
 
-Sobald 8.10 GA ist, im Branch:
+### 3.1 GA-Switch am 14.10.2026
+
+Umgesetzt im Branch:
+
+| Image | RC-Stand | GA-Stand | Quelle |
+|---|---|---|---|
+| `camunda/camunda` | `8.10.0-rc2` | **`8.10.4`** | Upstream #1240 |
+| `camunda/optimize` | `8.10.0-rc2` | **`8.10.4`** | Upstream #1241 |
+| `camunda/connectors-bundle` | `8.10.0-rc2` | **`8.10.0`** (einziger GA-Tag) | Upstream #1218 |
+| `camunda/hub`, `camunda/hub-websockets` | `8.10-rc1` | **`8.10.2`** | Upstream #1164 |
+| `camunda/identity` | `8.9.9` | **`8.10.1`** | Upstream #1239 |
+| `elasticsearch` | `8.19.22` | **`8.19.23`** | Upstream #1174 |
+| `camunda/keycloak` | `quay-26.6.4` | unverändert (wie Upstream; `quay-26.8.x` ist neu, gehört aber nicht zu diesem Upgrade) | |
+
+Weitere Änderungen aus dem Abgleich mit Upstream und der offiziellen 8.9→8.10-Doku:
+
+- Optimize: `CAMUNDA_SECURITY_AUTHENTICATION_OIDC_CLIENTIDCLAIM=client_id` (siehe 2.3).
+- Hub/prod-Stage: `LOGGING_LEVEL_IO_CAMUNDA_MODELER` → `LOGGING_LEVEL_IO_CAMUNDA_HUB` (der alte Logger-Name greift in 8.10 nicht mehr).
+- Mailpit-Kommentar auf die neuen `SPRING_MAIL_*`-Keys umgestellt.
+- Hotfix-Registry (`hotfixes-ee/camunda`) am 14.10.2026 geprüft: nur `8.9.19-secfix`, `8.8.37-secfix`, `8.10.0-alpha5-secfix`, **kein 8.10-GA-Hotfix**. Deshalb sind keine `*_IMAGE`-Overrides nötig.
+- Upstream-Commits seit dem RC-Stand, die **nicht** übernommen wurden, weil sie hier schon umgesetzt sind oder bewusst später kommen: `camunda.modeler` → `camunda.hub` (#1105, hier schon so), `admin:clusters`-Permission (#968, schon vorhanden), zentrale Secrets (#1014, schon gemountet), Pusher-Env `CAMUNDA_HUB_PUSHER_*` (#1105, bewusst noch Legacy, siehe 9.2).
+- Laut Doku-Abgleich bereits erfüllt: ES-Exporter `number-of-replicas: 0`, `includeObjectVariableValue: true`, RocksDB `PARTITION`, `optimize-mode-enabled: true`, keine `CAMUNDA_CONSOLE_*`-Variablen, keine Komponententypen `console`/`keycloak`.
+
+### 3.2 Checkliste (für künftige Patch-Switches)
 
 0. **Vorab-Check (Pre-Release-Pins finden).** Nach dem Switch muss dieser Befehl leer sein:
    ```bash
    grep -nE '_(VERSION|IMAGE)=.*(rc[0-9]|alpha|beta|SNAPSHOT)' .env .env.example
    ```
-   Registry-Stand zum 28.09.2026 (Docker Hub): `camunda/camunda` und `camunda/optimize` bis **`8.10.0-rc3`**, `camunda/hub`, `camunda/hub-websockets` und `camunda/connectors-bundle` bis **`8.10.0-rc2`**; **`camunda/identity:8.10.0` ist bereits verfuegbar** (der Branch pinnt noch `8.9.9`). Die GA-Tags der uebrigen Repos folgen laut Camunda am 13.10.2026.
+   Stand 14.10.2026: leer ✅
 
 1. **Tags ermitteln** mit `bash scripts/registry-info.sh` (Default-Modus listet `camunda`, `optimize`, `identity`, `connectors-bundle`, `hub`, `hub-websockets`, `keycloak`) oder über Docker Hub.
 2. **`.env` und `.env.example`** anpassen:
    ```dotenv
-   CAMUNDA_VERSION=8.10.x
-   CAMUNDA_CONNECTORS_VERSION=8.10.x
-   CAMUNDA_OPTIMIZE_VERSION=8.10.x
-   CAMUNDA_HUB_VERSION=8.10.x          # Hub-Tag prüfen; RC-Tags hießen z. B. "8.10-rc1"
-   CAMUNDA_IDENTITY_VERSION=8.9.9      # camunda/identity:8.10.0 ist seit 28.09.2026 verfuegbar - vor dem Switch gegen 8.9.9 pruefen
-   ELASTIC_VERSION=8.19.22             # oder aktueller 8.19.x-Patch
+   CAMUNDA_VERSION=8.10.4
+   CAMUNDA_CONNECTORS_VERSION=8.10.0
+   CAMUNDA_OPTIMIZE_VERSION=8.10.4
+   CAMUNDA_HUB_VERSION=8.10.2          # eigene Patch-Linie, immer vollständiges SemVer (nicht "8.10")
+   CAMUNDA_IDENTITY_VERSION=8.10.1
+   ELASTIC_VERSION=8.19.23
    ```
 3. **Secfix-/Hotfix-Images:** Mit `scripts/registry-info.sh --project hotfixes-ee` prüfen, ob es 8.10-Hotfix-Images gibt. Falls ja, `CAMUNDA_IMAGE`, `CAMUNDA_CONNECTORS_IMAGE`, `HUB_IMAGE` und `HUB_WEBSOCKETS_IMAGE` in `.env` setzen.
 4. **Release Notes des GA-Patches** gegen Kapitel 1 und 9 abgleichen. Besonders prüfen: ob Hub die Legacy-OIDC-Keys noch übersetzt, ob sich Property-Namen geändert haben, und das Upstream-Compose `camunda-distributions/docker-compose/versions/camunda-8.10` auf neue Commits.
@@ -159,8 +184,8 @@ Während der Hub-Migration darf kein Web-Modeler-8.9-Container mehr laufen.
 
 | Aktion | Variable |
 |---|---|
-| **Neu (Pflicht)** | `CAMUNDA_HUB_VERSION=<GA-Tag>`. Ohne diesen Wert bricht Compose mit `CAMUNDA_HUB_VERSION is required` ab. |
-| Aktualisieren | `CAMUNDA_VERSION`, `CAMUNDA_CONNECTORS_VERSION`, `CAMUNDA_OPTIMIZE_VERSION`, `ELASTIC_VERSION` (ggf. `CAMUNDA_IDENTITY_VERSION`) |
+| **Neu (Pflicht)** | `CAMUNDA_HUB_VERSION=8.10.2`. Ohne diesen Wert bricht Compose mit `CAMUNDA_HUB_VERSION is required` ab. |
+| Aktualisieren | `CAMUNDA_VERSION=8.10.4`, `CAMUNDA_CONNECTORS_VERSION=8.10.0`, `CAMUNDA_OPTIMIZE_VERSION=8.10.4`, `CAMUNDA_IDENTITY_VERSION=8.10.1`, `ELASTIC_VERSION=8.19.23` |
 | Entfernen | `CAMUNDA_WEB_MODELER_VERSION`, `CAMUNDA_CONSOLE_VERSION`, `CAMUNDA_OPERATE_VERSION`, `CAMUNDA_TASKLIST_VERSION` (werden nicht mehr genutzt) |
 | Entfernen/ersetzen | 8.9-Secfix-Overrides `CAMUNDA_IMAGE`, `CAMUNDA_CONNECTORS_IMAGE`, `WEBMODELER_RESTAPI_IMAGE`, `WEBMODELER_WEBSOCKETS_IMAGE`. Hotfix-Overrides heißen jetzt `HUB_IMAGE` / `HUB_WEBSOCKETS_IMAGE`. |
 | Unverändert | `WEBMODELER_MAIL_FROM_ADDRESS`, `STAGE`, `DISPLAY_STAGE` (wird zum Hub-Cluster-Tag), `HOST`, TLS-Pfade |
@@ -201,19 +226,20 @@ Während des Starts die Logs beobachten:
 |---|---|---|
 | `orchestration` | `Starting processing N migration tasks` und kein `Cannot upgrade … pre-release`; Health `UP` | `docker logs -f orchestration`, `curl -s http://127.0.0.1:9600/actuator/health/status` |
 | `hub` | `Successfully applied N migrations to schema "public"` und `Started ModelerSelfManagedApp`; kein `APPLICATION FAILED TO START` | `docker logs -f hub` |
-| `optimize` | healthy | `docker logs optimize` |
+| `optimize` | healthy; Deprecation-WARNs zu `CAMUNDA_OPTIMIZE_IDENTITY_*` sind erwartet | `docker logs optimize` |
+| `identity` | Rollen/Permissions angelegt, keine Fehler beim Keycloak-Init | `docker logs identity` |
 
 Die Hub-Healthcheck-`start_period` beträgt 600 s. Autoheal startet Hub also während einer langen Migration nicht neu.
 
 ### 4.9 Identity/Keycloak nacharbeiten (manuell!)
 
-Getestet auf einem echten 8.9-Realm (8.3):
+Getestet auf einem echten 8.9-Realm (8.3), damals noch mit **Identity 8.9.9**:
 
 - ✅ Identity legt die Rollen `Hub`, `Hub Admin`, `Analyst` und `DevOps` sowie die Permissions `admin:clusters`, `admin:catalog` und `admin:bi` automatisch an.
-- ⚠️ **Bestandsbenutzer behalten nur ihre alten Rollen** (`Web Modeler`, `Web Modeler Admin`, `Console`). Die alte Rolle `Console` bekommt dabei **kein** `admin:clusters`.
+- ⚠️ **Bestandsbenutzer behalten nur ihre alten Rollen** (`Web Modeler`, `Web Modeler Admin`, `Console`). Die alte Rolle `Console` bekam mit 8.9.9 **kein** `admin:clusters`.
 - Die alten Keycloak-Clients `console` und `console-api` bleiben stehen.
 
-Deshalb im Keycloak-Admin (`https://keycloak.{HOST}/auth/` → Realm `camunda-platform`) oder in Identity (`https://identity.{HOST}`):
+Laut offizieller 8.10-Doku gilt mit Identity 8.10: `Web Modeler`/`Web Modeler Admin` funktionieren unverändert weiter (gleiche Rechte wie `Hub`/`Hub Admin`), und `Console` erhält `admin:clusters` automatisch. Der Branch nutzt jetzt Identity 8.10.1. **Prüfen** (Identity → Roles → `Console` → Permissions), ob `admin:clusters` gesetzt ist. Falls nicht, oder wenn ihr direkt auf die neuen Rollennamen umstellen wollt, im Keycloak-Admin (`https://keycloak.{HOST}/auth/` → Realm `camunda-platform`) oder in Identity (`https://identity.{HOST}`):
 
 | Bisherige Rolle | Zusätzlich zuweisen |
 |---|---|
@@ -370,9 +396,9 @@ README, `docs/update_guide.md`, `project_configuration.md`, `monitoring.md`, `st
 6. Hub-Cluster-Übersicht: `camunda-platform` und `management` mit allen Komponenten grün, Links zeigen auf Proxy-URLs, Tag = `DISPLAY_STAGE`.
 7. Aus Hub deployen und eine Instanz starten; Test-Mode funktioniert.
 8. Operate, Tasklist und Admin: laufende Instanzen aus 8.9 sind sichtbar und laufen weiter.
-9. Optimize: Login, bestehende Reports liefern Daten (insbesondere Objekt-Variablen).
+9. Optimize: Login, bestehende Reports liefern Daten (insbesondere Objekt-Variablen). **Bestandsnutzer sehen ihre eigenen Collections/Reports** (User-ID weiter aus `sub`). Falls ein M2M-Client die Optimize-API nutzt: Ein Aufruf mit Client-Credentials-Token liefert kein 403.
 10. Connectors: eine Instanz mit Secret-Nutzung (Outbound) und ein Inbound-/Webhook-Connector.
-11. Rollen: Ein Benutzer mit `DevOps` sieht das Cluster-Management, ein Benutzer nur mit `Hub` nicht.
+11. Rollen: Ein Benutzer mit `DevOps` sieht das Cluster-Management, ein Benutzer nur mit `Hub` nicht. Ein Bestandsbenutzer mit der alten Rolle `Console` sieht es ebenfalls (`admin:clusters`, 4.9).
 12. Externe Worker und Clients verbinden sich (gRPC über `zeebe.{HOST}`, REST v2).
 13. `bash scripts/backup.sh` und `restore.sh --verify` auf dem neuen Stand.
 
@@ -409,9 +435,10 @@ Umgebung: Windows, Docker Desktop (Hyper-V, 8,3 GB VM-RAM), `stages/dev.yaml`, I
 
 | Punkt | Status |
 |---|---|
-| GA-Tags für `camunda`, `connectors-bundle`, `optimize`, `hub`, `hub-websockets` eintragen | Offen (GA am 13.10.2026). Stand 28.09.2026: `camunda`/`optimize` bis `8.10.0-rc3`, `hub`/`hub-websockets`/`connectors-bundle` bis `8.10.0-rc2` |
-| Gibt es ein verifiziertes `camunda/identity:8.10.x`? | Teilweise: `camunda/identity:8.10.0` ist seit 28.09.2026 auf Docker Hub verfügbar; der Branch pinnt noch `8.9.9`. Vor dem GA-Switch mit Release Notes/Restore-Drill prüfen, dann ggf. bumpen |
-| 8.10-Hotfix-/Secfix-Images | Offen (`scripts/registry-info.sh`) |
+| GA-Tags für `camunda`, `connectors-bundle`, `optimize`, `hub`, `hub-websockets` eintragen | ✅ 14.10.2026 (3.1) |
+| Gibt es ein verifiziertes `camunda/identity:8.10.x`? | ✅ `8.10.1` (wie Upstream). Im Restore-Drill prüfen, dass die Rolle `Console` `admin:clusters` hat (4.9) |
+| 8.10-Hotfix-/Secfix-Images | ✅ Am 14.10.2026 keine vorhanden. Vor dem Prod-Termin erneut prüfen: `bash scripts/registry-info.sh -P hotfixes-ee -r camunda` |
+| Runtime-Test mit GA-Images (frischer Aufbau und Upgrade eines 8.9-Stands) | Offen: Der GA-Switch ist bisher nur per `docker compose config` validiert. Besonders prüfen: Hub 8.10.2 übersetzt die Legacy-Env-Keys weiterhin (Log `Deprecated Camunda Hub configuration keys detected`, kein Startfehler); Optimize-Login und Collections von Bestandsnutzern |
 | Restore-Drill mit Prod-Backup auf GA-Images (Zeebe + Hub + Optimize an Echtdaten, Laufzeit messen) | Offen |
 | Browser-Login in Hub inklusive Gotcha 13 (Chrome-Iframe-Session-Check) | Offen, bisher nur per `curl` geprüft |
 | Hub-Cluster-Übersicht und Deploy aus Hub im Browser prüfen | Offen |
@@ -422,8 +449,9 @@ Umgebung: Windows, Docker Desktop (Hyper-V, 8,3 GB VM-RAM), `stages/dev.yaml`, I
 | `camunda.data.primary-storage.snapshot-period` | ✅ erledigt: auf `camunda.data.snapshot-period` verschoben (siehe 6.4). |
 | `CLAUDE.md` aktualisieren | Offen (siehe 6.8) |
 
-### 9.2 Vor 8.11 (Deprecations aus 8.10)
+### 9.2 Deprecations aus 8.10 (Hub: vor 8.12, Optimize: späteres Release)
 
+- **Hub-Env-Keys** auf die neuen Namen umstellen (Legacy-Support endet laut Camunda mit 8.12): `RESTAPI_PUSHER_*` → `CAMUNDA_HUB_PUSHER_*` (z. B. `CAMUNDA_HUB_PUSHER_APPID`), `CLIENT_PUSHER_*` → `CAMUNDA_HUB_PUSHER_CLIENT_*`, `OAUTH2_CLIENT_ID` → `CAMUNDA_HUB_OAUTH2_CLIENTID`, `RESTAPI_OAUTH2_TOKEN_ISSUER_BACKEND_URL` → `CAMUNDA_IDENTITY_ISSUERBACKENDURL`, `RESTAPI_MAIL_*` → `SPRING_MAIL_*`, `TEST_MODE_ENABLED` → `CAMUNDA_HUB_FEATURE_TESTMODEENABLED`. Upstream (camunda-distributions #1105) hat das bereits umgestellt. Bewusst **nicht** zusammen mit dem Minor-Upgrade, damit der in den RC-Tests verifizierte Stand gleich bleibt.
 - **Hub-OIDC** auf `CAMUNDA_SECURITY_AUTHENTICATION_OIDC_*` umstellen: `ISSUERURI`, `JWKSETURI` (intern), `CLIENTID=web-modeler`, `AUDIENCES=web-modeler-api,web-modeler-public-api`. Der Legacy-Key `user-id-claim` war nicht gesetzt, deshalb `USERNAMECLAIM` nur bewusst setzen, damit sich die User-Zuordnung in der Hub-DB nicht ändert.
 - **Optimize-OIDC** umstellen: `CAMUNDA_OPTIMIZE_IDENTITY_ISSUER_URL/CLIENTID/CLIENTSECRET/AUDIENCE` → `CAMUNDA_SECURITY_AUTHENTICATION_OIDC_ISSUERURI/CLIENTID/CLIENTSECRET/AUDIENCES` plus `JWKSETURI`, `AUTHORIZATIONURI`, `TOKENURI` (Browser- und Backend-URLs getrennt wie bei Orchestration); `CAMUNDA_OPTIMIZE_IDENTITY_BASE_URL` bleibt. Aus dem Container ist nur `http://keycloak:18080` erreichbar, deshalb keine Discovery über den öffentlichen Issuer.
 - Hub-Deprecation-Warnungen (`Deprecated Camunda Hub configuration keys detected`) im Log prüfen und die restlichen Keys auf `camunda.hub.*` bzw. `CAMUNDA_HUB_*` umstellen.
