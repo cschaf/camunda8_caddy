@@ -33,15 +33,15 @@ This stack deploys a full Camunda 8.9 self-managed platform with:
 
 | Component | Image | Purpose |
 |-----------|-------|---------|
-| **Orchestration** | `camunda/camunda:8.9.6` | Zeebe broker + Operate + Tasklist in one container |
+| **Orchestration** | `camunda/camunda:8.9.23` | Zeebe broker + Operate + Tasklist in one container |
 | **Elasticsearch** | `docker.elastic.co/elasticsearch/elasticsearch:8.19.11` | Optimize analytics storage (Optimize requires ES/OpenSearch) |
 | **camunda-db** | `postgres:${POSTGRES_VERSION}` | Camunda core operational data (Zeebe, Operate, Tasklist) |
-| **Identity** | `camunda/identity:8.9.9` | Centralized identity, OIDC provider integration, role management |
+| **Identity** | `camunda/identity:8.9.11` | Centralized identity, OIDC provider integration, role management |
 | **Keycloak** | `camunda/keycloak:quay-26.6.4` | OIDC identity provider, realm/client setup, user authentication |
-| **Optimize** | `camunda/optimize:8.9.19` | Process analytics and optimization |
-| **Connectors** | `camunda/connectors-bundle:8.9.10` | Outbound integrations and webhooks |
-| **Web Modeler** | `camunda/web-modeler-restapi:8.9.8` | BPMN process modeling (REST API serves UI + WebSockets) |
-| **Console** | `camunda/console:8.9.104` | Cluster overview and management UI |
+| **Optimize** | `camunda/optimize:8.9.23` | Process analytics and optimization |
+| **Connectors** | `camunda/connectors-bundle:8.9.14` | Outbound integrations and webhooks |
+| **Web Modeler** | `camunda/web-modeler-restapi:8.9.10` | BPMN process modeling (REST API serves UI + WebSockets) |
+| **Console** | `camunda/console:8.9.126` | Cluster overview and management UI |
 | **PostgreSQL** (×2) | `postgres:15-alpine3.22` | Identity/Keycloak DB + Web Modeler DB |
 | **Caddy** | `caddy:2.11.2@sha256:25cdc846626b62d05f6b633b9b40c2c9f6ef89b515dc76133cefd920f7dbe562` | Reverse proxy with automatic HTTPS and subdomain routing |
 | **Autoheal** | `willfarrell/autoheal@sha256:75c28b0020543e8eb49fe6514d012e7d2691f095dd622309d045da8647c8bb83` | Restarts labeled containers when Docker health checks mark them as unhealthy |
