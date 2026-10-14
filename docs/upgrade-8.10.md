@@ -1,11 +1,11 @@
-# Migration Camunda 8.9.19 → 8.10.x
+# Migration Camunda 8.9.x → 8.10.x
 
 Leitfaden für dieses Docker-Compose-Projekt. Er beschreibt den **im Branch `feature/camunda-8-10` umgesetzten Stand**, das Runbook für bestehende Umgebungen und alle Erkenntnisse aus den lokalen Tests.
 
 | | |
 |---|---|
 | Stand | 14.10.2026 (GA-Switch) |
-| Ausgangsversion | Camunda 8.9.19 (Connectors 8.9.10, Optimize 8.9.19, Web Modeler 8.9.8, Console 8.9.104, Identity 8.9.9) |
+| Ausgangsversion | `master` seit 14.10.2026: Camunda **8.9.23** (Connectors 8.9.14, Optimize 8.9.23, Web Modeler 8.9.10, Console 8.9.126, Identity 8.9.11, ohne secfix-Overrides). Ältere Umgebungen laufen eventuell noch auf 8.9.19-secfix (Connectors 8.9.10, Web Modeler 8.9.8, Console 8.9.104, Identity 8.9.9). |
 | Zielversion | **Camunda 8.10.4** (Orchestration, Optimize), Connectors **8.10.0**, Hub/Hub-WebSockets **8.10.2**, Identity **8.10.1**, Elasticsearch **8.19.23**; Keycloak bleibt `quay-26.6.4`. Entspricht dem Upstream-Stand `camunda-distributions/docker-compose/versions/camunda-8.10` vom 14.10.2026 (siehe [3.1](#31-ga-switch-am-14102026)). |
 | Getestet | Lokal mit RC-Images: frischer Aufbau, Hub-DB-Migration, Optimize-Schema-Upgrade und Identity-Rollen-Provisionierung auf einem 8.9-Realm (Details in [Kapitel 8](#8-testergebnisse-lokal-rc-images)). **Mit den GA-Images bisher nur statisch geprüft** (`docker compose config` für alle Stages); Runtime-Test und Restore-Drill auf GA stehen aus (9.1). |
 
@@ -54,7 +54,8 @@ Nicht betroffen: Helm v4, Bitnami-Keycloak (bereits `camunda/keycloak`), die Ein
 
 ### 2.1 Versionsstand
 
-- Upgrades sind nur Minor für Minor möglich (8.9 → 8.10). **8.9.19 ist ein gültiger Ausgangspunkt.** Camunda empfiehlt den jeweils neuesten 8.9-Patch (Docker Hub am 14.10.2026: `8.9.23`). Für maximale Sicherheit vorher auf `master` ein eigenes Patch-Update 8.9.19-secfix → 8.9.23 einspielen und einen Tag laufen lassen. Vorher in den Release Notes 8.9.20 bis 8.9.23 prüfen, dass der FEEL-RCE-Fix aus `8.9.19-secfix` enthalten ist. Pflicht ist das nicht.
+- Upgrades sind nur Minor für Minor möglich (8.9 → 8.10). Jeder 8.9-Patch ist ein gültiger Ausgangspunkt. Camunda empfiehlt den neuesten 8.9-Patch.
+- **Empfohlener Zwischenschritt:** Jede Umgebung zuerst mit dem `master`-Stand auf **8.9.23** bringen (reines Patch-Update: Backup, `git pull`, secfix-Overrides aus der Server-`.env` entfernen, `start.sh`; das Optimize-Schema wird beim Start aktualisiert) und einige Tage stabil laufen lassen. Erst danach auf 8.10 gehen. Der FEEL-RCE-Fix (GHSA-vx3p-v6cf-vfjw) ist in den öffentlichen Images enthalten: camunda ab 8.9.21 (feel-scala 1.21.1), Connectors ab 8.9.11 (1.22.1) und Web Modeler 8.9.10 (`feel-engine-1.21.1.jar` im Image geprüft). Die `8.9.19-secfix`-Images werden deshalb nicht mehr gebraucht.
 - **Zeebe-Datenstand prüfen:** Der Stand im Volume kann älter sein als `.env` suggeriert. Lokal war er z. B. `8.9.6`. Das ist für 8.9 → 8.10 unkritisch.
 - Das Ziel muss ein GA-Tag sein (siehe Hinweis oben).
 

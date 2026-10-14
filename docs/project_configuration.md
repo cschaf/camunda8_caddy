@@ -33,10 +33,10 @@ This stack deploys a full Camunda 8.9 self-managed platform with:
 
 | Component | Image | Purpose |
 |-----------|-------|---------|
-| **Orchestration** | `camunda/camunda:8.9.6` | Zeebe broker + Operate + Tasklist in one container |
-| **Elasticsearch** | `docker.elastic.co/elasticsearch/elasticsearch:8.19.11` | Optimize analytics storage (Optimize requires ES/OpenSearch) |
+| **Orchestration** | `camunda/camunda:${CAMUNDA_VERSION}` | Zeebe broker + Operate + Tasklist in one container |
+| **Elasticsearch** | `docker.elastic.co/elasticsearch/elasticsearch:${ELASTIC_VERSION}` | Optimize analytics storage (Optimize requires ES/OpenSearch) |
 | **camunda-db** | `postgres:${POSTGRES_VERSION}` | Camunda core operational data (Zeebe, Operate, Tasklist) |
-| **Identity** | `camunda/identity:${CAMUNDA_IDENTITY_VERSION}` (8.9 line) | Centralized identity, OIDC provider integration, role management |
+| **Identity** | `camunda/identity:${CAMUNDA_IDENTITY_VERSION}` | Centralized identity, OIDC provider integration, role management |
 | **Keycloak** | `camunda/keycloak:quay-26.6.4` | OIDC identity provider, realm/client setup, user authentication |
 | **Optimize** | `camunda/optimize:${CAMUNDA_OPTIMIZE_VERSION}` | Process analytics and optimization |
 | **Connectors** | `camunda/connectors-bundle:${CAMUNDA_CONNECTORS_VERSION}` | Outbound integrations and webhooks |
