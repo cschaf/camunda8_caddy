@@ -50,11 +50,11 @@ KEYCLOAK_HOST=keycloak  # Internal container-to-container communication
 
 | Network | Members |
 |---------|---------|
-| `camunda-platform` | orchestration, connectors, optimize, console, elasticsearch, keycloak, identity, web-modeler-restapi* |
+| `camunda-platform` | orchestration, connectors, optimize, console, elasticsearch, keycloak, identity, web-modeler-restapi*, mailpit* |
 | `identity-network` | keycloak, identity, postgres |
 | `web-modeler` | web-modeler-db, mailpit, web-modeler-restapi, web-modeler-websockets |
 
-*web-modeler-restapi is dual-homed on both `web-modeler` and `camunda-platform` to reach orchestration and identity.
+*web-modeler-restapi is dual-homed on both `web-modeler` and `camunda-platform` to reach orchestration and identity. mailpit is dual-homed so Optimize can send alert e-mails.
 
 Container names serve as DNS hostnames within networks. E.g., `keycloak:18080`, `identity:8084`, `orchestration:8080`.
 

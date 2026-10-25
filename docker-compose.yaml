@@ -512,6 +512,7 @@ services:
     # If you want to use your own SMTP server, you can remove this container
     # and configure RESTAPI_MAIL_HOST, RESTAPI_MAIL_PORT, REST_API_MAIL_USER,
     # REST_API_MAIL_PASSWORD and RESTAPI_MAIL_ENABLE_TLS in web-modeler-restapi
+    # as well as the email block in .optimize/environment-config.yaml.example
     container_name: mailpit
     image: axllent/mailpit:${MAILPIT_VERSION}
     ports:
@@ -536,6 +537,8 @@ services:
       start_period: 10s
     networks:
       - web-modeler
+      # Optimize sends alert e-mails via mailpit
+      - camunda-platform
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
