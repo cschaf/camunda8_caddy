@@ -1,4 +1,6 @@
 services:
+  camunda-data-init:
+    container_name: ${COMPOSE_PROJECT_NAME:-camunda-restoredrill}-camunda-data-init
   orchestration:
     container_name: ${COMPOSE_PROJECT_NAME:-camunda-restoredrill}-orchestration
   connectors:
@@ -9,6 +11,8 @@ services:
     container_name: ${COMPOSE_PROJECT_NAME:-camunda-restoredrill}-identity
   postgres:
     container_name: ${COMPOSE_PROJECT_NAME:-camunda-restoredrill}-postgres
+  camunda-db:
+    container_name: ${COMPOSE_PROJECT_NAME:-camunda-restoredrill}-camunda-db
   keycloak:
     container_name: ${COMPOSE_PROJECT_NAME:-camunda-restoredrill}-keycloak
   elasticsearch:
@@ -19,8 +23,6 @@ services:
     container_name: ${COMPOSE_PROJECT_NAME:-camunda-restoredrill}-mailpit
   web-modeler-restapi:
     container_name: ${COMPOSE_PROJECT_NAME:-camunda-restoredrill}-web-modeler-restapi
-  web-modeler-webapp:
-    container_name: ${COMPOSE_PROJECT_NAME:-camunda-restoredrill}-web-modeler-webapp
   web-modeler-websockets:
     container_name: ${COMPOSE_PROJECT_NAME:-camunda-restoredrill}-web-modeler-websockets
   console:

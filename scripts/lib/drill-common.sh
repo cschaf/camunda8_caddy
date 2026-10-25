@@ -68,46 +68,46 @@ generate_drill_env() {
 services:
   orchestration:
     ports: !override
-      - "$((26500 + DRILL_PORT_OFFSET)):26500"
-      - "$((9600 + DRILL_PORT_OFFSET)):9600"
-      - "$((8088 + DRILL_PORT_OFFSET)):8080"
+      - "127.0.0.1:$((26500 + DRILL_PORT_OFFSET)):26500"
+      - "127.0.0.1:$((9600 + DRILL_PORT_OFFSET)):9600"
+      - "127.0.0.1:$((8088 + DRILL_PORT_OFFSET)):8080"
   connectors:
     ports: !override
-      - "$((8086 + DRILL_PORT_OFFSET)):8080"
+      - "127.0.0.1:$((8086 + DRILL_PORT_OFFSET)):8080"
   optimize:
     ports: !override
-      - "$((8083 + DRILL_PORT_OFFSET)):8090"
+      - "127.0.0.1:$((8083 + DRILL_PORT_OFFSET)):8090"
   identity:
     ports: !override
-      - "$((8084 + DRILL_PORT_OFFSET)):8084"
+      - "127.0.0.1:$((8084 + DRILL_PORT_OFFSET)):8084"
   elasticsearch:
     ports: !override
-      - "$((9200 + DRILL_PORT_OFFSET)):9200"
-      - "$((9300 + DRILL_PORT_OFFSET)):9300"
+      - "127.0.0.1:$((9200 + DRILL_PORT_OFFSET)):9200"
+      - "127.0.0.1:$((9300 + DRILL_PORT_OFFSET)):9300"
   web-modeler-db:
     ports: !override
-      - "$((5432 + DRILL_PORT_OFFSET)):5432"
+      - "127.0.0.1:$((5432 + DRILL_PORT_OFFSET)):5432"
   keycloak:
     ports: !override
-      - "$((18080 + DRILL_PORT_OFFSET)):18080"
+      - "127.0.0.1:$((18080 + DRILL_PORT_OFFSET)):18080"
   mailpit:
     ports: !override
-      - "$((1025 + DRILL_PORT_OFFSET)):1025"
-      - "$((8075 + DRILL_PORT_OFFSET)):8025"
-  web-modeler-webapp:
+      - "127.0.0.1:$((1025 + DRILL_PORT_OFFSET)):1025"
+      - "127.0.0.1:$((8075 + DRILL_PORT_OFFSET)):8025"
+  web-modeler-restapi:
     ports: !override
-      - "$((8070 + DRILL_PORT_OFFSET)):8070"
-      - "$((8071 + DRILL_PORT_OFFSET)):8071"
+      - "127.0.0.1:$((8070 + DRILL_PORT_OFFSET)):8081"
+      - "127.0.0.1:$((8091 + DRILL_PORT_OFFSET)):8091"
   web-modeler-websockets:
     ports: !override
-      - "$((8060 + DRILL_PORT_OFFSET)):8060"
+      - "127.0.0.1:$((8060 + DRILL_PORT_OFFSET)):8060"
   console:
     ports: !override
-      - "$((8087 + DRILL_PORT_OFFSET)):8080"
-      - "$((9100 + DRILL_PORT_OFFSET)):9100"
+      - "127.0.0.1:$((8087 + DRILL_PORT_OFFSET)):8080"
+      - "127.0.0.1:$((9100 + DRILL_PORT_OFFSET)):9100"
   reverse-proxy:
     ports: !override
-      - "$((443 + DRILL_PORT_OFFSET)):443"
+      - "127.0.0.1:$((443 + DRILL_PORT_OFFSET)):443"
 EOF
 
   log_drill "Generated drill env: $DRILL_ENV"
@@ -130,7 +130,8 @@ run_smoke_tests() {
   local offset="${DRILL_PORT_OFFSET}"
   local keycloak_port=$((18080 + offset))
   local orchestration_port=$((9600 + offset))
-  local webmodeler_port=$((8071 + offset))
+  local webmodeler_port=$((8091 + offset))
+  local webmodeler_api_port=$((8070 + offset))
 
   local timeout=120
   local elapsed=0
@@ -186,7 +187,7 @@ run_smoke_tests() {
   fi
 
   if [[ -n "${DRILL_KNOWN_PROJECT_ID:-}" ]]; then
-    local proj_url="http://localhost:${webmodeler_port}/internal-api/projects/${DRILL_KNOWN_PROJECT_ID}"
+    local proj_url="http://localhost:${webmodeler_api_port}/internal-api/projects/${DRILL_KNOWN_PROJECT_ID}"
     elapsed=0
     while [[ $elapsed -lt $timeout ]]; do
       if curl -sS -o /dev/null -w '%{http_code}' "$proj_url" 2>>"$DRILL_DIR/restore-drill.log" | grep -q '^200$'; then

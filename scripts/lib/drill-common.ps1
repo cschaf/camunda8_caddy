@@ -59,46 +59,46 @@ function Generate-DrillEnv {
 services:
   orchestration:
     ports: !override
-      - "$((26500 + $offset)):26500"
-      - "$((9600 + $offset)):9600"
-      - "$((8088 + $offset)):8080"
+      - "127.0.0.1:$((26500 + $offset)):26500"
+      - "127.0.0.1:$((9600 + $offset)):9600"
+      - "127.0.0.1:$((8088 + $offset)):8080"
   connectors:
     ports: !override
-      - "$((8086 + $offset)):8080"
+      - "127.0.0.1:$((8086 + $offset)):8080"
   optimize:
     ports: !override
-      - "$((8083 + $offset)):8090"
+      - "127.0.0.1:$((8083 + $offset)):8090"
   identity:
     ports: !override
-      - "$((8084 + $offset)):8084"
+      - "127.0.0.1:$((8084 + $offset)):8084"
   elasticsearch:
     ports: !override
-      - "$((9200 + $offset)):9200"
-      - "$((9300 + $offset)):9300"
+      - "127.0.0.1:$((9200 + $offset)):9200"
+      - "127.0.0.1:$((9300 + $offset)):9300"
   web-modeler-db:
     ports: !override
-      - "$((5432 + $offset)):5432"
+      - "127.0.0.1:$((5432 + $offset)):5432"
   keycloak:
     ports: !override
-      - "$((18080 + $offset)):18080"
+      - "127.0.0.1:$((18080 + $offset)):18080"
   mailpit:
     ports: !override
-      - "$((1025 + $offset)):1025"
-      - "$((8075 + $offset)):8025"
-  web-modeler-webapp:
+      - "127.0.0.1:$((1025 + $offset)):1025"
+      - "127.0.0.1:$((8075 + $offset)):8025"
+  web-modeler-restapi:
     ports: !override
-      - "$((8070 + $offset)):8070"
-      - "$((8071 + $offset)):8071"
+      - "127.0.0.1:$((8070 + $offset)):8081"
+      - "127.0.0.1:$((8091 + $offset)):8091"
   web-modeler-websockets:
     ports: !override
-      - "$((8060 + $offset)):8060"
+      - "127.0.0.1:$((8060 + $offset)):8060"
   console:
     ports: !override
-      - "$((8087 + $offset)):8080"
-      - "$((9100 + $offset)):9100"
+      - "127.0.0.1:$((8087 + $offset)):8080"
+      - "127.0.0.1:$((9100 + $offset)):9100"
   reverse-proxy:
     ports: !override
-      - "$((443 + $offset)):443"
+      - "127.0.0.1:$((443 + $offset)):443"
 "@
     Set-Content -Path $DrillPorts -Value $portsYaml
 
@@ -122,7 +122,8 @@ function Run-SmokeTests {
     $offset = $DrillPortOffset
     $keycloakPort = 18080 + $offset
     $orchestrationPort = 9600 + $offset
-    $webmodelerPort = 8071 + $offset
+    $webmodelerPort = 8091 + $offset
+    $webmodelerApiPort = 8070 + $offset
 
     $timeout = 120
     $interval = 5
@@ -191,7 +192,7 @@ function Run-SmokeTests {
     }
 
     if ($env:DRILL_KNOWN_PROJECT_ID) {
-        $projUrl = "http://localhost:${webmodelerPort}/internal-api/projects/$($env:DRILL_KNOWN_PROJECT_ID)"
+        $projUrl = "http://localhost:${webmodelerApiPort}/internal-api/projects/$($env:DRILL_KNOWN_PROJECT_ID)"
         $elapsed = 0
         $projOk = $false
         while ($elapsed -lt $timeout) {
