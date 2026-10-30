@@ -4,9 +4,9 @@ Leitfaden für dieses Docker-Compose-Projekt. Er beschreibt den **im Branch `fea
 
 | | |
 |---|---|
-| Stand | 14.10.2026 (GA-Switch) |
+| Stand | 30.10.2026 (Patch-Switch auf 8.10.7, siehe [3.2](#32-patch-switch-am-30102026)) |
 | Ausgangsversion | `master` seit 14.10.2026: Camunda **8.9.23** (Connectors 8.9.14, Optimize 8.9.23, Web Modeler 8.9.10, Console 8.9.126, Identity 8.9.11, ohne secfix-Overrides). Ältere Umgebungen laufen eventuell noch auf 8.9.19-secfix (Connectors 8.9.10, Web Modeler 8.9.8, Console 8.9.104, Identity 8.9.9). |
-| Zielversion | **Camunda 8.10.4** (Orchestration, Optimize), Connectors **8.10.0**, Hub/Hub-WebSockets **8.10.2**, Identity **8.10.1**, Elasticsearch **8.19.23**; Keycloak bleibt `quay-26.6.4`. Entspricht dem Upstream-Stand `camunda-distributions/docker-compose/versions/camunda-8.10` vom 14.10.2026 (siehe [3.1](#31-ga-switch-am-14102026)). |
+| Zielversion | **Camunda 8.10.7** (Orchestration, Optimize), Connectors **8.10.2**, Hub/Hub-WebSockets **8.10.4**, Identity **8.10.2**, Elasticsearch **8.19.23**; Keycloak bleibt `quay-26.6.4`. Entspricht dem Upstream-Stand `camunda-distributions/docker-compose/versions/camunda-8.10` vom 29.10.2026 (siehe [3.2](#32-patch-switch-am-30102026)). |
 | Getestet | Lokal mit RC-Images: frischer Aufbau, Hub-DB-Migration, Optimize-Schema-Upgrade und Identity-Rollen-Provisionierung auf einem 8.9-Realm (Details in [Kapitel 8](#8-testergebnisse-lokal-rc-images)). **Mit den GA-Images bisher nur statisch geprüft** (`docker compose config` für alle Stages); Runtime-Test und Restore-Drill auf GA stehen aus (9.1). |
 
 > **Das Upgrade bestehender Umgebungen geht nur auf ein GA-Release.** Zeebe verweigert die State-Migration auf eine Pre-Release-Version (`Cannot upgrade to or from a pre-release version`). Der Branch pinnt jetzt GA-Tags. Mindestens `8.10.4` verwenden: 8.10.0 bis 8.10.3 haben bekannte Auth-Fehler (Claims bei benannten OIDC-Providern, Physical Tenants mit mehreren IdPs), die erst 8.10.4 behebt. Das Upgrade vorher per Restore-Drill mit einem Prod-Backup proben.
@@ -115,7 +115,21 @@ Weitere Änderungen aus dem Abgleich mit Upstream und der offiziellen 8.9→8.10
 - Upstream-Commits seit dem RC-Stand, die **nicht** übernommen wurden, weil sie hier schon umgesetzt sind oder bewusst später kommen: `camunda.modeler` → `camunda.hub` (#1105, hier schon so), `admin:clusters`-Permission (#968, schon vorhanden), zentrale Secrets (#1014, schon gemountet), Pusher-Env `CAMUNDA_HUB_PUSHER_*` (#1105, bewusst noch Legacy, siehe 9.2).
 - Laut Doku-Abgleich bereits erfüllt: ES-Exporter `number-of-replicas: 0`, `includeObjectVariableValue: true`, RocksDB `PARTITION`, `optimize-mode-enabled: true`, keine `CAMUNDA_CONSOLE_*`-Variablen, keine Komponententypen `console`/`keycloak`.
 
-### 3.2 Checkliste (für künftige Patch-Switches)
+### 3.2 Patch-Switch am 30.10.2026
+
+Abgleich mit Upstream (Commits bis `50420d9`, 29.10.2026): seit dem GA-Switch nur Versions-Bumps, **keine Konfigurationsänderungen** an `.orchestration`, `.connectors`, `.optimize`, `.identity`, `.hub` oder den Compose-Dateien.
+
+| Image | GA-Stand (14.10.) | Neu | Quelle |
+|---|---|---|---|
+| `camunda/camunda` | `8.10.4` | **`8.10.7`** | Upstream #1296, #1335, #1364 |
+| `camunda/optimize` | `8.10.4` | **`8.10.7`** | Upstream #1295, #1338, #1365 |
+| `camunda/connectors-bundle` | `8.10.0` | **`8.10.2`** | Upstream #1302, #1336 |
+| `camunda/hub`, `camunda/hub-websockets` | `8.10.2` | **`8.10.4`** | Upstream #1300, #1344 |
+| `camunda/identity` | `8.10.1` | **`8.10.2`** | Upstream #1337 |
+
+Relevant aus den Release Notes: 8.10.5 behebt u. a., dass die Prozessinstanz-Migration die Berechtigung auf der Ziel-Prozessdefinition nicht prüfte (camunda/camunda#65754).
+
+### 3.3 Checkliste (für künftige Patch-Switches)
 
 0. **Vorab-Check (Pre-Release-Pins finden).** Nach dem Switch muss dieser Befehl leer sein:
    ```bash
@@ -126,11 +140,11 @@ Weitere Änderungen aus dem Abgleich mit Upstream und der offiziellen 8.9→8.10
 1. **Tags ermitteln** mit `bash scripts/registry-info.sh` (Default-Modus listet `camunda`, `optimize`, `identity`, `connectors-bundle`, `hub`, `hub-websockets`, `keycloak`) oder über Docker Hub.
 2. **`.env` und `.env.example`** anpassen:
    ```dotenv
-   CAMUNDA_VERSION=8.10.4
-   CAMUNDA_CONNECTORS_VERSION=8.10.0
-   CAMUNDA_OPTIMIZE_VERSION=8.10.4
-   CAMUNDA_HUB_VERSION=8.10.2          # eigene Patch-Linie, immer vollständiges SemVer (nicht "8.10")
-   CAMUNDA_IDENTITY_VERSION=8.10.1
+   CAMUNDA_VERSION=8.10.7
+   CAMUNDA_CONNECTORS_VERSION=8.10.2
+   CAMUNDA_OPTIMIZE_VERSION=8.10.7
+   CAMUNDA_HUB_VERSION=8.10.4          # eigene Patch-Linie, immer vollständiges SemVer (nicht "8.10")
+   CAMUNDA_IDENTITY_VERSION=8.10.2
    ELASTIC_VERSION=8.19.23
    ```
 3. **Secfix-/Hotfix-Images:** Mit `scripts/registry-info.sh --project hotfixes-ee` prüfen, ob es 8.10-Hotfix-Images gibt. Falls ja, `CAMUNDA_IMAGE`, `CAMUNDA_CONNECTORS_IMAGE`, `HUB_IMAGE` und `HUB_WEBSOCKETS_IMAGE` in `.env` setzen.
@@ -210,8 +224,8 @@ Während der Hub-Migration darf kein Web-Modeler-8.9-Container mehr laufen.
 
 | Aktion | Variable |
 |---|---|
-| **Neu (Pflicht)** | `CAMUNDA_HUB_VERSION=8.10.2`. Ohne diesen Wert bricht Compose mit `CAMUNDA_HUB_VERSION is required` ab. |
-| Aktualisieren | `CAMUNDA_VERSION=8.10.4`, `CAMUNDA_CONNECTORS_VERSION=8.10.0`, `CAMUNDA_OPTIMIZE_VERSION=8.10.4`, `CAMUNDA_IDENTITY_VERSION=8.10.1`, `ELASTIC_VERSION=8.19.23` |
+| **Neu (Pflicht)** | `CAMUNDA_HUB_VERSION=8.10.4`. Ohne diesen Wert bricht Compose mit `CAMUNDA_HUB_VERSION is required` ab. |
+| Aktualisieren | `CAMUNDA_VERSION=8.10.7`, `CAMUNDA_CONNECTORS_VERSION=8.10.2`, `CAMUNDA_OPTIMIZE_VERSION=8.10.7`, `CAMUNDA_IDENTITY_VERSION=8.10.2`, `ELASTIC_VERSION=8.19.23` |
 | Entfernen | `CAMUNDA_WEB_MODELER_VERSION`, `CAMUNDA_CONSOLE_VERSION`, `CAMUNDA_OPERATE_VERSION`, `CAMUNDA_TASKLIST_VERSION` (werden nicht mehr genutzt) |
 | Entfernen/ersetzen | 8.9-Secfix-Overrides `CAMUNDA_IMAGE`, `CAMUNDA_CONNECTORS_IMAGE`, `WEBMODELER_RESTAPI_IMAGE`, `WEBMODELER_WEBSOCKETS_IMAGE`. Hotfix-Overrides heißen jetzt `HUB_IMAGE` / `HUB_WEBSOCKETS_IMAGE`. |
 | Unverändert | `WEBMODELER_MAIL_FROM_ADDRESS`, `STAGE`, `DISPLAY_STAGE` (wird zum Hub-Cluster-Tag), `HOST`, TLS-Pfade |
@@ -461,11 +475,11 @@ Umgebung: Windows, Docker Desktop (Hyper-V, 8,3 GB VM-RAM), `stages/dev.yaml`, I
 
 | Punkt | Status |
 |---|---|
-| GA-Tags für `camunda`, `connectors-bundle`, `optimize`, `hub`, `hub-websockets` eintragen | ✅ 14.10.2026 (3.1) |
+| GA-Tags für `camunda`, `connectors-bundle`, `optimize`, `hub`, `hub-websockets` eintragen | ✅ 14.10.2026 (3.1), Patches 30.10.2026 (3.2) |
 | Optimize-User-ID-Art (`sub` vs. `preferred_username`) pro Umgebung geprüft | Offen, Pflichtschritt 4.2.1 vor jedem Upgrade |
-| Gibt es ein verifiziertes `camunda/identity:8.10.x`? | ✅ `8.10.1` (wie Upstream). Im Restore-Drill prüfen, dass die Rolle `Console` `admin:clusters` hat (4.9) |
+| Gibt es ein verifiziertes `camunda/identity:8.10.x`? | ✅ `8.10.2` (wie Upstream). Im Restore-Drill prüfen, dass die Rolle `Console` `admin:clusters` hat (4.9) |
 | 8.10-Hotfix-/Secfix-Images | ✅ Am 14.10.2026 keine vorhanden. Vor dem Prod-Termin erneut prüfen: `bash scripts/registry-info.sh -P hotfixes-ee -r camunda` |
-| Runtime-Test mit GA-Images (frischer Aufbau und Upgrade eines 8.9-Stands) | Offen: Der GA-Switch ist bisher nur per `docker compose config` validiert. Besonders prüfen: Hub 8.10.2 übersetzt die Legacy-Env-Keys weiterhin (Log `Deprecated Camunda Hub configuration keys detected`, kein Startfehler); Optimize-Login und Collections von Bestandsnutzern |
+| Runtime-Test mit GA-Images (frischer Aufbau und Upgrade eines 8.9-Stands) | Offen: Der GA-Switch ist bisher nur per `docker compose config` validiert. Besonders prüfen: Hub 8.10.4 übersetzt die Legacy-Env-Keys weiterhin (Log `Deprecated Camunda Hub configuration keys detected`, kein Startfehler); Optimize-Login und Collections von Bestandsnutzern |
 | Restore-Drill mit Prod-Backup auf GA-Images (Zeebe + Hub + Optimize an Echtdaten, Laufzeit messen) | Offen |
 | Browser-Login in Hub inklusive Gotcha 13 (Chrome-Iframe-Session-Check) | Offen, bisher nur per `curl` geprüft |
 | Hub-Cluster-Übersicht und Deploy aus Hub im Browser prüfen | Offen |
