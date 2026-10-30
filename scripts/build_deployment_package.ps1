@@ -215,7 +215,26 @@ try {
     if (Test-Path $ZipPath) {
         Remove-Item $ZipPath -Force
     }
-    Compress-Archive -Path (Join-Path $StagingDir '*') -DestinationPath $ZipPath -CompressionLevel Optimal
+    # Build the archive entry by entry instead of using Compress-Archive, so
+    # every entry carries Unix permissions 0644 that `unzip` applies on the
+    # Linux host. Compress-Archive stores 0600, which leaves bind-mounted
+    # configs (e.g. .hub/application.yaml) unreadable for containers that run
+    # as a non-root UID. Execute bits are not set: Info-ZIP `unzip` drops them
+    # for archives created on Windows, and all scripts are invoked via `bash`.
+    $FileMode = [Convert]::ToInt64('100644', 8)
+    $FileAttributes = [BitConverter]::ToInt32([BitConverter]::GetBytes([uint32]($FileMode -shl 16)), 0)
+    $Zip = [System.IO.Compression.ZipFile]::Open($ZipPath, [System.IO.Compression.ZipArchiveMode]::Create)
+    try {
+        foreach ($file in Get-ChildItem -Path $StagingDir -Recurse -File -Force) {
+            $entryName = [System.IO.Path]::GetRelativePath($StagingDir, $file.FullName).Replace('\', '/')
+            $entry = [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+                $Zip, $file.FullName, $entryName, [System.IO.Compression.CompressionLevel]::Optimal)
+            $entry.ExternalAttributes = $FileAttributes
+        }
+    }
+    finally {
+        $Zip.Dispose()
+    }
 
     # --- Summary ---------------------------------------------------------
     $FileCount = (Get-ChildItem -Path $StagingDir -Recurse -File | Measure-Object).Count
