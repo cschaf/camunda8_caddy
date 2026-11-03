@@ -45,6 +45,8 @@ This stack deploys a full Camunda 8.9 self-managed platform with:
 | **Caddy** | `caddy:2.11.2@sha256:25cdc846626b62d05f6b633b9b40c2c9f6ef89b515dc76133cefd920f7dbe562` | Reverse proxy with automatic HTTPS and subdomain routing |
 | **Autoheal** | `willfarrell/autoheal@sha256:75c28b0020543e8eb49fe6514d012e7d2691f095dd622309d045da8647c8bb83` | Restarts labeled containers when Docker health checks mark them as unhealthy |
 
+The `camunda/` prefix of the Camunda images is `${CAMUNDA_IMAGE_NAMESPACE:-camunda}` in `docker-compose.yaml`. Setting `CAMUNDA_IMAGE_NAMESPACE=registry.camunda.cloud/dockerhub-camunda/camunda` in `.env` pulls the same tags from Camunda's public Docker Hub mirror instead of Docker Hub; unset or empty means Docker Hub. See [README → Camunda image source](../README.md#camunda-image-source-docker-hub-or-camunda-mirror).
+
 ### Container Networks
 
 Three Docker networks isolate traffic:

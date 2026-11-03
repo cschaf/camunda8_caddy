@@ -420,6 +420,28 @@ The scripts read `HOST` and `ORCHESTRATION_CLIENT_SECRET` from `.env`. On failur
 
 ---
 
+## Camunda image source (Docker Hub or Camunda mirror)
+
+By default the Camunda images come from Docker Hub (`camunda/<image>`). `registry.camunda.cloud` hosts `dockerhub-camunda`, a public Harbor proxy cache of Docker Hub's `camunda/*` repositories. It serves the same tags with identical digests, needs no `docker login`, and is not subject to Docker Hub pull rate limits.
+
+The source is switched with one variable in `.env`:
+
+```env
+# On: pull from Camunda's mirror
+CAMUNDA_IMAGE_NAMESPACE=registry.camunda.cloud/dockerhub-camunda/camunda
+
+# Off: comment out (or leave empty) -> Docker Hub camunda/<image>
+# CAMUNDA_IMAGE_NAMESPACE=registry.camunda.cloud/dockerhub-camunda/camunda
+```
+
+It applies to the seven Camunda images: `camunda`, `connectors-bundle`, `identity`, `optimize`, `hub`, `hub-websockets`, `keycloak`. PostgreSQL, Elasticsearch, Mailpit, Caddy and Autoheal are not Camunda images and keep their upstream registries. The hotfix overrides (`CAMUNDA_IMAGE`, `CAMUNDA_CONNECTORS_IMAGE`, `HUB_IMAGE`, `HUB_WEBSOCKETS_IMAGE`) are full image names and take precedence over the namespace.
+
+Because the variable is resolved by Compose interpolation from `.env`, every script (`start`, `restore`, `ensure-stack`, `optimize-upgrade`, …) and every direct `docker compose --env-file .env …` call sees the same image names. After toggling, the next start pulls the images once under the new name and recreates the Camunda containers. Data volumes are untouched. Check which names will be used with:
+
+```bash
+docker compose --env-file .env --env-file .env-credentials -f docker-compose.yaml -f stages/prod.yaml config --images
+```
+
 ## Inspecting Camunda's private Docker registry
 
 Camunda 8 enterprise customers receive credentials for `registry.camunda.cloud` — a Harbor registry that hosts the public Docker Hub mirror (`dockerhub-camunda`), enterprise-only projects (`console`, `web-modeler-ee`, `iam-ee`, `keycloak-ee`, …), and customer hotfix repositories. The `registry-info` script queries the Harbor v2 REST API to list projects, repositories, and tags so you can discover which images and versions are available before pinning one in `docker-compose.yaml`.

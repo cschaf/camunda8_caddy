@@ -11,7 +11,7 @@
 
 services:
   camunda-data-init:
-    image: ${CAMUNDA_IMAGE:-camunda/camunda:${CAMUNDA_VERSION:?CAMUNDA_VERSION is required}}
+    image: ${CAMUNDA_IMAGE:-${CAMUNDA_IMAGE_NAMESPACE:-camunda}/camunda:${CAMUNDA_VERSION:?CAMUNDA_VERSION is required}}
     container_name: camunda-data-init
     user: "0:0"
     entrypoint:
@@ -27,7 +27,7 @@ services:
     restart: "no"
 
   orchestration: # Consolidated Zeebe + Operate + Tasklist - https://docs.camunda.io/docs/self-managed/setup/deploy/other/docker/#zeebe
-    image: ${CAMUNDA_IMAGE:-camunda/camunda:${CAMUNDA_VERSION:?CAMUNDA_VERSION is required}}
+    image: ${CAMUNDA_IMAGE:-${CAMUNDA_IMAGE_NAMESPACE:-camunda}/camunda:${CAMUNDA_VERSION:?CAMUNDA_VERSION is required}}
     container_name: orchestration
     ports:
       - "127.0.0.1:26500:26500"
@@ -105,7 +105,7 @@ services:
         condition: service_healthy
 
   connectors: # https://docs.camunda.io/docs/self-managed/connectors-deployment/connectors-configuration/
-    image: ${CAMUNDA_CONNECTORS_IMAGE:-camunda/connectors-bundle:${CAMUNDA_CONNECTORS_VERSION}}
+    image: ${CAMUNDA_CONNECTORS_IMAGE:-${CAMUNDA_IMAGE_NAMESPACE:-camunda}/connectors-bundle:${CAMUNDA_CONNECTORS_VERSION}}
     container_name: connectors
     ports:
       - "127.0.0.1:8086:8080"
@@ -156,7 +156,7 @@ services:
         condition: service_healthy
 
   optimize: # https://docs.camunda.io/docs/self-managed/setup/deploy/other/docker/#optimize
-    image: camunda/optimize:${CAMUNDA_OPTIMIZE_VERSION}
+    image: ${CAMUNDA_IMAGE_NAMESPACE:-camunda}/optimize:${CAMUNDA_OPTIMIZE_VERSION}
     container_name: optimize
     # PID 1 in the image is a bash wrapper (optimize.sh) that does not forward
     # SIGTERM, so every stop/backup waited for the full timeout and ended in
@@ -244,7 +244,7 @@ services:
 
   identity: # https://docs.camunda.io/docs/self-managed/setup/deploy/other/docker/#identity
     container_name: identity
-    image: camunda/identity:${CAMUNDA_IDENTITY_VERSION}
+    image: ${CAMUNDA_IMAGE_NAMESPACE:-camunda}/identity:${CAMUNDA_IDENTITY_VERSION}
     ports:
       - "127.0.0.1:8084:8084"
     environment: # https://docs.camunda.io/docs/self-managed/identity/miscellaneous/configuration-variables/
@@ -377,7 +377,7 @@ services:
 
   keycloak: # https://hub.docker.com/r/camunda/keycloak
     container_name: keycloak
-    image: camunda/keycloak:${KEYCLOAK_SERVER_VERSION}
+    image: ${CAMUNDA_IMAGE_NAMESPACE:-camunda}/keycloak:${KEYCLOAK_SERVER_VERSION}
     command: [start]
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USER:?KEYCLOAK_ADMIN_USER is required}
@@ -562,7 +562,7 @@ services:
     # migrates its schema in place with Flyway on first start. The migration
     # is NOT backwards compatible: take a backup before the first 8.10 start.
     container_name: hub
-    image: ${HUB_IMAGE:-camunda/hub:${CAMUNDA_HUB_VERSION:?CAMUNDA_HUB_VERSION is required}}
+    image: ${HUB_IMAGE:-${CAMUNDA_IMAGE_NAMESPACE:-camunda}/hub:${CAMUNDA_HUB_VERSION:?CAMUNDA_HUB_VERSION is required}}
     ports:
       - "127.0.0.1:8070:8081"
     labels:
@@ -680,7 +680,7 @@ services:
     # PID 1 in the image is /bin/sh docker-entrypoint.sh, which does not forward
     # SIGTERM (stop always hit the timeout and ended in SIGKILL). tini fixes it.
     init: true
-    image: ${HUB_WEBSOCKETS_IMAGE:-camunda/hub-websockets:${CAMUNDA_HUB_VERSION:?CAMUNDA_HUB_VERSION is required}}
+    image: ${HUB_WEBSOCKETS_IMAGE:-${CAMUNDA_IMAGE_NAMESPACE:-camunda}/hub-websockets:${CAMUNDA_HUB_VERSION:?CAMUNDA_HUB_VERSION is required}}
     ports:
       - "127.0.0.1:8060:8060"
     labels:

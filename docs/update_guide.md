@@ -24,6 +24,8 @@ The main version pins are in `.env.example`. The running stack uses `.env` (comm
 | Caddy | hardcoded in `docker-compose.yaml` | `caddy:2.11.2@sha256:...` |
 | Autoheal | hardcoded in `docker-compose.yaml` | `willfarrell/autoheal@sha256:...` |
 
+The `camunda/` prefix shown above is `${CAMUNDA_IMAGE_NAMESPACE:-camunda}`. When `.env` sets `CAMUNDA_IMAGE_NAMESPACE=registry.camunda.cloud/dockerhub-camunda/camunda`, the same tags are pulled from Camunda's Docker Hub mirror. The version variables and tags do not change; the mirror fetches a new tag from Docker Hub on first pull. `scripts/registry-info.sh` / `.ps1` (default mode) lists the tags on that mirror.
+
 Operate, Tasklist and Admin run inside the unified `camunda/camunda` orchestration image and use `CAMUNDA_VERSION`. The former `CAMUNDA_OPERATE_VERSION` / `CAMUNDA_TASKLIST_VERSION` pins were only used by the Console template and were removed with the 8.10 upgrade.
 
 ## Where To Look Up New Minor Versions
