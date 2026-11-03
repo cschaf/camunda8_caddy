@@ -33,10 +33,12 @@ camunda.dev.local {
 keycloak.camunda.dev.local {
     # Health check endpoint for dashboard status LEDs
     handle /health {
-        header Access-Control-Allow-Origin "*"
         # Keycloak readiness on the management port (same probe as the compose healthcheck)
         rewrite * /auth/health/ready
         reverse_proxy keycloak:9000 {
+            # Replace, not add: Keycloak 26.6 already sends "Access-Control-Allow-Origin: *"
+            # on the management port; a duplicate "*, *" makes the browser reject the fetch.
+            header_down Access-Control-Allow-Origin "*"
             header_down -Cross-Origin-Resource-Policy
             header_down -Cross-Origin-Embedder-Policy
         }
@@ -59,8 +61,12 @@ keycloak.camunda.dev.local {
 identity.camunda.dev.local {
     # Health check endpoint for dashboard status LEDs
     handle /health {
-        header Access-Control-Allow-Origin "*"
-        reverse_proxy identity:8084 {
+        # Identity actuator on the management port (same probe as the compose healthcheck).
+        # /health on the app port 8084 is not a health endpoint and returns 403.
+        rewrite * /actuator/health
+        reverse_proxy identity:8082 {
+            # Replace, not add, so an upstream CORS header is never duplicated
+            header_down Access-Control-Allow-Origin "*"
             header_down -Cross-Origin-Resource-Policy
             header_down -Cross-Origin-Embedder-Policy
         }
@@ -98,9 +104,10 @@ console.camunda.dev.local {
     # bookmarks keep working and send users to Hub (served on webmodeler.*).
     # The health endpoint proxies Hub so the dashboard LED stays meaningful.
     handle /health {
-        header Access-Control-Allow-Origin "*"
         rewrite * /health/readiness
         reverse_proxy hub:8091 {
+            # Replace, not add, so an upstream CORS header is never duplicated
+            header_down Access-Control-Allow-Origin "*"
             header_down -Cross-Origin-Resource-Policy
             header_down -Cross-Origin-Embedder-Policy
         }
@@ -116,9 +123,10 @@ console.camunda.dev.local {
 optimize.camunda.dev.local {
     # Health check endpoint for dashboard status LEDs
     handle /health {
-        header Access-Control-Allow-Origin "*"
         rewrite * /api/readyz
         reverse_proxy optimize:8090 {
+            # Replace, not add, so an upstream CORS header is never duplicated
+            header_down Access-Control-Allow-Origin "*"
             header_down -Cross-Origin-Resource-Policy
             header_down -Cross-Origin-Embedder-Policy
             header_up X-Forwarded-Proto https
@@ -135,9 +143,10 @@ optimize.camunda.dev.local {
 orchestration.camunda.dev.local {
     # Health check endpoint for dashboard status LEDs
     handle /health {
-        header Access-Control-Allow-Origin "*"
         rewrite * /actuator/health/readiness
         reverse_proxy orchestration:9600 {
+            # Replace, not add, so an upstream CORS header is never duplicated
+            header_down Access-Control-Allow-Origin "*"
             header_down -Cross-Origin-Resource-Policy
             header_down -Cross-Origin-Embedder-Policy
         }
@@ -180,9 +189,10 @@ zeebe.localhost {
 webmodeler.camunda.dev.local {
     # Health check endpoint for dashboard status LEDs
     handle /health {
-        header Access-Control-Allow-Origin "*"
         rewrite * /health/readiness
         reverse_proxy hub:8091 {
+            # Replace, not add, so an upstream CORS header is never duplicated
+            header_down Access-Control-Allow-Origin "*"
             header_down -Cross-Origin-Resource-Policy
             header_down -Cross-Origin-Embedder-Policy
         }
