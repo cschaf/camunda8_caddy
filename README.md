@@ -48,7 +48,7 @@ pwsh -File scripts/generate-secrets.ps1
 
 This creates `.env-credentials` with cryptographically random secrets (48-character hex strings via `openssl rand -hex 24` / `System.Security.Cryptography.RandomNumberGenerator`). The file is given restricted permissions (`chmod 600` on Linux/macOS).
 
-> **Always use `--force` / `-Force` with caution** — it overwrites an existing `.env-credentials`, invalidating all current secrets. Not recommended on an already-running deployment.
+> **Always use `--force` / `-Force` with caution** — it overwrites an existing `.env-credentials`, invalidating all current secrets. Never run it after the first start unless you also wipe the data volumes: PostgreSQL and Elasticsearch keep the passwords from the first start, so new secrets lock Keycloak and Orchestration out (`password authentication failed`). When unpacking a newer deployment package over an existing installation, keep the existing `.env-credentials`.
 
 #### Local demo fallback (never use in production)
 
@@ -179,6 +179,28 @@ Both scripts read `HOST` from `.env` and update:
 - hosts file — adds `127.0.0.1 {HOST}` and `127.0.0.1` entries for all subdomains (keycloak, identity, console, optimize, orchestration, webmodeler, zeebe); `console.{HOST}` only redirects to Camunda Hub since 8.10
 
 The scripts are **idempotent** — re-running them will not produce duplicate entries.
+
+### Before the first start: check for leftovers from earlier installations
+
+Docker Compose names volumes after the project, which defaults to the directory name (e.g. `/opt/camunda/810` → `810_postgres`, `810_elastic`, …). If a previous installation ever ran in a directory with the same name, the new stack silently reuses its volumes and data. The databases keep the passwords from their first start, so the start fails with `password authentication failed for user …` in the `keycloak` and `postgres` logs. `pg_isready` does not check passwords, so `postgres` and `camunda-db` still show `healthy`.
+
+Check before the first start (replace `810` with your directory name):
+
+```bash
+docker ps -a --format 'table {{.Names}}\t{{.Status}}\t{{.Label "com.docker.compose.project"}}'
+docker volume ls --format '{{.Name}}' | grep -E '^(810_|elastic-backup$)' \
+  | xargs -r docker volume inspect --format '{{.Name}}  created={{.CreatedAt}}'
+```
+
+- **No volumes listed:** continue with the start.
+- **Volumes listed, old data not needed:** remove them first. This deletes only this project's volumes and the fixed-name `elastic-backup` volume; volumes of other projects stay untouched.
+  ```bash
+  bash scripts/cluster-wipe.sh --dry-run --keep-images   # preview
+  bash scripts/cluster-wipe.sh --keep-images             # confirm with WIPE
+  ```
+- **Volumes listed, old data needed:** copy the `.env-credentials` of the old installation into the project directory instead of generating new secrets. Without it, the passwords do not match.
+
+Container names are fixed in `docker-compose.yaml` (`keycloak`, `postgres`, `hub`, `orchestration`, …), so containers with these names from another project must be removed first; two installations cannot run side by side on one host.
 
 ### 6. Start the cluster
 
