@@ -119,6 +119,11 @@ services:
       CAMUNDA_CLIENT_AUTH_CLIENTSECRET: ${CONNECTORS_CLIENT_SECRET:?CONNECTORS_CLIENT_SECRET is required}
       CAMUNDA_LICENSE_KEY: ${CAMUNDA_LICENSE_KEY:-}
       JAVA_TOOL_OPTIONS: "-Xmx768m"
+      # The image's working dir is / and the app lives in /opt/app, so Spring
+      # does not find /app/application.yaml on its own. Without this line the
+      # mounted config (secret prefix CONNECTORS_SECRET_, actuator exposure,
+      # agentic AI proxy support) is ignored and secrets resolve as SECRET_<name>.
+      SPRING_CONFIG_ADDITIONAL_LOCATION: file:/app/application.yaml
     env_file:
       - path: .env-credentials
         required: true

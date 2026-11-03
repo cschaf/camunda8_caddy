@@ -14,7 +14,9 @@ camunda:
         # Camunda defaults to SECRET_. This stack uses a dedicated prefix
         # so connector secrets in connector-secrets.txt are explicit and do not
         # expose unrelated container environment variables.
-        prefix: "CONNECTORS_SECRET"
+        # The runtime concatenates prefix + name without a separator, so the
+        # trailing underscore is required: {{secrets.X}} -> CONNECTORS_SECRET_X.
+        prefix: "CONNECTORS_SECRET_"
     secret-resolver:
       secret-filter:
         # 8.10 changed the default from DISABLED to STRICT: a connector only

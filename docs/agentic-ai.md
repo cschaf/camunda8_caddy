@@ -243,8 +243,10 @@ camunda:
   connector:
     secret-provider:
       environment:
-        prefix: "CONNECTORS_SECRET"
+        prefix: "CONNECTORS_SECRET_"
 ```
+
+The runtime builds the lookup name as `prefix + name` without a separator, so the trailing underscore is required. Without it, `{{secrets.OPENAI_API_KEY}}` looks for `CONNECTORS_SECRETOPENAI_API_KEY` and fails with `Secret with name 'OPENAI_API_KEY' is not available`.
 
 That means a BPMN connector field using:
 

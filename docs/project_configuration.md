@@ -567,7 +567,7 @@ This distinction is critical: the browser must see the public HTTPS URL in the a
 
 **Secrets:** Connectors reads additional secrets from `connector-secrets.txt` (gitignored env_file), which holds outbound connector secrets (e.g., HTTP basic auth credentials for external systems).
 
-Connector secrets use a dedicated `CONNECTORS_SECRET` prefix configured in `.connectors/application.yaml`. For example, a connector template field containing `{{secrets.OPENAI_API_KEY}}` resolves the environment variable `CONNECTORS_SECRET_OPENAI_API_KEY`.
+Connector secrets use a dedicated `CONNECTORS_SECRET_` prefix (trailing underscore required; the runtime concatenates prefix and name without a separator) configured in `.connectors/application.yaml`. For example, a connector template field containing `{{secrets.OPENAI_API_KEY}}` resolves the environment variable `CONNECTORS_SECRET_OPENAI_API_KEY`.
 
 The connector runtime also leaves agentic AI HTTP proxy support enabled so AI Agent, MCP Client, and A2A Client connectors can use standard proxy settings in environments that require outbound proxies. See [agentic-ai.md](agentic-ai.md) for provider-specific secret names and MCP examples.
 
