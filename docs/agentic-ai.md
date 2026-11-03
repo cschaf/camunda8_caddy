@@ -35,109 +35,123 @@ four phases with SME review gates:
 | Transform | Turn it into an agentic to-be process | To-be models finalized |
 | Implement | Generate BPMN/DMN/forms, workers and tests | Executable solution generated |
 
-**Status in this stack (checked 14.10.2026 against `camunda/hub:8.10.2` and the
-8.10 docs):**
+**Status (checked 03.11.2026 against the public docs, the public changelog and
+npm):**
 
-- ProcessOS is **not** a Hub feature. The Hub image has no ProcessOS module and
-  no `camunda.hub.feature.*` flag for it. The only `process-os` strings in the
-  image are inside the Hub Copilot prompts, which follow the modeling
-  conventions of Camunda's reference repo `camunda/process-os` (for example
-  `retries="3"` on service tasks, a 3-step error pattern, form-based user task
-  assignment). That is Copilot behavior, not ProcessOS.
-- Nothing in this repo has to be switched on. The stack can serve as the
-  organization-wide Camunda cluster that hosts the governance process.
-- Access is **early access** for Camunda Enterprise customers with trained
-  builders or enabled partners. Ask the Camunda Customer Success Manager.
-- **ProcessOS cannot be used yet without an archive from Camunda.** The public
-  npm package `@camunda8/c8ctl-plugin-process-os` (0.4.0, 2026-10-12) is only
-  the installer. Its README states that the distribution archives
-  (`claudecode.zip`, `copilotcli.zip`) are not distributed publicly yet. Access
-  to the Camunda hotfix registry does not include them.
+- ProcessOS is **not** a Hub feature and runs **outside** this stack. The Hub
+  image has no ProcessOS module and no `camunda.hub.feature.*` flag for it.
+  The only `process-os` strings in the Hub image are inside the Hub Copilot
+  prompts (modeling conventions), which is Copilot behavior, not ProcessOS.
+- This stack serves as the organization-wide **governance cluster**: a
+  supported Camunda 8 release, SaaS or Self-Managed, reachable across the
+  organization. Nothing has to be switched on; the builder's c8ctl needs an
+  API client (see below).
+- Access: Camunda Enterprise customers and partners with a signed partner
+  agreement. The distribution archives are in the Camunda Download Center
+  (`https://downloads.camunda.cloud/enterprise-release/`, Enterprise
+  credentials). The public npm package `@camunda8/c8ctl-plugin-process-os` is
+  only the installer.
+- Releases: **1.0.0** (2026-10-13) is the stable release and requires c8ctl
+  4.3.0 or later. `1.1.0-alpha.*` are previews of the next minor (alpha.1
+  requires c8ctl 4.6.0).
+
+> **Licensing:** the distribution archives are licensed by Camunda (Camunda
+> License 1.0) and are not public. Never commit an archive, its installed
+> files (for example the skills under `.claude/skills/` or `.github/skills/`)
+> or descriptions of its internals to this repository. Run `c8 os install` only in a separate
+> project folder with its own private Git repository, never in this repo.
 
 ### How it is delivered
 
 ProcessOS Harness runs on the builder's own machine, not in this stack:
 
 ```bash
-npm install -g @camunda8/cli@latest                 # c8ctl, alias c8
+npm install -g @camunda8/cli@latest                 # c8ctl, alias c8 (4.3.0+)
 c8 load plugin @camunda8/c8ctl-plugin-process-os
-# Download claudecode.zip or copilotcli.zip from the Camunda Download Center
-# (Enterprise Releases), then inside a new project folder:
-c8 os install claudecode --zip /path/to/claudecode.zip
+mkdir -p <my-project> && cd <my-project>            # NOT inside this repo
+# Download the archive for your agent (claudecode or copilotcli) from the
+# Camunda Download Center (Enterprise Releases), then:
+c8 os install claudecode --zip /path/to/<archive>.zip
 git init && git add . && git commit -m "chore(job) commit process-os-harness setup"
-# In Claude Code: /process-os-governance-start
+# In Claude Code (Opus-class model): /process-os-governance-start
 ```
 
-Builder client requirements: c8ctl 4.0.0 or later, Node.js 22.18.0 or later,
-npm with registry access, Git and the GitHub CLI, a local `c8run` cluster for
-validating generated solutions, Camunda Desktop Modeler for reviews, Maven for
-Java workers. Generated workers target Spring Boot, TypeScript or Python.
+Upgrades use `c8 os switch <target> --zip <file.zip>`; `c8 os uninstall`
+removes the installation.
 
-Windows: the Camunda docs list Windows only via WSL; the plugin README says it
-also works natively. Use WSL, because that is the configuration Camunda tests.
+Builder machine requirements: Windows via WSL, macOS or Unix; Node.js 22.18.0
+or later; c8ctl; Git and the GitHub CLI; Maven for Java workers; `c8run` for
+validating generated solutions locally; Camunda Modeler for reviews; the AI
+coding agent (Claude Code or GitHub Copilot CLI) with permission to run
+commands, outbound network access and write access to the project repository.
 
 ### What this stack provides
 
 | ProcessOS Harness need | Status here |
 |---|---|
-| Camunda cluster reachable across the organization (governance process, project state) | Available: `https://orchestration.{HOST}` (REST v2) behind Caddy |
-| Tasklist for scope and phase-configuration forms | Available: `https://orchestration.{HOST}/tasklist` |
-| c8ctl access to the cluster (deploy, start, jobs) | Not set up yet: needs an OAuth client-credentials client, see [Prepare c8ctl access](#prepare-c8ctl-access-to-this-cluster) |
-| Exact cluster requirements of the governance process (connectors, forms, permissions) | Unknown until the distribution archive is available |
-| Git repository per project | Outside this repo (any Git-compatible VCS) |
+| Governance cluster reachable across the organization | `https://orchestration.{HOST}` (REST v2) behind Caddy |
+| API client for the builder's c8ctl | Client `c8ctl` (M2M, audience `orchestration-api`, Orchestration role `admin`), see [c8ctl access](#c8ctl-access-to-this-cluster) |
+| SME reviews | Tasklist at `https://orchestration.{HOST}/tasklist`; SMEs need a user with Tasklist access and permission to work on the governance process's user tasks |
+| Git repository per project | Outside this repo (any Git-compatible VCS, private) |
 | AI platform for the coding agent | Outside this repo: whatever Claude Code / Copilot CLI support (Anthropic, Amazon Bedrock, Azure OpenAI, Ollama). Camunda recommends Opus-class models |
 | Deployment of the generated solution | Normal deployment to this cluster (Hub or c8ctl) |
 
-### Prepare c8ctl access to this cluster
+### c8ctl access to this cluster
 
-This part can be prepared before the ProcessOS archive arrives. The builder's
-c8ctl uses it to deploy, start and query the governance process.
+The stack provisions a dedicated machine-to-machine client **`c8ctl`** for the
+Camunda 8 CLI and other builder tooling. It is separate from the platform
+client `orchestration`, so its secret can be handed to builders and rotated
+without touching the platform.
 
-1. **OAuth client.** Use a dedicated M2M client (for example `process-os`)
-   instead of the platform client `orchestration`. `orchestration` would work
-   technically (it has the `admin` role in `.orchestration/application.yaml`),
-   but its secret belongs to the platform and should not be copied to builder
-   machines. A dedicated client needs:
-   - an `m2m` application in `.identity/application.yaml` with permissions on
-     the `orchestration-api` audience (like `connectors`);
-   - its secret in `.env-credentials` and in `scripts/generate-secrets.*`;
-   - a role in Orchestration. Start with `admin` until the governance process's
-     exact permissions are known, then narrow it down. Whether
-     `camunda.security.initialization.defaultRoles` assigns it on an existing
-     cluster is not verified; otherwise assign it once in Admin
-     (`https://orchestration.{HOST}/admin`).
+- Keycloak client: `.identity/application.yaml` (`orchestration.applications`,
+  `type: m2m`, `read:*` / `write:*` on `orchestration-api`).
+- Secret: `C8CTL_CLIENT_SECRET` in `.env-credentials`, generated by
+  `scripts/generate-secrets.*`.
+- Orchestration role: `admin` via
+  `camunda.security.initialization.defaultRoles` in
+  `.orchestration/application.yaml`. Narrow it down once the exact permissions
+  the tooling needs are known.
 
-   Not implemented in this repo yet.
-2. **Profile on the builder machine** via the environment variables c8ctl
-   supports:
-   ```bash
-   export CAMUNDA_BASE_URL=https://orchestration.<HOST>
-   export CAMUNDA_OAUTH_URL=https://keycloak.<HOST>/auth/realms/camunda-platform/protocol/openid-connect/token
-   export CAMUNDA_CLIENT_ID=process-os
-   export CAMUNDA_CLIENT_SECRET=<secret>
-   export CAMUNDA_TOKEN_AUDIENCE=orchestration-api
-   # Node does not trust the mkcert / self-signed proxy certificate by default:
-   export NODE_EXTRA_CA_CERTS=/path/to/rootCA.pem
-   c8 list pi   # connection test
-   ```
-   The builder machine must resolve and reach `orchestration.<HOST>` and
-   `keycloak.<HOST>` (hosts file or DNS).
+**Existing installations** (`.env-credentials` created before the client was
+added) must add the secret once before the next start; Compose stops with
+`C8CTL_CLIENT_SECRET is required` otherwise:
+
+```bash
+echo "C8CTL_CLIENT_SECRET=$(openssl rand -hex 24)" >> .env-credentials
+bash scripts/start.sh
+```
+
+**Profile on the builder machine:**
+
+```bash
+c8ctl add profile <name>   --baseUrl=https://orchestration.<HOST>   --oAuthUrl=https://keycloak.<HOST>/auth/realms/camunda-platform/protocol/openid-connect/token   --audience=orchestration-api   --clientId=c8ctl --clientSecret=<C8CTL_CLIENT_SECRET>
+c8ctl --json get topology --profile <name>   # must list brokers / clusterSize
+```
+
+The builder machine must resolve and reach `orchestration.<HOST>` and
+`keycloak.<HOST>` on port 443. Node.js does not use the OS trust store by
+default: point `NODE_EXTRA_CA_CERTS` at the root CA of the proxy certificate
+(corporate CA or the mkcert root), or c8ctl fails with a TLS error.
 
 Out of scope in this release according to Camunda: production deployment and
 lifecycle management, platform/CI setup, custom UIs beyond Camunda Forms,
 process mining, shared memory across projects (each project keeps its own
 private memory locally).
 
-Planning figures from Camunda: about USD 300-600 in tokens and 6-8 hours per
-journey from discovery to implementation. Camunda expects the first project to
+Planning figures from Camunda: 6-8 hours per journey; token cost about USD
+300-600 for an explorative run on a small use case, 800-1,500+ for a
+lift-and-shift of a medium process and 1,000-2,000+ for an AI transformation of
+a medium-to-large process. Camunda expects the first project to
 run with a partner or a Camunda Forward Deployed Engineer and the Camunda
 Academy learning path to be completed first.
 
 Sources: [ProcessOS Harness overview](https://docs.camunda.io/docs/components/process-os-harness/overview/),
 [Installation](https://docs.camunda.io/docs/components/process-os-harness/installation/),
+[Changelog](https://docs.camunda.io/docs/components/process-os-harness/changelog/),
+[Project setup](https://docs.camunda.io/docs/components/process-os-harness/setup/project-setup/),
 [System requirements](https://docs.camunda.io/docs/components/process-os-harness/setup/system-requirements/),
 [c8ctl plugin on npm](https://www.npmjs.com/package/@camunda8/c8ctl-plugin-process-os),
-[c8ctl](https://github.com/camunda/c8ctl).
+[c8ctl](https://github.com/camunda/c8ctl) and its [command reference](https://github.com/camunda/c8ctl/blob/main/docs/command-reference.md).
 
 ## Hub Copilot quick activation
 
