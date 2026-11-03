@@ -121,6 +121,7 @@ $Files.AddRange([string[]]@(
     'docs/backup-restore.md'
     'docs/stage_comparison.md'
     'docs/agentic-ai.md'
+    'docs/processos-harness.md'
     'docs/monitoring.md'
     'docs/operations-handover-template.md'
     'docs/zeebe-spring-boot-worker.md'
