@@ -45,6 +45,20 @@ identity:
           root-url: "https://orchestration.${HOST}"
           redirect-uris:
             - "/sso-callback"
+        # Machine-to-machine client for the Camunda 8 CLI (c8ctl) and other
+        # builder tooling on developer machines. Kept separate from the
+        # platform client `orchestration` so its secret can be handed out and
+        # rotated without touching the platform. Orchestration role: see
+        # camunda.security.initialization.defaultRoles in .orchestration/application.yaml.
+        - name: c8ctl
+          id: c8ctl
+          type: m2m
+          secret: ${VALUES_KEYCLOAK_INIT_C8CTL_SECRET}
+          permissions:
+            - audience: "orchestration-api"
+              definition: read:*
+            - audience: "orchestration-api"
+              definition: write:*
       apis:
         - name: "Orchestration API"
           audience: "orchestration-api"

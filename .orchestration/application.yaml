@@ -120,6 +120,9 @@ camunda:
             - demo
           clients:
             - orchestration
+            # Camunda 8 CLI / builder tooling (see .identity/application.yaml).
+            # admin until the exact permissions of the tooling are known.
+            - c8ctl
         connectors:
           users:
             - connectors

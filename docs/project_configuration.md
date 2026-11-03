@@ -500,6 +500,7 @@ The `generate-secrets.sh` script creates a production-quality `.env-credentials`
 |--------|---------|---------|
 | `ORCHESTRATION_CLIENT_SECRET` | Orchestration, Keycloak | OIDC client secret for Operate/Tasklist |
 | `CONNECTORS_CLIENT_SECRET` | Connectors, Keycloak | OIDC client secret for outbound integrations |
+| `C8CTL_CLIENT_SECRET` | Keycloak (client `c8ctl`), builder machines | M2M client for the Camunda 8 CLI (c8ctl) and builder tooling such as ProcessOS Harness; Orchestration role `admin` |
 | `OPTIMIZE_CLIENT_SECRET` | Optimize, Keycloak | OIDC client secret for Optimize |
 | `CAMUNDA_IDENTITY_CLIENT_SECRET` | Identity, Keycloak | OIDC client secret for Identity service (m2m) |
 | `POSTGRES_PASSWORD` | PostgreSQL (identity DB), Keycloak | Database password for Keycloak's PostgreSQL |

@@ -49,6 +49,7 @@ try {
     foreach ($expected in @(
         "ORCHESTRATION_CLIENT_ID=orchestration",
         "CONNECTORS_CLIENT_ID=connectors",
+        "C8CTL_CLIENT_SECRET=",
         "POSTGRES_DB=bitnami_keycloak",
         "POSTGRES_USER=bn_keycloak",
         "CAMUNDA_DB_NAME=camunda",
