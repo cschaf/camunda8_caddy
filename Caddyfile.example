@@ -36,6 +36,8 @@ keycloak.camunda.dev.local {
         # Keycloak readiness on the management port (same probe as the compose healthcheck)
         rewrite * /auth/health/ready
         reverse_proxy keycloak:9000 {
+            # Health probes need no Origin; Spring services (Identity) answer 403 to unknown origins
+            header_up -Origin
             # Replace, not add: Keycloak 26.6 already sends "Access-Control-Allow-Origin: *"
             # on the management port; a duplicate "*, *" makes the browser reject the fetch.
             header_down Access-Control-Allow-Origin "*"
@@ -65,6 +67,8 @@ identity.camunda.dev.local {
         # /health on the app port 8084 is not a health endpoint and returns 403.
         rewrite * /actuator/health
         reverse_proxy identity:8082 {
+            # Health probes need no Origin; Spring services (Identity) answer 403 to unknown origins
+            header_up -Origin
             # Replace, not add, so an upstream CORS header is never duplicated
             header_down Access-Control-Allow-Origin "*"
             header_down -Cross-Origin-Resource-Policy
@@ -106,6 +110,8 @@ console.camunda.dev.local {
     handle /health {
         rewrite * /health/readiness
         reverse_proxy hub:8091 {
+            # Health probes need no Origin; Spring services (Identity) answer 403 to unknown origins
+            header_up -Origin
             # Replace, not add, so an upstream CORS header is never duplicated
             header_down Access-Control-Allow-Origin "*"
             header_down -Cross-Origin-Resource-Policy
@@ -125,6 +131,8 @@ optimize.camunda.dev.local {
     handle /health {
         rewrite * /api/readyz
         reverse_proxy optimize:8090 {
+            # Health probes need no Origin; Spring services (Identity) answer 403 to unknown origins
+            header_up -Origin
             # Replace, not add, so an upstream CORS header is never duplicated
             header_down Access-Control-Allow-Origin "*"
             header_down -Cross-Origin-Resource-Policy
@@ -145,6 +153,8 @@ orchestration.camunda.dev.local {
     handle /health {
         rewrite * /actuator/health/readiness
         reverse_proxy orchestration:9600 {
+            # Health probes need no Origin; Spring services (Identity) answer 403 to unknown origins
+            header_up -Origin
             # Replace, not add, so an upstream CORS header is never duplicated
             header_down Access-Control-Allow-Origin "*"
             header_down -Cross-Origin-Resource-Policy
@@ -191,6 +201,8 @@ webmodeler.camunda.dev.local {
     handle /health {
         rewrite * /health/readiness
         reverse_proxy hub:8091 {
+            # Health probes need no Origin; Spring services (Identity) answer 403 to unknown origins
+            header_up -Origin
             # Replace, not add, so an upstream CORS header is never duplicated
             header_down Access-Control-Allow-Origin "*"
             header_down -Cross-Origin-Resource-Policy
