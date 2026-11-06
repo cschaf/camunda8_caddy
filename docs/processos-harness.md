@@ -4,7 +4,7 @@ Diese Anleitung beschreibt, wie ProcessOS Harness mit diesem Stack als
 Governance-Cluster eingerichtet wird: zuerst die Cluster-Seite (einmalig pro
 Umgebung), dann der Rechner des Builders unter Windows mit WSL.
 
-Stand: 03.11.2026, ProcessOS Harness **1.0.0**. Alle Angaben stammen aus den
+Stand: 06.11.2026, ProcessOS Harness **1.0.0**. Alle Angaben stammen aus den
 öffentlichen Quellen am Ende dieser Datei und aus Tests mit diesem Stack.
 
 > **Lizenz:** Die ProcessOS-Archive stehen unter der Camunda License 1.0 und
@@ -12,6 +12,15 @@ Stand: 03.11.2026, ProcessOS Harness **1.0.0**. Alle Angaben stammen aus den
 > Skills unter `.claude/skills/`) und Beschreibungen ihres Inhalts gehören
 > **nie** in dieses Repository. `c8 os install` immer in einem eigenen
 > Projektordner mit eigenem, privatem Git-Repository ausführen.
+
+Platzhalter in dieser Anleitung:
+
+| Platzhalter | Bedeutung | Beispiel |
+|---|---|---|
+| `<HOST>` | Basis-Domain des Stacks | `camunda.firma.local` |
+| `<windows-user>` | Windows-Benutzername (Pfad unter `C:\Users\`) | `mmuster` |
+| `<stage>` | Stage-Datei des Stacks unter `stages/` | `dev` |
+| `<projekt>` | Name des ProcessOS-Projekts | `rechnungseingang` |
 
 ## Inhalt
 
@@ -83,6 +92,7 @@ Forms, Process Mining, gemeinsames Gedächtnis über Projekte hinweg.
 | c8run | lokaler Camunda-Cluster zum Validieren der erzeugten Lösung |
 | Camunda Modeler | für BPMN/DMN-Reviews (unter Windows installieren) |
 | KI-Agent | Claude Code oder GitHub Copilot CLI, Modell der Opus-Klasse empfohlen. Braucht Rechte zum Ausführen von Befehlen, ausgehenden Netzwerkzugriff und Schreibzugriff auf das Projekt-Repository |
+| Root-CA-Zertifikat | Root-Zertifikat der CA, die das Server-Zertifikat des Stacks ausgestellt hat (Abschnitt 4.5) |
 
 ## 3. Cluster vorbereiten (dieser Stack)
 
@@ -156,8 +166,35 @@ curl -sk -o /dev/null -w '%{http_code}\n' -X POST \
 ### Secret an den Builder geben
 
 Den Wert von `C8CTL_CLIENT_SECRET` nur über einen sicheren Kanal weitergeben
-(Passwort-Tresor), nicht per Mail oder Chat. Er gibt Admin-Zugriff auf den
-Cluster.
+(Passwort-Tresor), nicht per Mail, Chat oder in einen KI-Agenten-Prompt. Er
+gibt Admin-Zugriff auf den Cluster.
+
+Ist das Secret doch einmal offengelegt worden:
+
+1. Auf dem Server einen neuen Wert setzen und Identity neu erstellen:
+
+   ```bash
+   sed -i "s/^C8CTL_CLIENT_SECRET=.*/C8CTL_CLIENT_SECRET=$(openssl rand -hex 24)/" .env-credentials
+   docker compose --env-file .env --env-file .env-credentials \
+     -f docker-compose.yaml -f stages/<stage>.yaml up -d --force-recreate identity orchestration
+   ```
+
+2. Prüfen, dass Keycloak den neuen Wert übernommen hat: Die Prüfung aus
+   "Prüfen" oben muss mit dem **neuen** Secret `200` liefern. Liefert sie
+   `401`, hat Identity das Secret des bestehenden Clients nicht geändert
+   (nicht getestet). Dann in der Keycloak-Admin-Konsole
+   (`https://keycloak.<HOST>/auth/`, Realm `camunda-platform`) unter
+   Clients → `c8ctl` → Credentials das Secret auf den Wert aus
+   `.env-credentials` setzen bzw. dort neu erzeugen und in `.env-credentials`
+   übernehmen.
+3. Beim Builder das Profil neu anlegen (Abschnitt 4.7).
+
+### Root-CA an den Builder geben
+
+Zusammen mit dem Secret das **Root-Zertifikat der CA** bereitstellen, die das
+Server-Zertifikat des Stacks ausgestellt hat (PEM, `CA:TRUE`). Builder
+brauchen es in Abschnitt 4.5. Nicht das Server-Zertifikat selbst weitergeben,
+damit funktioniert Node.js nicht.
 
 ## 4. Builder-Rechner unter Windows mit WSL
 
@@ -182,7 +219,7 @@ Dort ist Git deutlich schneller und Dateirechte funktionieren wie erwartet.
 
 ```bash
 sudo apt update
-sudo apt install -y git curl unzip ca-certificates gh
+sudo apt install -y git curl unzip ca-certificates openssl gh
 git config --global user.name  "Vorname Nachname"
 git config --global user.email "vorname.nachname@firma.de"
 gh auth login        # nur nötig, wenn GitHub als Git-Host genutzt wird
@@ -223,45 +260,105 @@ curl -skI https://orchestration.<HOST>/ | head -1
   `/etc/hosts`. Nach einer Änderung unter Windows in PowerShell
   `wsl --shutdown` ausführen und WSL neu öffnen.
 
-### 4.5 Zertifikat vertrauen
+### 4.5 Root-Zertifikat vertrauen
 
 Node.js nutzt nicht den Zertifikatsspeicher des Betriebssystems. Ohne diesen
-Schritt bricht c8ctl mit einem TLS-Fehler ab (z. B.
-`UNABLE_TO_GET_ISSUER_CERT_LOCALLY`).
+Schritt bricht c8ctl ab, meist nur mit `fetch failed` (Details in
+Abschnitt 7).
 
-1. Das **Root-Zertifikat** der Zertifizierungsstelle besorgen, die das
-   Server-Zertifikat ausgestellt hat, im PEM-Format (Text, beginnt mit
-   `-----BEGIN CERTIFICATE-----`):
-   - Firmen-CA: von der IT anfordern, oder unter Windows in `certmgr.msc`
-     unter "Vertrauenswürdige Stammzertifizierungsstellen" exportieren als
-     "Base-64-codiert X.509 (.CER)".
-   - mkcert (nur Testumgebungen): `rootCA.pem` aus dem Ordner, den
-     `mkcert -CAROOT` auf dem Rechner anzeigt, der das Zertifikat erzeugt hat.
+> **Häufigster Fehler:** Statt des Root-Zertifikats der CA wird das
+> Server-Zertifikat (`*.<HOST>`) oder das Zertifikat eines anderen Servers
+> eingebunden. curl akzeptiert ein Server-Zertifikat teilweise trotzdem,
+> **Node.js und damit c8ctl nicht** (`UNABLE_TO_VERIFY_LEAF_SIGNATURE`).
+> Gebraucht wird genau das Zertifikat, dessen Subject dem *Issuer* des
+> Server-Zertifikats entspricht und das `CA:TRUE` enthält.
 
-   Welche CA es ist, zeigt:
+#### 1. Aussteller des Server-Zertifikats ermitteln
 
-   ```bash
-   openssl s_client -connect orchestration.<HOST>:443 -servername orchestration.<HOST> </dev/null 2>/dev/null \
-     | openssl x509 -noout -issuer
-   ```
+```bash
+openssl s_client -connect orchestration.<HOST>:443 -servername orchestration.<HOST> </dev/null 2>/dev/null \
+  | openssl x509 -noout -subject -issuer
+```
 
-2. In WSL einbinden (Dateiname anpassen):
+Die Zeile `issuer=` nennt die gesuchte CA. Deren Root-Zertifikat im
+PEM-Format besorgen (Text, beginnt mit `-----BEGIN CERTIFICATE-----`).
 
-   ```bash
-   sudo cp /mnt/c/Users/<windows-user>/Downloads/firmen-root-ca.crt /usr/local/share/ca-certificates/firmen-root-ca.crt
-   sudo update-ca-certificates                     # für curl, git usw.
-   echo 'export NODE_EXTRA_CA_CERTS=/usr/local/share/ca-certificates/firmen-root-ca.crt' >> ~/.bashrc
-   source ~/.bashrc                                 # für Node.js / c8ctl
-   ```
+#### 2. Root-Zertifikat besorgen
 
-   `update-ca-certificates` erwartet die Endung `.crt`. Eine `.cer`-Datei im
-   Base-64-Format kann einfach umbenannt werden.
+Eine der folgenden Quellen nutzen:
 
-3. Prüfen, ohne `-k`:
+- **Vom Betreiber des Stacks bzw. der IT** anfordern (Abschnitt 3,
+  "Root-CA an den Builder geben").
+- **Univention Corporate Server (UCS) als CA:** auf dem UCS-Primary, der das
+  Zertifikat ausgestellt hat, unter `/etc/univention/ssl/ucsCA/CAcert.pem`,
+  meist auch unter `http://<ucs-primary>/ucs-root-ca.crt`. Auf die ID im
+  CA-Namen achten (`Root CA (ID=…)`): Gibt es mehrere UCS-Domänen, muss sie
+  zum `issuer` aus Schritt 1 passen.
+- **Aus dem Browser** unter Windows (wenn der Browser die Seite ohne Warnung
+  öffnet):
+  - Chrome/Edge: `https://orchestration.<HOST>` öffnen → Schloss →
+    "Zertifikat anzeigen" → Reiter **Details** → unter
+    **Zertifikathierarchie** den **obersten** Eintrag anklicken → erst dann
+    **Exportieren** → "Base64-codiert ASCII, einzelnes Zertifikat".
+  - Firefox: Schloss → "Verbindung sicher" → "Weitere Informationen" →
+    "Zertifikat anzeigen" → Reiter der Root-CA wählen → "Herunterladen:
+    PEM (Zertifikat)".
 
-   ```bash
-   curl -sI https://orchestration.<HOST>/ | head -1
-   ```
+  Ohne Auswahl des obersten Eintrags exportiert der Browser das
+  Server-Zertifikat (Dateiname dann typisch `_.<HOST>.crt`).
+- **Windows-Zertifikatsspeicher:** `certmgr.msc` → "Vertrauenswürdige
+  Stammzertifizierungsstellen" → Zertifikat exportieren als "Base-64-codiert
+  X.509 (.CER)".
+- **mkcert (nur Testumgebungen):** `rootCA.pem` aus dem Ordner, den
+  `mkcert -CAROOT` auf dem Rechner anzeigt, der das Zertifikat erzeugt hat.
+
+#### 3. Datei prüfen, bevor sie eingebunden wird
+
+```bash
+F=/mnt/c/Users/<windows-user>/Downloads/<root-ca-datei>.crt
+
+openssl x509 -in "$F" -noout -subject -ext basicConstraints -enddate
+#  subject     = muss dem issuer aus Schritt 1 entsprechen
+#  CA:TRUE     = muss vorhanden sein (CA:FALSE heißt: Server-Zertifikat, falsche Datei)
+#  notAfter    = Ablaufdatum notieren
+
+NODE_EXTRA_CA_CERTS="$F" node -e \
+  "fetch('https://orchestration.<HOST>/').then(r=>console.log('OK',r.status)).catch(e=>console.log((e.cause||e).code))"
+#  muss "OK <statuscode>" ausgeben
+```
+
+Liegt die Datei im DER-Format vor (Binär, kein `-----BEGIN`), vorher
+umwandeln: `openssl x509 -inform der -in "$F" -out root-ca.crt`.
+
+#### 4. In WSL einbinden
+
+```bash
+sudo cp "$F" /usr/local/share/ca-certificates/firmen-root-ca.crt
+sudo update-ca-certificates                     # für curl, git usw.
+
+# NODE_EXTRA_CA_CERTS setzen bzw. einen alten Eintrag ersetzen (für Node.js / c8ctl)
+sed -i '/^export NODE_EXTRA_CA_CERTS=/d' ~/.bashrc
+echo 'export NODE_EXTRA_CA_CERTS=/usr/local/share/ca-certificates/firmen-root-ca.crt' >> ~/.bashrc
+source ~/.bashrc
+```
+
+`update-ca-certificates` erwartet die Endung `.crt`. Eine `.cer`-Datei im
+Base-64-Format kann einfach umbenannt werden. Ein zuvor fälschlich
+eingebundenes Zertifikat aus `/usr/local/share/ca-certificates/` löschen und
+`sudo update-ca-certificates` erneut ausführen.
+
+`NODE_EXTRA_CA_CERTS` gilt nur für Prozesse, die **nach** der Änderung
+gestartet werden. Ein bereits laufender KI-Agent (z. B. `claude`) muss in
+einem neuen Terminal neu gestartet werden.
+
+#### 5. Prüfen, ohne `-k`
+
+```bash
+curl -sI https://orchestration.<HOST>/ | head -1
+```
+
+Läuft das Root-Zertifikat ab, muss die neue Fassung genauso eingebunden
+werden. Das Ablaufdatum aus Schritt 3 im Kalender vormerken.
 
 ### 4.6 c8ctl und ProcessOS-Plugin
 
@@ -292,6 +389,23 @@ chmod 600 ~/.config/c8ctl/profiles.json
 
 c8ctl --json get topology --profile governance  # muss "brokers" bzw. "clusterSize" zeigen
 ```
+
+Erwartete Ausgabe (gekürzt):
+
+```json
+{"brokers":[{"nodeId":0,"partitions":[{"partitionId":1,"role":"leader","health":"healthy"}],"version":"8.10.x"}],
+ "clusterSize":1,"partitionsCount":1,"gatewayVersion":"8.10.x"}
+```
+
+Meldet c8ctl stattdessen `"error":"fetch failed"`, ist fast immer das
+Zertifikat die Ursache, nicht das Profil. Der Hinweis
+`Is the local cluster running?` in derselben Meldung ist dann irreführend.
+Zurück zu Abschnitt 4.5, Schritt 3. Details zeigt
+`c8ctl --json get topology --profile governance --verbose`.
+
+Das Secret niemals in einen Chat oder Prompt des KI-Agenten kopieren. Der
+Agent braucht es nicht: Er ruft c8ctl mit dem Profil auf, und c8ctl liest das
+Secret selbst aus der Profildatei.
 
 ### 4.8 c8run für lokale Tests
 
@@ -326,6 +440,9 @@ claude --version
 Beim ersten Start (`claude`) anmelden oder den von der Firma vorgegebenen
 Zugang einrichten (Anthropic, Amazon Bedrock oder Azure OpenAI, je nach
 Vorgabe). Im Projekt ein Modell der Opus-Klasse wählen (`/model`).
+
+Den Agenten erst starten, wenn Abschnitt 4.5 und 4.7 erfolgreich sind, damit
+er `NODE_EXTRA_CA_CERTS` bereits übernimmt.
 
 ## 5. ProcessOS-Projekt anlegen und starten
 
@@ -386,9 +503,16 @@ Berechtigung geben und die SMEs der Gruppe zuordnen.
 | Symptom | Ursache | Lösung |
 |---|---|---|
 | `getent hosts` liefert nichts | Name nicht auflösbar | DNS-Eintrag anfordern oder Windows-Hosts-Datei ergänzen, dann `wsl --shutdown` |
+| c8ctl meldet `"error":"fetch failed"` mit Hinweis `Is the local cluster running?` | Meist TLS: Node vertraut dem Server nicht. Der Hinweis auf den lokalen Cluster ist irreführend | Mit `--verbose` wiederholen bzw. Node-Test aus 4.5, Schritt 3 ausführen; dann nach den folgenden Zeilen vorgehen |
 | `UNABLE_TO_GET_ISSUER_CERT_LOCALLY`, `self-signed certificate in certificate chain` | Node vertraut der CA nicht | Abschnitt 4.5, `echo $NODE_EXTRA_CA_CERTS` prüfen |
+| `UNABLE_TO_VERIFY_LEAF_SIGNATURE` | In `NODE_EXTRA_CA_CERTS` steht ein Server-Zertifikat (`CA:FALSE`) statt des Root-Zertifikats, oder die Root-CA einer anderen CA | Mit `openssl x509 -in "$NODE_EXTRA_CA_CERTS" -noout -subject -ext basicConstraints` prüfen; richtige Root-CA nach 4.5 besorgen |
+| curl ohne `-k`: `unable to get local issuer certificate` | Root-CA nicht im Systemspeicher | Abschnitt 4.5, Schritt 4 (`update-ca-certificates`) |
+| curl mit `--cacert` geht, Node/c8ctl nicht | Server-Zertifikat statt Root-CA verwendet; curl akzeptiert das, Node nicht | Root-CA nach 4.5 besorgen |
+| Ging bisher, plötzlich TLS-Fehler | Root- oder Server-Zertifikat abgelaufen | `openssl x509 -in "$NODE_EXTRA_CA_CERTS" -noout -enddate`; neue Fassung von der IT anfordern und nach 4.5 einbinden |
+| TLS-Fehler nur im KI-Agenten, im Terminal nicht | Agent wurde vor dem Setzen von `NODE_EXTRA_CA_CERTS` gestartet | Agent beenden und in einem neuen Terminal starten |
 | `401` / `invalid_client` | Secret falsch oder Client fehlt | Secret neu eingeben (`c8ctl remove profile governance`, dann 4.7); auf dem Server Abschnitt 3 prüfen |
 | `403` / `FORBIDDEN` | Client hat keine Rolle | Auf dem Server `up -d --force-recreate orchestration`, dann Prüfung aus Abschnitt 3 |
+| Secret wurde in Chat, Mail oder Prompt kopiert | Secret offengelegt | Secret auf dem Server neu setzen (Abschnitt 3), Profil neu anlegen (4.7) |
 | `c8ctl` sehr langsam oder Git langsam | Projekt unter `/mnt/c/…` | Projekt nach `~/…` verschieben |
 | SME sieht keine Tasks in der Tasklist | Fehlende Berechtigung | Abschnitt 6 |
 | c8run startet nicht, Port belegt | Port 8080 wird schon genutzt | Andere lokale Dienste beenden |
@@ -403,6 +527,8 @@ Berechtigung geben und die SMEs der Gruppe zuordnen.
 - [c8run installieren und starten](https://docs.camunda.io/docs/self-managed/quickstart/developer-quickstart/c8run/install-start/)
 - [c8ctl](https://github.com/camunda/c8ctl) und [Befehlsreferenz](https://github.com/camunda/c8ctl/blob/main/docs/command-reference.md)
 - [npm: @camunda8/c8ctl-plugin-process-os](https://www.npmjs.com/package/@camunda8/c8ctl-plugin-process-os)
+- [Node.js: NODE_EXTRA_CA_CERTS](https://nodejs.org/api/cli.html#node_extra_ca_certsfile)
+- [Univention: Zertifikate (UCS-Handbuch)](https://docs.software-univention.de/manual/latest/de/domain-ldap/ssl.html)
 - [WSL installieren](https://learn.microsoft.com/de-de/windows/wsl/install)
 - [Claude Code einrichten](https://docs.claude.com/en/docs/claude-code/setup)
 - [nvm](https://github.com/nvm-sh/nvm)
