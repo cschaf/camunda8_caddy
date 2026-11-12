@@ -4,9 +4,9 @@ Leitfaden für dieses Docker-Compose-Projekt. Er beschreibt den **im Branch `fea
 
 | | |
 |---|---|
-| Stand | 30.10.2026 (Patch-Switch auf 8.10.7, siehe [3.2](#32-patch-switch-am-30102026)) |
+| Stand | 12.11.2026 (Patch-Switch auf 8.10.9, siehe [3.2a](#32a-patch-switch-am-12112026)) |
 | Ausgangsversion | `master` seit 14.10.2026: Camunda **8.9.23** (Connectors 8.9.14, Optimize 8.9.23, Web Modeler 8.9.10, Console 8.9.126, Identity 8.9.11, ohne secfix-Overrides). Ältere Umgebungen laufen eventuell noch auf 8.9.19-secfix (Connectors 8.9.10, Web Modeler 8.9.8, Console 8.9.104, Identity 8.9.9). |
-| Zielversion | **Camunda 8.10.7** (Orchestration, Optimize), Connectors **8.10.2**, Hub/Hub-WebSockets **8.10.4**, Identity **8.10.2**, Elasticsearch **8.19.23**; Keycloak bleibt `quay-26.6.4`. Entspricht dem Upstream-Stand `camunda-distributions/docker-compose/versions/camunda-8.10` vom 29.10.2026 (siehe [3.2](#32-patch-switch-am-30102026)). |
+| Zielversion | **Camunda 8.10.9** (Orchestration, Optimize), Connectors **8.10.5**, Hub/Hub-WebSockets **8.10.6**, Identity **8.10.4**, Elasticsearch **8.19.25**, PostgreSQL `15-alpine3.24`, Keycloak `quay-26.8.1` (bewusst abweichend vom Upstream, der bei `quay-26.6.4` steht, wegen CVE-2026-114820, siehe [3.2a](#32a-patch-switch-am-12112026)). Entspricht dem Upstream-Stand `camunda-distributions/docker-compose/versions/camunda-8.10` vom 12.11.2026 (siehe [3.2a](#32a-patch-switch-am-12112026)). |
 | Getestet | Lokal mit RC-Images: frischer Aufbau, Hub-DB-Migration, Optimize-Schema-Upgrade und Identity-Rollen-Provisionierung auf einem 8.9-Realm (Details in [Kapitel 8](#8-testergebnisse-lokal-rc-images)). **Mit den GA-Images bisher nur statisch geprüft** (`docker compose config` für alle Stages); Runtime-Test und Restore-Drill auf GA stehen aus (9.1). |
 
 > **Das Upgrade bestehender Umgebungen geht nur auf ein GA-Release.** Zeebe verweigert die State-Migration auf eine Pre-Release-Version (`Cannot upgrade to or from a pre-release version`). Der Branch pinnt jetzt GA-Tags. Mindestens `8.10.4` verwenden: 8.10.0 bis 8.10.3 haben bekannte Auth-Fehler (Claims bei benannten OIDC-Providern, Physical Tenants mit mehreren IdPs), die erst 8.10.4 behebt. Das Upgrade vorher per Restore-Drill mit einem Prod-Backup proben.
@@ -104,7 +104,7 @@ Umgesetzt im Branch:
 | `camunda/hub`, `camunda/hub-websockets` | `8.10-rc1` | **`8.10.2`** | Upstream #1164 |
 | `camunda/identity` | `8.9.9` | **`8.10.1`** | Upstream #1239 |
 | `elasticsearch` | `8.19.22` | **`8.19.23`** | Upstream #1174 |
-| `camunda/keycloak` | `quay-26.6.4` | unverändert (wie Upstream; `quay-26.8.x` ist neu, gehört aber nicht zu diesem Upgrade) | |
+| `camunda/keycloak` | `quay-26.6.4` | beim GA-Switch unverändert; am 12.11.2026 auf `quay-26.8.1` angehoben (siehe 3.2a) | |
 
 Weitere Änderungen aus dem Abgleich mit Upstream und der offiziellen 8.9→8.10-Doku:
 
@@ -129,6 +129,30 @@ Abgleich mit Upstream (Commits bis `50420d9`, 29.10.2026): seit dem GA-Switch nu
 
 Relevant aus den Release Notes: 8.10.5 behebt u. a., dass die Prozessinstanz-Migration die Berechtigung auf der Ziel-Prozessdefinition nicht prüfte (camunda/camunda#65754).
 
+### 3.2a Patch-Switch am 12.11.2026
+
+Abgleich mit Upstream (Commits bis `1dc6d9d`, 12.11.2026): seit dem 29.10.2026 nur Versions-Bumps (plus ein Testskript), **keine Konfigurationsänderungen** an den Compose-Dateien und den Konfigurationsverzeichnissen.
+
+| Image | Stand 30.10. | Neu | Quelle |
+|---|---|---|---|
+| `camunda/camunda` | `8.10.7` | **`8.10.9`** | Upstream #1412, #1473 |
+| `camunda/optimize` | `8.10.7` | **`8.10.9`** | Upstream #1410, #1480 |
+| `camunda/connectors-bundle` | `8.10.2` | **`8.10.5`** | Upstream #1417, #1477, #1499 |
+| `camunda/hub`, `camunda/hub-websockets` | `8.10.4` | **`8.10.6`** | Upstream #1419, #1479 |
+| `camunda/identity` | `8.10.2` | **`8.10.4`** | Upstream #1405, #1442 |
+| `elasticsearch` | `8.19.23` | **`8.19.25`** | Upstream #1526 |
+| `postgres` | `15-alpine3.22` | **`15-alpine3.24`** | Upstream #1433 |
+
+Anlass ist die Camunda Security Notice 80 (04.11.2026, Critical, CVE-2026-114820): Java entfernt wegen kompromittierter eMudhra-Zwischenzertifikate Root-Zertifikate aus dem Trust Store. Ausnutzung setzt eine Man-in-the-Middle-Position auf ausgehenden TLS-Verbindungen voraus. Behoben in Orchestration/Optimize `8.10.9`, Connectors `8.10.4`, Identity `8.10.4` und Hub `8.10.6`. Hub `8.10.4` ist von beiden Teilen (CVE-2026-91403 und CVE-2026-114820) betroffen.
+
+Keycloak: Upstream steht weiter auf `quay-26.6.4`. Dieses Image wurde am 23.10.2026 gebaut und enthält den Fix für CVE-2026-91403, aber nicht den für CVE-2026-114820. Deshalb wurde Keycloak am 12.11.2026 auf **`quay-26.8.1`** angehoben (Image gebaut am 05.11.2026, in Notice 80 von Camunda als behoben genannt). Bewusst nicht `quay-26.8.2`: Es führt eine Audience-Prüfung in der Admin-REST-API ein (Scope `kc-admin-api`), deren Verträglichkeit mit Identity 8.10.4 nicht belegt ist. Bauzeitpunkt prüfen mit `docker inspect -f '{{.Created}}' <image>`.
+
+Ablauf des Updates (Neuaufbau EWE, 12.11.2026): Backup mit `scripts/backup.sh` und `restore.sh --verify`, dann `KEYCLOAK_SERVER_VERSION` in `.env` ändern, `docker compose … pull keycloak`, `scripts/start.sh`. Keycloak migrierte die Datenbank und beide Realms (`camunda-platform`, `master`) auf 26.7.0 und 26.8.0, alle 14 Container wurden `healthy`, in den Identity-Logs gab es keine 401/403. Die Datenbankmigration lässt sich nicht zurücknehmen, der Weg zurück ist das Backup. Harmlose Hinweise im Keycloak-Log: `Full scope allowed` für die Clients `connectors` und `web-modeler` (veralteter Schalter), `identity-brokering-api:v1`/`twitter-broker:v1` als veraltet, und die Java-Meldung `version sanity check` (`AbstractMethodError … getRequesteApiVersion`), die schon mit 26.6.4 auftrat.
+
+Runtime-Test mit diesen Patches (Neuaufbau EWE, 12.11.2026, frischer Aufbau): Alle Images starten. Hub 8.10.6 meldet `Deprecated Camunda Hub configuration keys detected` (die Schlüssel werden übersetzt, kein Startfehler). Optimize 8.10.9 meldet nur `No license detected` und `No Zeebe index … found` (vor dem ersten Prozess). Der Abnahmetest mit einem Testprozess lief erfolgreich durch.
+
+Breaking Changes: keine gefunden, die dieses Projekt betreffen. Relevant für Agenten: Connectors `8.10.4` verlangt für den AI Agent einen **nicht leeren System-Prompt**. Connectors `8.10.3` unterscheidet die AI-Agent-Einträge Task und Sub-process im Modeler am Namen. Release Notes für Hub, Identity und Optimize sind nicht öffentlich (Lücke der Prüfung). Für Connectors `8.10.5` ist nur der Commit-Vergleich zu `8.10.4` verfügbar (Abhängigkeitsupdates, Revert automatischer Major-Updates).
+
 ### 3.3 Checkliste (für künftige Patch-Switches)
 
 0. **Vorab-Check (Pre-Release-Pins finden).** Nach dem Switch muss dieser Befehl leer sein:
@@ -140,12 +164,12 @@ Relevant aus den Release Notes: 8.10.5 behebt u. a., dass die Prozessinstanz-Mig
 1. **Tags ermitteln** mit `bash scripts/registry-info.sh` (Default-Modus listet `camunda`, `optimize`, `identity`, `connectors-bundle`, `hub`, `hub-websockets`, `keycloak`) oder über Docker Hub.
 2. **`.env` und `.env.example`** anpassen:
    ```dotenv
-   CAMUNDA_VERSION=8.10.7
-   CAMUNDA_CONNECTORS_VERSION=8.10.2
-   CAMUNDA_OPTIMIZE_VERSION=8.10.7
-   CAMUNDA_HUB_VERSION=8.10.4          # eigene Patch-Linie, immer vollständiges SemVer (nicht "8.10")
-   CAMUNDA_IDENTITY_VERSION=8.10.2
-   ELASTIC_VERSION=8.19.23
+   CAMUNDA_VERSION=8.10.9
+   CAMUNDA_CONNECTORS_VERSION=8.10.5
+   CAMUNDA_OPTIMIZE_VERSION=8.10.9
+   CAMUNDA_HUB_VERSION=8.10.6          # eigene Patch-Linie, immer vollständiges SemVer (nicht "8.10")
+   CAMUNDA_IDENTITY_VERSION=8.10.4
+   ELASTIC_VERSION=8.19.25
    ```
 3. **Secfix-/Hotfix-Images:** Mit `scripts/registry-info.sh --project hotfixes-ee` prüfen, ob es 8.10-Hotfix-Images gibt. Falls ja, `CAMUNDA_IMAGE`, `CAMUNDA_CONNECTORS_IMAGE`, `HUB_IMAGE` und `HUB_WEBSOCKETS_IMAGE` in `.env` setzen.
 4. **Release Notes des GA-Patches** gegen Kapitel 1 und 9 abgleichen. Besonders prüfen: ob Hub die Legacy-OIDC-Keys noch übersetzt, ob sich Property-Namen geändert haben, und das Upstream-Compose `camunda-distributions/docker-compose/versions/camunda-8.10` auf neue Commits.
@@ -224,8 +248,8 @@ Während der Hub-Migration darf kein Web-Modeler-8.9-Container mehr laufen.
 
 | Aktion | Variable |
 |---|---|
-| **Neu (Pflicht)** | `CAMUNDA_HUB_VERSION=8.10.4`. Ohne diesen Wert bricht Compose mit `CAMUNDA_HUB_VERSION is required` ab. |
-| Aktualisieren | `CAMUNDA_VERSION=8.10.7`, `CAMUNDA_CONNECTORS_VERSION=8.10.2`, `CAMUNDA_OPTIMIZE_VERSION=8.10.7`, `CAMUNDA_IDENTITY_VERSION=8.10.2`, `ELASTIC_VERSION=8.19.23` |
+| **Neu (Pflicht)** | `CAMUNDA_HUB_VERSION=8.10.6`. Ohne diesen Wert bricht Compose mit `CAMUNDA_HUB_VERSION is required` ab. |
+| Aktualisieren | `CAMUNDA_VERSION=8.10.9`, `CAMUNDA_CONNECTORS_VERSION=8.10.5`, `CAMUNDA_OPTIMIZE_VERSION=8.10.9`, `CAMUNDA_IDENTITY_VERSION=8.10.4`, `ELASTIC_VERSION=8.19.25` |
 | Entfernen | `CAMUNDA_WEB_MODELER_VERSION`, `CAMUNDA_CONSOLE_VERSION`, `CAMUNDA_OPERATE_VERSION`, `CAMUNDA_TASKLIST_VERSION` (werden nicht mehr genutzt) |
 | Entfernen/ersetzen | 8.9-Secfix-Overrides `CAMUNDA_IMAGE`, `CAMUNDA_CONNECTORS_IMAGE`, `WEBMODELER_RESTAPI_IMAGE`, `WEBMODELER_WEBSOCKETS_IMAGE`. Hotfix-Overrides heißen jetzt `HUB_IMAGE` / `HUB_WEBSOCKETS_IMAGE`. |
 | Unverändert | `WEBMODELER_MAIL_FROM_ADDRESS`, `STAGE`, `DISPLAY_STAGE` (wird zum Hub-Cluster-Tag), `HOST`, TLS-Pfade |

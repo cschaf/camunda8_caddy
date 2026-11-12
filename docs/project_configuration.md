@@ -37,11 +37,11 @@ This stack deploys a full Camunda 8.9 self-managed platform with:
 | **Elasticsearch** | `docker.elastic.co/elasticsearch/elasticsearch:${ELASTIC_VERSION}` | Optimize analytics storage (Optimize requires ES/OpenSearch) |
 | **camunda-db** | `postgres:${POSTGRES_VERSION}` | Camunda core operational data (Zeebe, Operate, Tasklist) |
 | **Identity** | `camunda/identity:${CAMUNDA_IDENTITY_VERSION}` | Centralized identity, OIDC provider integration, role management |
-| **Keycloak** | `camunda/keycloak:quay-26.6.4` | OIDC identity provider, realm/client setup, user authentication |
+| **Keycloak** | `camunda/keycloak:quay-26.8.1` | OIDC identity provider, realm/client setup, user authentication |
 | **Optimize** | `camunda/optimize:${CAMUNDA_OPTIMIZE_VERSION}` | Process analytics and optimization |
 | **Connectors** | `camunda/connectors-bundle:${CAMUNDA_CONNECTORS_VERSION}` | Outbound integrations and webhooks |
 | **Camunda Hub** | `camunda/hub:${CAMUNDA_HUB_VERSION}` + `camunda/hub-websockets` | BPMN/DMN modeling and cluster overview/management (replaces Web Modeler and Console since 8.10) |
-| **PostgreSQL** (×2) | `postgres:15-alpine3.22` | Identity/Keycloak DB + Hub DB (`web-modeler-db`) |
+| **PostgreSQL** (×2) | `postgres:15-alpine3.24` | Identity/Keycloak DB + Hub DB (`web-modeler-db`) |
 | **Caddy** | `caddy:2.11.2@sha256:25cdc846626b62d05f6b633b9b40c2c9f6ef89b515dc76133cefd920f7dbe562` | Reverse proxy with automatic HTTPS and subdomain routing |
 | **Autoheal** | `willfarrell/autoheal@sha256:75c28b0020543e8eb49fe6514d012e7d2691f095dd622309d045da8647c8bb83` | Restarts labeled containers when Docker health checks mark them as unhealthy |
 
@@ -707,7 +707,7 @@ Since 8.10, Camunda Hub replaces both Web Modeler and Console. It serves BPMN/DM
 |-----------|-------|------|----------|---------|
 | hub | `camunda/hub:${CAMUNDA_HUB_VERSION}` | 8081 (internal) / 8070 (host), 8091 management | `-Xmx1280m` | Java REST API + UI, cluster registration |
 | hub-websockets | `camunda/hub-websockets:${CAMUNDA_HUB_VERSION}` | 8060 | — | Node.js Pusher WebSocket server for real-time collaboration |
-| web-modeler-db | `postgres:15-alpine3.22` | 5432 | — | PostgreSQL for Hub data. Name and volume (`postgres-web`) kept: Hub 8.10 migrates the former Web Modeler schema in place (Flyway, not backwards compatible) |
+| web-modeler-db | `postgres:15-alpine3.24` | 5432 | — | PostgreSQL for Hub data. Name and volume (`postgres-web`) kept: Hub 8.10 migrates the former Web Modeler schema in place (Flyway, not backwards compatible) |
 
 **Cluster registration:** `.hub/application.yaml` (mounted at `/home/runner/config/application.yaml`) registers the `management` (Identity) and `camunda-platform` clusters under `camunda.hub.clusters`. It replaces the former `.console/application.yaml.template` and the `CAMUNDA_MODELER_CLUSTERS_0_*` env vars. Placeholders are resolved by Spring from the container environment, so no render step is needed. Rules:
 
