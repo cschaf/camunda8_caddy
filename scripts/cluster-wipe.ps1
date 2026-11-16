@@ -12,7 +12,7 @@
     .orchestration/ and backups/ stay exactly as they are.
 
     DESTRUCTIVE: by default all state is deleted (Zeebe, Postgres/Keycloak,
-    Elasticsearch, Hub DB). Use -KeepVolumes to preserve the data volumes.
+    Elasticsearch, Hub DB, uploaded documents). Use -KeepVolumes to preserve the data volumes.
     You must type WIPE to confirm unless -Yes is passed.
 
 .EXAMPLE
@@ -113,7 +113,7 @@ if (-not $Yes) {
     Write-Host "WARNING: This removes the stack's containers, networks and images."
     if ($deleteVolumes) {
         Write-Host '         It also DELETES the data volumes: Zeebe, Postgres/Keycloak,'
-        Write-Host '         Elasticsearch and Hub DB. There is no undo.'
+        Write-Host '         Elasticsearch, Hub DB and uploaded documents. There is no undo.'
     }
     Write-Host ''
     $confirm = Read-Host 'Type WIPE to continue'

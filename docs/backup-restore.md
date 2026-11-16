@@ -85,6 +85,7 @@ The backup system secures the following data:
 | Data Source | Method | Notes |
 |-------------|--------|-------|
 | Zeebe State | Volume dump (`orchestration.tar.gz`) | Cold backup (application services are stopped) |
+| Document store | Volume dump (`documents.tar.gz`) | Uploaded documents (volume `documents`), taken in the same cold window as the Zeebe state because process variables only hold references to these files. Skipped with a warning if the volume does not exist yet. |
 | Camunda DB | `pg_dump -Fc` | GZIP-compressed (`camunda.sql.gz`) — Camunda core operational data (Zeebe, Operate, Tasklist) |
 | Elasticsearch | Snapshot API | FS repository via Docker volume `elastic-backup`, copied to host after snapshot — Optimize indices only |
 | Keycloak DB | `pg_dump -Fc` | GZIP-compressed (`keycloak.sql.gz`) |
@@ -276,6 +277,7 @@ backups/20240115_120000/
 ├── backup-state.json      # pre-backup Elasticsearch state summary
 ├── backup.log              # Execution log
 ├── configs.tar.gz          # Configuration files
+├── documents.tar.gz        # Document store volume dump (uploaded documents)
 ├── elasticsearch/          # Elasticsearch snapshot data
 ├── keycloak.sql.gz         # Keycloak database dump
 ├── manifest.json           # SHA256 checksums and metadata
@@ -495,7 +497,7 @@ Allowed components:
 | `keycloak` | `keycloak.sql.gz` into the `postgres` service | Users, credentials, realm/client config, role mappings |
 | `webmodeler` | `webmodeler.sql.gz` into `web-modeler-db` | Hub (formerly Web Modeler) projects and database state. An 8.9 dump restored into 8.10 is migrated again by Hub on start; the reverse is not possible. |
 | `elasticsearch` | Snapshot under `elasticsearch/` | Deletes and restores Optimize indices only |
-| `orchestration` | `orchestration.tar.gz` into the Zeebe volume | Best used together with `camunda` |
+| `orchestration` | `orchestration.tar.gz` into the Zeebe volume, `documents.tar.gz` into the `documents` volume | Best used together with `camunda`. The document store is replaced only if the backup contains `documents.tar.gz`; with older backups the existing `documents` volume is kept and a warning is logged. |
 | `configs` | `configs.tar.gz` | In `--cross-cluster` mode configs are extracted to `restored-configs/` instead of overwriting local files |
 
 Examples:

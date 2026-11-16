@@ -119,6 +119,7 @@ $Files.AddRange([string[]]@(
     'docs/upgrade-8.10.md'
     'docs/update_guide.md'
     'docs/backup-restore.md'
+    'docs/document-handling.md'
     'docs/stage_comparison.md'
     'docs/agentic-ai.md'
     'docs/processos-harness.md'

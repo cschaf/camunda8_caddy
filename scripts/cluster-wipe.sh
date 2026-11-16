@@ -12,7 +12,7 @@
 #     .orchestration/ and backups/ stay exactly as they are.
 #
 #     DESTRUCTIVE: by default all state is deleted (Zeebe, Postgres/Keycloak,
-#     Elasticsearch, Hub DB). Use --keep-volumes to preserve the data volumes.
+#     Elasticsearch, Hub DB, uploaded documents). Use --keep-volumes to preserve the data volumes.
 #     You must type WIPE to confirm unless --yes is passed.
 #
 # EXAMPLES
@@ -124,7 +124,7 @@ if [[ "$ASSUME_YES" != true ]]; then
   echo "WARNING: This removes the stack's containers, networks and images."
   if [[ "$KEEP_VOLUMES" == false ]]; then
     echo "         It also DELETES the data volumes: Zeebe, Postgres/Keycloak,"
-    echo "         Elasticsearch and Hub DB. There is no undo."
+    echo "         Elasticsearch, Hub DB and uploaded documents. There is no undo."
   fi
   echo ""
   read -r -p "Type WIPE to continue: " confirm

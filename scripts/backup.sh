@@ -299,6 +299,7 @@ main() {
       log "[TEST] No application services would be stopped"
     fi
     log "[TEST] Would backup Zeebe state from volume 'orchestration'"
+    log "[TEST] Would backup document store from volume 'documents'"
     log "[TEST] Would pg_dump Keycloak DB: ${POSTGRES_DB:-}"
     log "[TEST] Would pg_dump Camunda DB: ${CAMUNDA_DB_NAME:-}"
     log "[TEST] Would pg_dump Hub (Web Modeler) DB: ${WEBMODELER_DB_NAME:-}"
@@ -343,6 +344,28 @@ main() {
       log "WARNING: Zeebe backup failed, retrying in 5s... (attempt $zeebe_retry/$zeebe_max_retries)"
       sleep 5
     done
+
+    # Uploaded documents (local document store). Process variables in the
+    # Zeebe state only hold references to these files, so they are taken in
+    # the same cold window as the Zeebe state.
+    log "Backing up document store (volume: documents)..."
+    local documents_vol
+    documents_vol="$(compose_volume_name documents)"
+    if docker volume inspect "$documents_vol" >/dev/null 2>>"$LOG_FILE"; then
+      local documents_size
+      documents_size="$(MSYS_NO_PATHCONV=1 docker run --rm -v "${documents_vol}:/data" alpine du -sh /data 2>/dev/null | awk '{print $1}' || true)"
+      [[ -n "$documents_size" ]] && log "  Document store size: $documents_size"
+      if MSYS_NO_PATHCONV=1 docker run --rm \
+        -v "${documents_vol}:/data" \
+        alpine tar czf - -C /data . 2>>"$LOG_FILE" > "$backup_dir/documents.tar.gz"; then
+        log "Document store backed up."
+      else
+        log "ERROR: Document store backup failed"
+        exit 1
+      fi
+    else
+      log "WARNING: Volume '$documents_vol' not found - skipping document store backup (stack not yet started with the documents volume?)"
+    fi
 
     log "Backing up Keycloak database..."
     if ! docker exec postgres pg_dump -Fc -U "${POSTGRES_USER}" "${POSTGRES_DB}" 2>>"$LOG_FILE" | gzip > "$backup_dir/keycloak.sql.gz"; then

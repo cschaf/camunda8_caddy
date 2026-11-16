@@ -391,6 +391,16 @@ function Test-ArchiveSafePaths {
     }
 }
 
+# The document store (volume `documents`) belongs to the orchestration
+# component: Zeebe process variables hold references into it. Backups taken
+# before the store was introduced have no documents.tar.gz; in that case the
+# existing documents volume is left untouched instead of being wiped.
+function Test-DocumentsBackup {
+    param([string]$BackupDir)
+    $path = Join-Path $BackupDir "documents.tar.gz"
+    return ((Test-Path $path) -and (Get-Item $path).Length -gt 0)
+}
+
 function Validate-RestoreInputs {
     param([string]$BackupDir)
 
@@ -440,6 +450,10 @@ function Validate-RestoreInputs {
     }
 
     if ($RestoreOrchestration) { Test-ArchiveSafePaths -ArchivePath (Join-Path $BackupDir "orchestration.tar.gz") }
+    # documents.tar.gz is optional (see Test-DocumentsBackup).
+    if ($RestoreOrchestration -and (Test-DocumentsBackup -BackupDir $BackupDir)) {
+        Test-ArchiveSafePaths -ArchivePath (Join-Path $BackupDir "documents.tar.gz")
+    }
     if ($RestoreConfigs) { Test-ArchiveSafePaths -ArchivePath (Join-Path $BackupDir "configs.tar.gz") }
 
     if ($RestoreElasticsearch) {
@@ -644,6 +658,13 @@ function Main {
             } else {
                 Log "[DRY-RUN] Would keep existing Docker data volumes"
             }
+            if ($RestoreOrchestration) {
+                if (Test-DocumentsBackup -BackupDir $BackupDir) {
+                    Log "[DRY-RUN] Would remove volume: documents"
+                } else {
+                    Log "[DRY-RUN] Would keep volume: documents (backup has no documents.tar.gz)"
+                }
+            }
             Log "[DRY-RUN] Would keep volume: keycloak-theme"
         }
         else {
@@ -660,6 +681,13 @@ function Main {
                 $volumes = @((Get-ComposeVolumeName "orchestration"))
             } elseif ($RestoreCamunda) {
                 $volumes = @((Get-ComposeVolumeName "camunda-db"))
+            }
+            if ($RestoreOrchestration) {
+                if (Test-DocumentsBackup -BackupDir $BackupDir) {
+                    $volumes += (Get-ComposeVolumeName "documents")
+                } else {
+                    Log "WARNING: Backup has no documents.tar.gz - keeping the existing documents volume. Document references in the restored state may point to missing files."
+                }
             }
             foreach ($vol in $volumes) {
                 try {
@@ -1083,6 +1111,9 @@ chmod -R 777 /dest
             Log "Restoring Zeebe state..."
             Log "[DRY-RUN] Would run: $cmd create orchestration"
             Log "[DRY-RUN] Would restore Zeebe state from: $orchBackup"
+            if (Test-DocumentsBackup -BackupDir $BackupDir) {
+                Log "[DRY-RUN] Would restore document store from: $(Join-Path $BackupDir 'documents.tar.gz')"
+            }
         }
         else {
             Log "Restoring Zeebe state..."
@@ -1103,6 +1134,27 @@ chmod -R 777 /dest
                     -v "${BackupDir}:/backup" `
                     alpine sh -c "cd /data && tar xzf /backup/orchestration.tar.gz"
                 Log "Zeebe state restored."
+
+                if (Test-DocumentsBackup -BackupDir $BackupDir) {
+                    $documentsVol = Get-ComposeVolumeName 'documents'
+                    docker volume inspect $documentsVol *>> $Global:LogFile
+                    if ($LASTEXITCODE -ne 0) {
+                        Log "ERROR: Documents volume '$documentsVol' missing after compose create"
+                        throw "Documents volume '$documentsVol' missing after compose create"
+                    }
+                    # The archive carries the ownership of the volume root
+                    # (1001:0), so the freshly created volume ends up writable
+                    # for the camunda user.
+                    docker run --rm `
+                        -v "${documentsVol}:/data" `
+                        -v "${BackupDir}:/backup" `
+                        alpine sh -c "cd /data && tar xzf /backup/documents.tar.gz"
+                    if ($LASTEXITCODE -ne 0) {
+                        Log "ERROR: Document store restore failed"
+                        throw "Document store restore failed"
+                    }
+                    Log "Document store restored."
+                }
             }
             else {
                 Log "ERROR: Orchestration backup not found."

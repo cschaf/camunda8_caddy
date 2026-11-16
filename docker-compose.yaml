@@ -92,6 +92,11 @@ services:
     volumes:
       - orchestration:/usr/local/camunda/data
       - camunda-data:/usr/local/camunda/camunda-data
+      # Document store (local storage, see camunda.document in
+      # .orchestration/application.yaml). The image pre-creates this directory
+      # as 1001:0, and a new named volume inherits that ownership, so no init
+      # container is needed. Backed up as documents.tar.gz by scripts/backup.*.
+      - documents:/usr/local/camunda/documents
       - "./.orchestration/application.yaml:/usr/local/camunda/config/application.yaml"
       - "./secrets:/etc/camunda/secrets:ro"
     networks:
@@ -791,6 +796,9 @@ services:
 volumes:
   orchestration:
   camunda-data:
+  # Uploaded documents (forms file picker, Document API). Process variables
+  # only hold references into this volume: losing it breaks those references.
+  documents:
   elastic:
   elastic-backup:
     name: elastic-backup

@@ -259,6 +259,7 @@ function Main {
                 Log "[TEST] No application services would be stopped"
             }
             Log "[TEST] Would backup Zeebe state from volume 'orchestration'"
+            Log "[TEST] Would backup document store from volume 'documents'"
             Log "[TEST] Would pg_dump Keycloak DB: $env:POSTGRES_DB"
             Log "[TEST] Would pg_dump Camunda DB: $env:CAMUNDA_DB_NAME"
             Log "[TEST] Would pg_dump Hub (Web Modeler) DB: $env:WEBMODELER_DB_NAME"
@@ -315,6 +316,32 @@ function Main {
                         Start-Sleep -Seconds 5
                     }
                 }
+            }
+
+            # Uploaded documents (local document store). Process variables in
+            # the Zeebe state only hold references to these files, so they are
+            # taken in the same cold window as the Zeebe state.
+            Log "Backing up document store (volume: documents)..."
+            $documentsVol = Get-ComposeVolumeName 'documents'
+            docker volume inspect $documentsVol *> $null
+            if ($LASTEXITCODE -eq 0) {
+                try {
+                    $sizeOutput = docker run --rm -v "${documentsVol}:/data" alpine du -sh /data 2>$null
+                    if ($sizeOutput) { Log "  Document store size: $(($sizeOutput -split '\s+')[0])" }
+                }
+                catch { }
+                $documentsArchive = Join-Path $backupDir "documents.tar.gz"
+                docker run --rm `
+                    -v "${documentsVol}:/data" `
+                    alpine tar czf - -C /data . > $documentsArchive
+                if ($LASTEXITCODE -ne 0 -or -not (Test-Path $documentsArchive) -or (Get-Item $documentsArchive).Length -eq 0) {
+                    Log "ERROR: Document store backup failed (docker exit code: $LASTEXITCODE)"
+                    exit 1
+                }
+                Log "Document store backed up."
+            }
+            else {
+                Log "WARNING: Volume '$documentsVol' not found - skipping document store backup (stack not yet started with the documents volume?)"
             }
 
             Log "Backing up Keycloak database..."

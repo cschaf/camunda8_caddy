@@ -1,6 +1,13 @@
 spring:
   profiles:
     active: "admin,operate,tasklist,broker,consolidated-auth"
+  servlet:
+    multipart:
+      # Upload limits of the REST API: document uploads (forms file picker,
+      # /v2/documents) and deployments. Image default is 10MB for both, which
+      # caps a whole form submit with several files at 10MB. Set in .env.
+      max-file-size: "${UPLOAD_MAX_FILE_SIZE:25MB}"
+      max-request-size: "${UPLOAD_MAX_REQUEST_SIZE:100MB}"
 
 management:
   server:
@@ -90,6 +97,19 @@ camunda:
       url: "http://elasticsearch:9200"
       username: "elastic"
       password: "${ELASTIC_PASSWORD}"
+  document:
+    # Document handling: uploaded files are stored on the `documents` Docker
+    # volume (see docker-compose.yaml). Without this block Camunda falls back
+    # to the in-memory store and loses every document on restart.
+    # Camunda rates local storage as not production-grade (single node, no
+    # TTL/expiry: files stay until deleted via the API). Switch to an
+    # S3-compatible store (camunda.document.aws.<id> with `endpoint`) if that
+    # is not acceptable; documents are addressed by store id, so keep the id
+    # `local` for as long as existing process instances reference it.
+    default-store-id: local
+    local:
+      local:
+        path: /usr/local/camunda/documents
   backup:
     webapps:
       enabled: false

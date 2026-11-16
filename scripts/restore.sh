@@ -414,6 +414,14 @@ wait_for_service() {
   return 1
 }
 
+# The document store (volume `documents`) belongs to the orchestration
+# component: Zeebe process variables hold references into it. Backups taken
+# before the store was introduced have no documents.tar.gz; in that case the
+# existing documents volume is left untouched instead of being wiped.
+has_documents_backup() {
+  [[ -s "$1/documents.tar.gz" ]]
+}
+
 validate_restore_inputs() {
   local backup_dir="$1"
   local missing=0
@@ -455,6 +463,11 @@ validate_restore_inputs() {
   fi
   if [[ "$RESTORE_ORCHESTRATION" == true ]]; then
     tar tzf "$backup_dir/orchestration.tar.gz" >/dev/null || { log "ERROR: Orchestration archive is not readable"; exit 1; }
+    # documents.tar.gz is optional: backups taken before the document store
+    # existed do not contain it (see has_documents_backup).
+    if has_documents_backup "$backup_dir"; then
+      tar tzf "$backup_dir/documents.tar.gz" >/dev/null || { log "ERROR: Documents archive is not readable"; exit 1; }
+    fi
   fi
   if [[ "$RESTORE_CONFIGS" == true ]]; then
     tar tzf "$backup_dir/configs.tar.gz" >/dev/null || { log "ERROR: Config archive is not readable"; exit 1; }
@@ -463,6 +476,9 @@ validate_restore_inputs() {
   local archives_to_check=()
   [[ "$RESTORE_CONFIGS" == true ]] && archives_to_check+=("$backup_dir/configs.tar.gz")
   [[ "$RESTORE_ORCHESTRATION" == true ]] && archives_to_check+=("$backup_dir/orchestration.tar.gz")
+  if [[ "$RESTORE_ORCHESTRATION" == true ]] && has_documents_backup "$backup_dir"; then
+    archives_to_check+=("$backup_dir/documents.tar.gz")
+  fi
   if [[ ${#archives_to_check[@]} -gt 0 ]]; then
     python3 - "${archives_to_check[@]}" <<'PYEOF' || {
 import sys, tarfile
@@ -697,6 +713,13 @@ PYEOF
     else
       log "[DRY-RUN] Would keep existing Docker data volumes"
     fi
+    if [[ "$RESTORE_ORCHESTRATION" == true ]]; then
+      if has_documents_backup "$BACKUP_DIR"; then
+        log "[DRY-RUN] Would remove volume: documents"
+      else
+        log "[DRY-RUN] Would keep volume: documents (backup has no documents.tar.gz)"
+      fi
+    fi
     log "[DRY-RUN] Would keep volume: keycloak-theme"
   else
     local proj
@@ -712,6 +735,14 @@ PYEOF
       log "Camunda DB volume removed."
     else
       log "No Docker data volumes removed for granular restore."
+    fi
+    if [[ "$RESTORE_ORCHESTRATION" == true ]]; then
+      if has_documents_backup "$BACKUP_DIR"; then
+        docker volume rm "${proj}_documents" 2>>"$LOG_FILE" || true
+        log "Documents volume removed."
+      else
+        log "WARNING: Backup has no documents.tar.gz - keeping the existing documents volume. Document references in the restored state may point to missing files."
+      fi
     fi
   fi
 
@@ -1102,6 +1133,9 @@ except Exception as e:
   if [[ "$DRY_RUN" == true ]]; then
     log "[DRY-RUN] Would run: $cmd create orchestration"
     log "[DRY-RUN] Would restore Zeebe state from: $BACKUP_DIR/orchestration.tar.gz"
+    if has_documents_backup "$BACKUP_DIR"; then
+      log "[DRY-RUN] Would restore document store from: $BACKUP_DIR/documents.tar.gz"
+    fi
   else
     if [[ -f "$BACKUP_DIR/orchestration.tar.gz" ]]; then
       local zeebe_vol
@@ -1116,6 +1150,22 @@ except Exception as e:
         -v "$BACKUP_DIR:/backup" \
         alpine sh -c "cd /data && tar xzf /backup/orchestration.tar.gz"
       log "Zeebe state restored."
+
+      if has_documents_backup "$BACKUP_DIR"; then
+        local documents_vol
+        documents_vol="$(compose_volume_name documents)"
+        if ! docker volume inspect "$documents_vol" > /dev/null 2>>"$LOG_FILE"; then
+          log "ERROR: Documents volume '$documents_vol' missing after compose create"
+          exit 1
+        fi
+        # The archive carries the ownership of the volume root (1001:0), so
+        # the freshly created volume ends up writable for the camunda user.
+        MSYS_NO_PATHCONV=1 docker run --rm \
+          -v "${documents_vol}:/data" \
+          -v "$BACKUP_DIR:/backup" \
+          alpine sh -c "cd /data && tar xzf /backup/documents.tar.gz"
+        log "Document store restored."
+      fi
     else
       log "ERROR: Orchestration backup not found."
       exit 1
